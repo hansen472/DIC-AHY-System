@@ -1484,29 +1484,10 @@ app.post('/api/supplier-qualifications', requirePermission('supplier_qualificati
 
     await logSupplierOperation(req, '新增', result.insertId, supplier_name, req.body);
 
-    // 如果存在启用的审批流，自动启动审批实例
-    let workflowInstance = null;
-    try {
-      if (workflowEngine) {
-        const activeDef = await workflowEngine.getActiveDefinition('supplier_qualifications', req.body);
-        if (activeDef) {
-          workflowInstance = await workflowEngine.startInstance({
-            module_key: 'supplier_qualifications',
-            business_key: `supplier_qualifications:${result.insertId}`,
-            payload: { id: result.insertId, ...req.body },
-            created_by: req.session.username
-          });
-        }
-      }
-    } catch (wfErr) {
-      console.error('启动供应商资质审批流失败:', wfErr.message);
-    }
-
     res.json({
       success: true,
       message: '供应商资质已新增',
-      id: result.insertId,
-      workflow_instance_id: workflowInstance ? workflowInstance.id : null
+      id: result.insertId
     });
   } catch (err) {
     console.error('新增供应商资质失败:', err);
@@ -1570,35 +1551,9 @@ app.put('/api/supplier-qualifications/:id', requirePermission('supplier_qualific
 
     await logSupplierOperation(req, '修改', id, supplier_name, { before: oldData, after: req.body });
 
-    // 如果存在启用的审批流且当前没有运行中的实例，则启动新审批实例
-    let workflowInstance = null;
-    try {
-      if (workflowEngine) {
-        const activeDef = await workflowEngine.getActiveDefinition('supplier_qualifications', req.body);
-        if (activeDef) {
-          const businessKey = `supplier_qualifications:${id}`;
-          const [runningRows] = await pool.execute(
-            "SELECT COUNT(*) as cnt FROM workflow_instances WHERE business_key = ? AND status = 'running'",
-            [businessKey]
-          );
-          if (runningRows[0].cnt === 0) {
-            workflowInstance = await workflowEngine.startInstance({
-              module_key: 'supplier_qualifications',
-              business_key: businessKey,
-              payload: { id, ...req.body },
-              created_by: req.session.username
-            });
-          }
-        }
-      }
-    } catch (wfErr) {
-      console.error('启动供应商资质审批流失败:', wfErr.message);
-    }
-
     res.json({
       success: true,
-      message: '供应商资质已更新',
-      workflow_instance_id: workflowInstance ? workflowInstance.id : null
+      message: '供应商资质已更新'
     });
   } catch (err) {
     console.error('修改供应商资质失败:', err);
