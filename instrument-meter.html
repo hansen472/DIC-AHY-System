@@ -138,8 +138,10 @@ button:hover { transform: translateY(-1px); }
 
 .table-wrap {
   overflow-x: auto;
+  overflow-y: auto;
   border-radius: 12px;
   border: 1px solid var(--border);
+  max-height: calc(100vh - 280px);
 }
 
 table {
@@ -273,6 +275,9 @@ footer-actions {
 const COLUMNS = [
   { key: '序号', align: 'right' },
   { key: '仪器/仪表名称', align: 'left' },
+  { key: '本次检验日期', align: 'left', type: 'date' },
+  { key: '下次检验日期', align: 'left', type: 'date' },
+  { key: '安装位置', align: 'left' },
   { key: '型号/规格', align: 'left' },
   { key: '仪器/仪表编码', align: 'left' },
   { key: '制造商', align: 'left' },
@@ -280,9 +285,6 @@ const COLUMNS = [
   { key: '测量范围', align: 'left' },
   { key: '精度等级', align: 'left' },
   { key: '所在位置', align: 'left' },
-  { key: '安装位置', align: 'left' },
-  { key: '本次检验日期', align: 'left', type: 'date' },
-  { key: '下次检验日期', align: 'left', type: 'date' },
   { key: '送检周期（月）', align: 'right' }
 ];
 
