@@ -79,6 +79,67 @@ body {
   font-size: 13px;
   line-height: 1.5;
 }
+.error-msg.expired {
+  color: #9b2c2c;
+  background: #fff5f5;
+  border: 1px solid #feb2b2;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.btn-change-pwd {
+  display: block;
+  text-align: center;
+  margin-top: 14px;
+  color: #667eea;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  border: none;
+  background: none;
+  width: 100%;
+}
+.btn-change-pwd:hover { text-decoration: underline; }
+
+/* 修改密码弹窗 */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); display: none;
+  align-items: center; justify-content: center; z-index: 1000;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #fff; border-radius: 12px; width: 90%; max-width: 380px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-bottom: 1px solid #edf2f7;
+}
+.modal-header h3 { font-size: 16px; color: #2c3e50; }
+.modal-body { padding: 20px; }
+.modal-body .form-group { margin-bottom: 14px; }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 14px 20px; border-top: 1px solid #edf2f7; background: #fafbfc;
+  border-radius: 0 0 12px 12px;
+}
+.btn-secondary {
+  padding: 8px 16px; border: none; border-radius: 6px;
+  background: #e2e8f0; color: #333; font-size: 14px; cursor: pointer;
+}
+.btn-modal-primary {
+  padding: 8px 16px; border: none; border-radius: 6px;
+  background: #667eea; color: #fff; font-size: 14px; cursor: pointer;
+}
+.btn-modal-primary:hover { opacity: 0.9; }
+.btn-modal-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.pwd-warning {
+  color: #c05621; background: #fffaf0; border: 1px solid #fbd38d;
+  border-radius: 6px; padding: 10px 12px; font-size: 13px;
+  margin-top: 10px; text-align: center; line-height: 1.5;
+}
 .brand-title { font-size: 28px; font-weight: 600; color: #2c3e50; line-height: 1.2; }
 .brand-subtitle { font-size: 14px; color: #718096; font-weight: 400; margin-top: 6px; letter-spacing: 0.5px; }
 </style>
@@ -99,6 +160,40 @@ body {
   </div>
   <button class="btn-login" id="btn-login" onclick="doLogin()">登录</button>
   <div class="error-msg" id="error-msg"></div>
+  <button class="btn-change-pwd" onclick="openChangePassword()">修改密码</button>
+</div>
+
+<!-- 修改密码弹窗 -->
+<div class="modal-overlay" id="pwd-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>修改密码</h3>
+      <button class="btn-secondary" onclick="closeChangePassword()">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>用户名</label>
+        <input type="text" id="pwd-username" placeholder="请输入用户名">
+      </div>
+      <div class="form-group">
+        <label>旧密码</label>
+        <input type="password" id="pwd-old" placeholder="请输入旧密码">
+      </div>
+      <div class="form-group">
+        <label>新密码</label>
+        <input type="password" id="pwd-new" placeholder="请输入新密码（至少 6 位）">
+      </div>
+      <div class="form-group">
+        <label>确认新密码</label>
+        <input type="password" id="pwd-confirm" placeholder="请再次输入新密码">
+      </div>
+      <div class="error-msg" id="pwd-msg"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeChangePassword()">取消</button>
+      <button class="btn-modal-primary" id="btn-change-pwd" onclick="doChangePassword()">确认修改</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -172,10 +267,26 @@ async function doLogin() {
     });
     const data = await res.json();
     if (data.success) {
-      window.location.href = '/';
+      // 检查密码是否处于宽限期（即将过期）
+      if (data.passwordExpiring) {
+        showPasswordWarning(data.passwordExpireDays);
+        // 3 秒后跳转主页
+        setTimeout(() => { window.location.href = '/'; }, 3000);
+      } else {
+        window.location.href = '/';
+      }
     } else if (data.locked) {
       // 账户被锁定，启动倒计时
       startLockCountdown(data.locked_until);
+    } else if (data.passwordExpired) {
+      // 密码已过期超过宽限期，必须修改密码
+      errorMsg.textContent = data.error;
+      errorMsg.className = 'error-msg expired';
+      btn.disabled = false;
+      btn.textContent = '登录';
+      // 自动打开修改密码弹窗
+      document.getElementById('pwd-username').value = username;
+      openChangePassword();
     } else {
       errorMsg.textContent = data.error || '登录失败';
       errorMsg.className = 'error-msg';
@@ -188,6 +299,97 @@ async function doLogin() {
     btn.disabled = false;
     btn.textContent = '登录';
   }
+}
+
+// ========== 修改密码功能 ==========
+
+// 打开修改密码弹窗
+function openChangePassword() {
+  const loginUsername = document.getElementById('username').value.trim();
+  if (loginUsername) {
+    document.getElementById('pwd-username').value = loginUsername;
+  }
+  document.getElementById('pwd-old').value = '';
+  document.getElementById('pwd-new').value = '';
+  document.getElementById('pwd-confirm').value = '';
+  document.getElementById('pwd-msg').textContent = '';
+  document.getElementById('pwd-msg').className = 'error-msg';
+  document.getElementById('pwd-modal').classList.add('active');
+}
+
+// 关闭修改密码弹窗
+function closeChangePassword() {
+  document.getElementById('pwd-modal').classList.remove('active');
+}
+
+// 提交修改密码请求
+async function doChangePassword() {
+  const username = document.getElementById('pwd-username').value.trim();
+  const oldPassword = document.getElementById('pwd-old').value;
+  const newPassword = document.getElementById('pwd-new').value;
+  const confirmPassword = document.getElementById('pwd-confirm').value;
+  const msgEl = document.getElementById('pwd-msg');
+  const btn = document.getElementById('btn-change-pwd');
+
+  if (!username || !oldPassword || !newPassword) {
+    msgEl.textContent = '请填写所有字段';
+    msgEl.className = 'error-msg';
+    return;
+  }
+  if (newPassword.length < 6) {
+    msgEl.textContent = '新密码长度不能少于 6 位';
+    msgEl.className = 'error-msg';
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    msgEl.textContent = '两次输入的新密码不一致';
+    msgEl.className = 'error-msg';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+  msgEl.textContent = '';
+
+  try {
+    const res = await fetch('/api/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, oldPassword, newPassword })
+    });
+    const data = await res.json();
+    if (data.success) {
+      msgEl.textContent = '密码修改成功！请使用新密码登录';
+      msgEl.style.color = '#22543d';
+      msgEl.style.background = '#c6f6d5';
+      msgEl.style.border = '1px solid #9ae6b4';
+      msgEl.style.borderRadius = '6px';
+      msgEl.style.padding = '10px 12px';
+      setTimeout(() => {
+        closeChangePassword();
+        // 清空登录表单，让用户用新密码登录
+        document.getElementById('password').value = '';
+        document.getElementById('error-msg').textContent = '';
+        document.getElementById('error-msg').className = 'error-msg';
+      }, 1500);
+    } else {
+      msgEl.textContent = data.error || '修改失败';
+      msgEl.className = 'error-msg';
+    }
+  } catch (err) {
+    msgEl.textContent = '网络错误，请稍后重试';
+    msgEl.className = 'error-msg';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '确认修改';
+  }
+}
+
+// 显示密码即将过期的警告
+function showPasswordWarning(remainDays) {
+  const errorMsg = document.getElementById('error-msg');
+  errorMsg.innerHTML = `⚠️ 密码即将过期！剩余 <b>${remainDays}</b> 天宽限期，请尽快修改密码。<br>3 秒后自动进入系统...`;
+  errorMsg.className = 'error-msg locked';
 }
 </script>
 </body>

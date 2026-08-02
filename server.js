@@ -178,7 +178,7 @@ app.post('/api/login', async (req, res) => {
 
   try {
     const [rows] = await pool.execute(
-      'SELECT id, username, password_hash, status, locked_until FROM users WHERE username = ?',
+      'SELECT id, username, password_hash, status, locked_until, password_changed_at FROM users WHERE username = ?',
       [username]
     );
 
@@ -292,7 +292,31 @@ app.post('/api/login', async (req, res) => {
       console.error('登录日志记录失败:', logErr.message);
     }
 
-    res.json({ success: true, message: '登录成功' });
+    // 检查密码有效期：超过 1 年 + 1 个月宽限期则拒绝登录
+    let passwordExpiring = false;
+    let passwordExpireDays = 0;
+    if (user.password_changed_at) {
+      const changedAt = new Date(user.password_changed_at.replace(' ', 'T'));
+      const daysSinceChange = Math.floor((Date.now() - changedAt.getTime()) / (86400000));
+      if (daysSinceChange > PASSWORD_MAX_DAYS + PASSWORD_GRACE_DAYS) {
+        // 超过 1 年 + 1 个月宽限期：阻止登录，强制修改密码
+        return res.status(403).json({
+          error: '密码已过期超过宽限期，请修改密码后登录',
+          passwordExpired: true
+        });
+      } else if (daysSinceChange > PASSWORD_MAX_DAYS) {
+        // 处于 1 个月宽限期内：允许登录，但提示修改密码
+        passwordExpiring = true;
+        passwordExpireDays = PASSWORD_MAX_DAYS + PASSWORD_GRACE_DAYS - daysSinceChange;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: '登录成功',
+      passwordExpiring,
+      passwordExpireDays
+    });
   } catch (err) {
     console.error('登录查询失败:', err);
     res.status(500).json({ error: '服务器内部错误' });
@@ -350,7 +374,7 @@ app.get('/api/my-permissions', requireAuth, async (req, res) => {
 app.get('/api/users', requireAdmin, async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT id, username, status, last_login, locked_until,
+      `SELECT id, username, status, last_login, locked_until, password_changed_at,
               chinese_name, department, direct_manager, email, position, hire_date
        FROM users ORDER BY id ASC`
     );
@@ -395,8 +419,8 @@ app.post('/api/users', requireAdmin, async (req, res) => {
   try {
     const [result] = await pool.execute(
       `INSERT INTO users
-       (username, password_hash, status, chinese_name, department, direct_manager, email, position, hire_date)
-       VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+       (username, password_hash, status, password_changed_at, chinese_name, department, direct_manager, email, position, hire_date)
+       VALUES (?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?)`,
       [
         trimmedUsername,
         hashPassword(password),
@@ -435,7 +459,7 @@ app.put('/api/users/:username/password', requireAdmin, async (req, res) => {
 
   try {
     const [result] = await pool.execute(
-      'UPDATE users SET password_hash = ? WHERE username = ?',
+      'UPDATE users SET password_hash = ?, password_changed_at = NOW() WHERE username = ?',
       [hashPassword(password), username]
     );
 
@@ -449,6 +473,59 @@ app.put('/api/users/:username/password', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('修改密码失败:', err);
     res.status(500).json({ error: '修改失败' });
+  }
+});
+
+// API：用户自行修改密码（无需登录会话，用于登录页“修改密码”功能）
+app.post('/api/change-password', async (req, res) => {
+  const { username, oldPassword, newPassword } = req.body;
+  if (!username || !oldPassword || !newPassword) {
+    return res.status(400).json({ error: '请填写用户名、旧密码和新密码' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: '新密码长度不能少于 6 位' });
+  }
+  if (oldPassword === newPassword) {
+    return res.status(400).json({ error: '新密码不能与旧密码相同' });
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id, password_hash, status FROM users WHERE username = ?',
+      [username]
+    );
+    if (rows.length === 0) {
+      return res.status(401).json({ error: '用户名或旧密码错误' });
+    }
+
+    const user = rows[0];
+    if (user.status !== 1) {
+      return res.status(403).json({ error: '账号已被禁用' });
+    }
+    if (hashPassword(oldPassword) !== user.password_hash) {
+      return res.status(401).json({ error: '用户名或旧密码错误' });
+    }
+
+    // 更新密码并重置密码修改时间
+    await pool.execute(
+      'UPDATE users SET password_hash = ?, password_changed_at = NOW(), locked_until = NULL WHERE id = ?',
+      [hashPassword(newPassword), user.id]
+    );
+
+    const clientIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress || '';
+    try {
+      await pool.execute(
+        'INSERT INTO operation_logs (username, action, target_type, target_id, detail, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
+        [username, '修改密码', 'user', user.id, '用户自行修改密码', clientIp]
+      );
+    } catch (logErr) {
+      console.error('修改密码日志记录失败:', logErr.message);
+    }
+
+    res.json({ success: true, message: '密码修改成功，请使用新密码登录' });
+  } catch (err) {
+    console.error('修改密码失败:', err);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
@@ -468,6 +545,12 @@ app.put('/api/users/:username/unlock', requireAdmin, async (req, res) => {
     // 清除失败尝试记录
     await pool.execute(
       'DELETE FROM login_attempts WHERE username = ?',
+      [username]
+    );
+
+    // 解锁账户时同时重置密码修改时间，避免因密码过期再次被锁
+    await pool.execute(
+      'UPDATE users SET password_changed_at = NOW() WHERE username = ?',
       [username]
     );
 
@@ -617,7 +700,7 @@ app.get('/api/users/:username', requireAdmin, async (req, res) => {
   const username = req.params.username;
   try {
     const [rows] = await pool.execute(
-      `SELECT id, username, status, last_login, locked_until,
+      `SELECT id, username, status, last_login, locked_until, password_changed_at,
               chinese_name, department, direct_manager, email, position, hire_date
        FROM users WHERE username = ?`,
       [username]
@@ -2905,6 +2988,10 @@ const LOGIN_MAX_FAILED_ATTEMPTS = 5;       // 24 小时内允许的最大失败�
 const LOGIN_ATTEMPT_WINDOW_MS = 24 * 60 * 60 * 1000; // 失败尝试统计窗口：24 小时
 const ACCOUNT_LOCK_DURATION_MS = 30 * 60 * 1000;      // 锁定时长：30 分钟
 
+// ========== 密码有效期策略 ==========
+const PASSWORD_MAX_DAYS = 365;    // 密码最长有效天数（1 年）
+const PASSWORD_GRACE_DAYS = 30;   // 过期后宽限天数（1 个月，宽限期内仍可登录但每次提示修改）
+
 // 默认账号已迁移到数据库，见 sql/db-setup.sql
 
 function hashPassword(pwd) {
@@ -4458,7 +4545,19 @@ app.listen(PORT, async () => {
       );
       console.log('[迁移] 已自动添加 users.locked_until 列');
     }
-    console.log('[迁移] 账户锁定功能表结构已就绪');
+    // 检查并添加 password_changed_at 列（密码有效期功能）
+    const [pwCols] = await pool.execute(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'password_changed_at'"
+    );
+    if (pwCols.length === 0) {
+      await pool.execute(
+        'ALTER TABLE users ADD COLUMN password_changed_at DATETIME NULL COMMENT \'密码最后修改时间\''
+      );
+      // 回填已有用户：将密码修改时间设为当前时间，给予 1 年有效期
+      await pool.execute('UPDATE users SET password_changed_at = NOW() WHERE password_changed_at IS NULL');
+      console.log('[迁移] 已自动添加 users.password_changed_at 列并回填数据');
+    }
+    console.log('[迁移] 账户锁定与密码有效期功能表结构已就绪');
   } catch (migErr) {
     console.error('[迁移] 账户锁定表初始化失败:', migErr.message);
   }
