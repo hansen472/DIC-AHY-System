@@ -56,6 +56,10 @@ tr { cursor: pointer; }
 
 .password-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid #edf2f7; }
 .password-section h4 { font-size: 14px; color: #2c3e50; margin-bottom: 12px; }
+.lock-section { margin-top: 16px; padding: 14px; background: #fffaf0; border: 1px solid #fbd38d; border-radius: 8px; }
+.lock-section .lock-info { display: flex; align-items: center; justify-content: space-between; }
+.lock-section .lock-label { color: #c05621; font-size: 14px; font-weight: 600; }
+.lock-section .lock-time { color: #744210; font-size: 13px; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -180,7 +184,10 @@ async function loadUser() {
 async function loadUsers() {
   try {
     const res = await fetch('/api/users');
-    if (!res.ok) throw new Error('加载失败');
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || '加载失败');
+    }
     const result = await res.json();
     usersData = result.data || [];
     renderUserList();
@@ -220,10 +227,10 @@ function renderUserList() {
     let lockBadge = '';
     let unlockBtn = '';
     if (u.locked_until) {
-      const lockedUntil = new Date(u.locked_until);
+      const lockedUntil = new Date(u.locked_until.replace(' ', 'T')); // 兼容 MariaDB dateStrings 格式
       if (lockedUntil > new Date()) {
         const remainMin = Math.ceil((lockedUntil - new Date()) / 60000);
-        lockBadge = `<span class="badge badge-locked">已锁定 (${remainMin}分钟)</span>`;
+        lockBadge = `<span class="badge badge-locked">🔒 已锁定 (${remainMin}分钟)</span>`;
         unlockBtn = `<button class="btn-warning btn-sm" onclick="event.stopPropagation(); unlockUser('${escapeHtml(u.username)}')">解锁</button>`;
       } else {
         lockBadge = '<span class="badge badge-active">正常</span>';
@@ -293,6 +300,34 @@ async function openEditModal(username) {
     // 管理员账号不允许在界面上禁用
     const isAdmin = u.username === 'admin';
     document.getElementById('edit-status').disabled = isAdmin;
+
+    // 显示锁定状态信息
+    let lockSection = document.getElementById('lock-section');
+    if (u.locked_until) {
+      const lockedUntil = new Date(u.locked_until.replace(' ', 'T'));
+      if (lockedUntil > new Date()) {
+        const remainMin = Math.ceil((lockedUntil - new Date()) / 60000);
+        if (!lockSection) {
+          lockSection = document.createElement('div');
+          lockSection.id = 'lock-section';
+          lockSection.className = 'lock-section';
+          document.getElementById('user-form').appendChild(lockSection);
+        }
+        lockSection.innerHTML = `
+          <div class="lock-info">
+            <div>
+              <div class="lock-label">🔒 账户已锁定</div>
+              <div class="lock-time">剩余 ${remainMin} 分钟自动解锁（${u.locked_until}）</div>
+            </div>
+            <button class="btn-warning" onclick="unlockUserFromModal('${escapeHtml(u.username)}')">立即解锁</button>
+          </div>`;
+        lockSection.style.display = 'block';
+      } else {
+        if (lockSection) lockSection.style.display = 'none';
+      }
+    } else {
+      if (lockSection) lockSection.style.display = 'none';
+    }
 
     document.getElementById('user-modal').classList.add('active');
   } catch (err) {
@@ -453,6 +488,25 @@ async function unlockUser(username) {
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || '解锁失败');
     showMessage(`用户 ${username} 的账户已解锁`, 'success');
+    await loadUsers();
+  } catch (err) {
+    showMessage('解锁失败：' + err.message, 'error');
+  }
+}
+
+async function unlockUserFromModal(username) {
+  if (!confirm(`确定要解锁用户 "${username}" 的账户吗？`)) return;
+  try {
+    const res = await fetch('/api/users/' + encodeURIComponent(username) + '/unlock', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '解锁失败');
+    showMessage(`用户 ${username} 的账户已解锁`, 'success');
+    // 隐藏锁定区域
+    const lockSection = document.getElementById('lock-section');
+    if (lockSection) lockSection.style.display = 'none';
     await loadUsers();
   } catch (err) {
     showMessage('解锁失败：' + err.message, 'error');

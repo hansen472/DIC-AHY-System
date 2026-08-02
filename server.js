@@ -231,13 +231,18 @@ app.post('/api/login', async (req, res) => {
       const remaining = LOGIN_MAX_FAILED_ATTEMPTS - failedCount;
 
       if (remaining <= 0) {
-        // 达到上限，锁定账户
-        const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_DURATION_MS);
-        const lockUntilStr = lockUntil.toISOString().slice(0, 19).replace('T', ' ');
+        // 达到上限，使用 SQL NOW() 锁定账户（避免 Node 与 DB 时区不一致）
         await pool.execute(
-          'UPDATE users SET locked_until = ? WHERE id = ?',
-          [lockUntilStr, user.id]
+          'UPDATE users SET locked_until = DATE_ADD(NOW(), INTERVAL 30 MINUTE) WHERE id = ?',
+          [user.id]
         );
+
+        // 查询实际写入的锁定时间
+        const [lockRows] = await pool.execute(
+          'SELECT locked_until FROM users WHERE id = ?',
+          [user.id]
+        );
+        const lockUntilStr = lockRows[0].locked_until;
 
         // 记录锁定日志
         try {
@@ -351,6 +356,10 @@ app.get('/api/users', requireAdmin, async (req, res) => {
     );
     res.json({ success: true, data: rows });
   } catch (err) {
+    if (err.code === 'ER_BAD_FIELD_ERROR') {
+      console.error('[账户锁定] locked_until 列不存在，请执行: mysql -u root -p pdf_print_db < sql/login-attempts.sql');
+      return res.status(500).json({ error: '账户锁定功能未初始化，请先执行数据库迁移脚本 sql/login-attempts.sql' });
+    }
     console.error('查询用户列表失败:', err);
     res.status(500).json({ error: '查询失败' });
   }
@@ -4427,6 +4436,32 @@ app.post('/api/ocr/recognize', requireAuth, ocrUpload.single('image'), async (re
 app.listen(PORT, async () => {
   console.log(`PDF 打印服务已启动: http://localhost:${PORT}`);
   console.log(`接口地址: POST http://localhost:${PORT}/api/print`);
+
+  // 启动时自动迁移：确保登录锁定功能所需的表和字段存在
+  try {
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+        username    VARCHAR(50)  NOT NULL COMMENT '用户名',
+        ip_address  VARCHAR(45)  NULL COMMENT 'IP地址',
+        attempted_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '尝试时间',
+        KEY idx_username (username),
+        KEY idx_attempted_at (attempted_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='登录失败尝试记录表'
+    `);
+    const [cols] = await pool.execute(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'locked_until'"
+    );
+    if (cols.length === 0) {
+      await pool.execute(
+        'ALTER TABLE users ADD COLUMN locked_until DATETIME NULL COMMENT \'账户锁定截止时间，NULL表示未锁定\''
+      );
+      console.log('[迁移] 已自动添加 users.locked_until 列');
+    }
+    console.log('[迁移] 账户锁定功能表结构已就绪');
+  } catch (migErr) {
+    console.error('[迁移] 账户锁定表初始化失败:', migErr.message);
+  }
 
   // 启动时测试 MariaDB 连接
   const dbOk = await testConnection();

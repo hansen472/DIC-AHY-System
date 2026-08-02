@@ -102,6 +102,51 @@ body {
 </div>
 
 <script>
+let lockTimer = null;
+
+function startLockCountdown(lockedUntil) {
+  const usernameInput = document.getElementById('username');
+  const passwordInput = document.getElementById('password');
+  const btn = document.getElementById('btn-login');
+  const errorMsg = document.getElementById('error-msg');
+
+  // 禁用表单
+  usernameInput.disabled = true;
+  passwordInput.disabled = true;
+  btn.disabled = true;
+  errorMsg.className = 'error-msg locked';
+
+  function updateCountdown() {
+    const target = new Date(lockedUntil.replace(' ', 'T')); // 兼容 MariaDB dateStrings 格式
+    const now = new Date();
+    const diff = target - now;
+
+    if (diff <= 0) {
+      // 倒计时结束，解锁表单
+      clearInterval(lockTimer);
+      lockTimer = null;
+      usernameInput.disabled = false;
+      passwordInput.disabled = false;
+      btn.disabled = false;
+      btn.textContent = '登录';
+      errorMsg.textContent = '账户已自动解锁，请重新登录';
+      errorMsg.className = 'error-msg';
+      return;
+    }
+
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    btn.textContent = `已锁定 (${timeStr})`;
+    errorMsg.textContent = `账户已锁定，请在 ${timeStr} 后再试`;
+  }
+
+  // 清除之前的定时器
+  if (lockTimer) clearInterval(lockTimer);
+  updateCountdown();
+  lockTimer = setInterval(updateCountdown, 1000);
+}
+
 async function doLogin() {
   const username = document.getElementById('username').value.trim();
   const password = document.getElementById('password').value;
@@ -110,10 +155,12 @@ async function doLogin() {
 
   if (!username || !password) {
     errorMsg.textContent = '请输入用户名和密码';
+    errorMsg.className = 'error-msg';
     return;
   }
 
   errorMsg.textContent = '';
+  errorMsg.className = 'error-msg';
   btn.disabled = true;
   btn.textContent = '登录中...';
 
@@ -126,17 +173,18 @@ async function doLogin() {
     const data = await res.json();
     if (data.success) {
       window.location.href = '/';
+    } else if (data.locked) {
+      // 账户被锁定，启动倒计时
+      startLockCountdown(data.locked_until);
     } else {
       errorMsg.textContent = data.error || '登录失败';
-      if (data.locked) {
-        errorMsg.className = 'error-msg locked';
-      } else {
-        errorMsg.className = 'error-msg';
-      }
+      errorMsg.className = 'error-msg';
+      btn.disabled = false;
+      btn.textContent = '登录';
     }
   } catch (err) {
     errorMsg.textContent = '网络错误，请稍后重试';
-  } finally {
+    errorMsg.className = 'error-msg';
     btn.disabled = false;
     btn.textContent = '登录';
   }
