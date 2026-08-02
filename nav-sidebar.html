@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>导航 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Microsoft YaHei", "SimSun", sans-serif;
+  background: linear-gradient(135deg, #f5f7fa 0%, #edf2f7 100%);
+  height: 100vh;
+  overflow: hidden;
+  color: #333;
+  display: flex;
+}
+.sidebar {
+  width: 250px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 2px 0 12px rgba(0,0,0,0.08);
+  display: flex; flex-direction: column;
+  z-index: 10;
+}
+.brand {
+  padding: 26px 24px 22px;
+  border-bottom: 1px solid #edf2f7;
+}
+.brand h1 {
+  font-size: 17px;
+  font-weight: 600;
+  color: #2c3e50;
+  letter-spacing: 0.5px;
+}
+.brand p {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 6px;
+}
+.nav-menu {
+  flex: 1;
+  padding: 18px 14px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px;
+  text-decoration: none;
+  color: #4a5568;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  transition: all 0.18s ease;
+}
+.nav-item:hover {
+  background: #f1f5f9;
+  color: #2b6cb0;
+}
+.nav-item.active {
+  background: linear-gradient(90deg, #ebf4ff 0%, #f0f7ff 100%);
+  color: #2b6cb0;
+  box-shadow: 0 2px 6px rgba(43,108,176,0.08);
+}
+.nav-item .icon {
+  font-size: 18px;
+  width: 26px;
+  text-align: center;
+}
+.nav-item span { font-size: 14px; font-weight: 500; }
+.nav-group { margin-bottom: 8px; }
+.nav-group-title {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px;
+  color: #4a5568;
+  border-radius: 10px;
+  font-size: 14px; font-weight: 500;
+}
+.nav-group-title .icon {
+  font-size: 18px; width: 26px; text-align: center;
+}
+.nav-sub-menu { padding-left: 20px; }
+.nav-sub-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  text-decoration: none;
+  color: #4a5568;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  transition: all 0.18s ease;
+}
+.nav-sub-item:hover { background: #f1f5f9; color: #2b6cb0; }
+.nav-sub-item.active { background: #ebf4ff; color: #2b6cb0; }
+
+/* 待办角标 */
+.badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #e53e3e;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+/* 侧边栏滚动容器 */
+.sidebar-scroll {
+  flex: 1;
+  height: 0;
+  overflow-y: auto;
+  padding: 18px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
+}
+.sidebar-scroll::-webkit-scrollbar { width: 6px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 3px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #a0aec0; }
+
+/* 一级菜单折叠组 */
+.sidebar-group { margin-bottom: 8px; }
+.sidebar-group-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 16px;
+  color: #4a5568;
+  border-radius: 10px;
+  font-size: 14px; font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+.sidebar-group-header:hover { background: #f1f5f9; color: #2b6cb0; }
+.sidebar-group-header .title-left {
+  display: flex; align-items: center; gap: 12px;
+}
+.sidebar-group-header .icon {
+  font-size: 18px; width: 26px; text-align: center;
+}
+.sidebar-group-header .arrow-icon {
+  font-size: 12px;
+  transition: transform 0.25s ease;
+}
+.sidebar-group-header.expanded .arrow-icon { transform: rotate(180deg); }
+.sidebar-group-child {
+  padding-left: 20px;
+  display: none;
+  overflow: hidden;
+}
+.sidebar-footer {
+  padding: 18px;
+  border-top: 1px solid #edf2f7;
+  background: #fafbfc;
+}
+.sidebar-footer #current-user {
+  font-size: 13px;
+  color: #4a5568;
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+.sidebar-footer button {
+  width: 100%;
+  padding: 9px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #e2e8f0;
+  color: #4a5568;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.18s;
+}
+.sidebar-footer button:hover {
+  background: #cbd5e0;
+  color: #2d3748;
+}
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  height: 100vh;
+  overflow-y: auto;
+}
+.welcome-card {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 20px;
+  padding: 56px 64px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+  text-align: center;
+  max-width: 520px;
+  width: 100%;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+.welcome-card .logo-wrap {
+  width: 110px;
+  height: 110px;
+  margin: 0 auto 24px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.welcome-card .logo-wrap img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.welcome-card h2 {
+  font-size: 26px;
+  color: #2c3e50;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+.welcome-card p {
+  font-size: 15px;
+  color: #718096;
+  line-height: 1.7;
+}
+.welcome-card .hint {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #edf2f7;
+  font-size: 13px;
+  color: #a0aec0;
+}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="brand">
+    <h1>数智中心(DIC)</h1>
+    <p>功能导航</p>
+  </div>
+  <div class="nav-menu sidebar-scroll">
+    <a href="/index.html" class="nav-item" id="nav-print" style="display:none;">
+      <span class="icon">🖨️</span>
+      <span>生产记录打印</span>
+    </a>
+
+    <div class="nav-group sidebar-group" id="nav-production-records-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">📋</span>
+          <span>生产记录</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/select-print-record.html" class="nav-sub-item" id="nav-select-print-record" style="display:none;">
+          <span>选择打印记录</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="nav-group sidebar-group" id="nav-logs-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">📁</span>
+          <span>日志查询</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/logs.html" class="nav-sub-item" id="nav-logs-print" style="display:none;">
+          <span>打印记录查询</span>
+        </a>
+        <a href="/operation-logs.html" class="nav-sub-item" id="nav-logs-operation" style="display:none;">
+          <span>操作日志</span>
+        </a>
+        <a href="/supplier-qualification-logs.html" class="nav-sub-item" id="nav-logs-supplier-qualification" style="display:none;">
+          <span>供应商资质日志</span>
+        </a>
+      </div>
+    </div>
+
+    <a href="/daping.html" class="nav-item active" id="nav-dashboard" style="display:none;">
+      <span class="icon">📊</span>
+      <span>数字大屏</span>
+    </a>
+    <a href="/template-admin.html" class="nav-item" id="nav-template-admin" style="display:none;">
+      <span class="icon">📝</span>
+      <span>模板版本管理</span>
+    </a>
+    <a href="/backup-management.html" class="nav-item" id="nav-backup-management" style="display:none;">
+      <span class="icon">💾</span>
+      <span>备份管理</span>
+    </a>
+
+    <div class="nav-group sidebar-group" id="nav-lingzhi-push-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">📡</span>
+          <span>领值推送</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/instrument-meter.html" class="nav-sub-item" id="nav-instrument-meter" style="display:none;">
+          <span>仪器 / 仪表</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="nav-group sidebar-group" id="nav-supplier-qualifications-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">🏭</span>
+          <span>供应商资质</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/supplier-qualifications.html" class="nav-sub-item" id="nav-supplier-qualifications" style="display:none;">
+          <span>供应商资质</span>
+        </a>
+        <a href="/qualification-types.html" class="nav-sub-item" id="nav-qualification-types" style="display:none;">
+          <span>资质种类</span>
+        </a>
+        <a href="/suppliers.html" class="nav-sub-item" id="nav-suppliers" style="display:none;">
+          <span>供应商</span>
+        </a>
+        <a href="/entry-supplier-qualifications.html" class="nav-sub-item" id="nav-entry-supplier-qualifications" style="display:none;">
+          <span>录入供应商资质</span>
+        </a>
+        <a href="/product-list.html" class="nav-sub-item" id="nav-product-list" style="display:none;">
+          <span>产品列表</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="nav-group sidebar-group" id="nav-workflow-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">⚙️</span>
+          <span>审批流</span>
+        </div>
+        <span id="nav-workflow-badge" class="badge-count" style="display:none;"></span>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/workflow-designer.html" class="nav-sub-item" id="nav-workflow-designer" style="display:none;">
+          <span>流程设计器</span>
+        </a>
+        <a href="/workflow-definitions.html" class="nav-sub-item" id="nav-workflow-definitions" style="display:none;">
+          <span>流程管理</span>
+        </a>
+        <a href="/workflow-tasks.html" class="nav-sub-item" id="nav-workflow-tasks" style="display:none;">
+          <span>待办审批</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="nav-group sidebar-group" id="nav-permission-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">🔐</span>
+          <span>权限管理</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/permission-admin.html" class="nav-sub-item" id="nav-permission-admin" style="display:none;">
+          <span>权限配置</span>
+        </a>
+        <a href="/user-management.html" class="nav-sub-item" id="nav-user-management" style="display:none;">
+          <span>用户管理</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="nav-group sidebar-group" id="nav-training-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">🎓</span>
+          <span>培训记录</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/training-records.html" class="nav-sub-item" id="nav-training-records" style="display:none;">
+          <span>培训记录录入</span>
+        </a>
+        <a href="/annual-training-plan.html" class="nav-sub-item" id="nav-annual-training-plan" style="display:none;">
+          <span>年度培训计划</span>
+        </a>
+        <a href="/user-training-record.html" class="nav-sub-item" id="nav-user-training-record" style="display:none;">
+          <span>用户培训记录</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="nav-group sidebar-group" id="nav-ocr-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">📄</span>
+          <span>OCR 纸质表单</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/ocr-recognize.html" class="nav-sub-item" id="nav-ocr-recognize" style="display:none;">
+          <span>表单识别</span>
+        </a>
+        <a href="/ocr-template-design.html" class="nav-sub-item" id="nav-ocr-template-design" style="display:none;">
+          <span>字段标定</span>
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div id="current-user"></div>
+    <button onclick="logout()">退出登录</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="welcome-card">
+    <div class="logo-wrap">
+      <img src="http://172.19.40.91/images/logo.png" alt="Aptar Pharma Logo">
+    </div>
+    <h2>数智中心 DIC</h2>
+    <p>Empowering Work, Simplifying Operations.</p>
+    <div class="hint">左侧菜单将根据您的权限自动显示可访问的功能模块</div>
+  </div>
+</div>
+
+<script>
+async function logout() {
+  try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+  window.location.href = '/login';
+}
+
+function toggleSidebarGroup(header) {
+  const child = header.nextElementSibling;
+  if (!child || !child.classList.contains('sidebar-group-child')) return;
+
+  const isHidden = window.getComputedStyle(child).display === 'none';
+  child.style.display = isHidden ? 'block' : 'none';
+  header.classList.toggle('expanded', isHidden);
+  const arrow = header.querySelector('.arrow-icon');
+  if (arrow) arrow.textContent = isHidden ? '▲' : '▼';
+}
+
+function initSidebarGroups() {
+  document.querySelectorAll('.sidebar-group-child').forEach(child => {
+    child.style.display = 'none';
+  });
+  document.querySelectorAll('.sidebar-group-header').forEach(header => {
+    header.classList.remove('expanded');
+    const arrow = header.querySelector('.arrow-icon');
+    if (arrow) arrow.textContent = '▼';
+  });
+}
+
+(async function() {
+  try {
+    const [sessionRes, permRes] = await Promise.all([
+      fetch('/api/session'),
+      fetch('/api/my-permissions')
+    ]);
+
+    const sessionData = await sessionRes.json();
+    const permData = await permRes.json();
+
+    if (sessionData.success) {
+      document.getElementById('current-user').textContent = '当前用户：' + sessionData.username;
+
+      const isAdmin = sessionData.username === 'admin';
+      const perms = permData.success ? permData.permissions : {};
+
+      // 根据权限显示功能入口
+      if (perms.print)     document.getElementById('nav-print').style.display = 'flex';
+      if (perms.print) {
+        document.getElementById('nav-select-print-record').style.display = 'flex';
+        document.getElementById('nav-production-records-group').style.display = 'block';
+      }
+      if (perms.dashboard) document.getElementById('nav-dashboard').style.display = 'flex';
+      if (perms.template_admin) document.getElementById('nav-template-admin').style.display = 'flex';
+      if (perms.backup_management) document.getElementById('nav-backup-management').style.display = 'flex';
+      // 领值推送分组：当前包含仪器/仪表
+      const lingzhiGroup = document.getElementById('nav-lingzhi-push-group');
+      if (perms.instrument_meter) {
+        document.getElementById('nav-instrument-meter').style.display = 'flex';
+        lingzhiGroup.style.display = 'block';
+      }
+      // 供应商资质分组：包含供应商资质、资质种类和供应商，共用 supplier_qualifications 权限
+      const supplierGroup = document.getElementById('nav-supplier-qualifications-group');
+      if (perms.supplier_qualifications) {
+        document.getElementById('nav-supplier-qualifications').style.display = 'flex';
+        document.getElementById('nav-qualification-types').style.display = 'flex';
+        document.getElementById('nav-suppliers').style.display = 'flex';
+        document.getElementById('nav-entry-supplier-qualifications').style.display = 'flex';
+        document.getElementById('nav-product-list').style.display = 'flex';
+      }
+      if (perms.supplier_qualifications) {
+        supplierGroup.style.display = 'block';
+      }
+
+      // 审批流分组：流程设计器/流程管理需要 workflow_design；待办审批对所有登录用户可见
+      const workflowGroup = document.getElementById('nav-workflow-group');
+      if (perms.workflow_design) {
+        document.getElementById('nav-workflow-designer').style.display = 'flex';
+        document.getElementById('nav-workflow-definitions').style.display = 'flex';
+      }
+      document.getElementById('nav-workflow-tasks').style.display = 'flex';
+      if (perms.workflow_design || sessionData.success) {
+        workflowGroup.style.display = 'block';
+      }
+
+      // 加载并显示当前用户待办审批数量角标
+      try {
+        const countRes = await fetch('/api/workflow-tasks/my-count');
+        if (countRes.ok) {
+          const countData = await countRes.json();
+          const count = countData.success ? (countData.data?.count || 0) : 0;
+          const badge = document.getElementById('nav-workflow-badge');
+          if (count > 0 && badge) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = 'inline-flex';
+          }
+        }
+      } catch (e) {
+        console.error('加载待办数量失败:', e);
+      }
+
+      // 日志查询分组：包含打印记录查询、操作日志和供应商资质日志
+      const logsGroup = document.getElementById('nav-logs-group');
+      if (perms.logs)      document.getElementById('nav-logs-print').style.display = 'flex';
+      if (perms.operation_logs) document.getElementById('nav-logs-operation').style.display = 'flex';
+      if (perms.supplier_qualifications) document.getElementById('nav-logs-supplier-qualification').style.display = 'flex';
+      if (perms.logs || perms.operation_logs || perms.supplier_qualifications) {
+        logsGroup.style.display = 'block';
+      }
+
+      // 权限管理分组：包含权限配置和用户管理，仅对管理员可见
+      const permissionGroup = document.getElementById('nav-permission-group');
+      if (isAdmin) {
+        document.getElementById('nav-permission-admin').style.display = 'flex';
+        document.getElementById('nav-user-management').style.display = 'flex';
+        permissionGroup.style.display = 'block';
+      }
+
+      // 培训记录分组：包含培训记录录入、年度培训计划与用户培训记录（共用 training_records 权限）
+      const trainingGroup = document.getElementById('nav-training-group');
+      if (perms.training_records) {
+        document.getElementById('nav-training-records').style.display = 'flex';
+        document.getElementById('nav-annual-training-plan').style.display = 'flex';
+        document.getElementById('nav-user-training-record').style.display = 'flex';
+        trainingGroup.style.display = 'block';
+      }
+
+      // OCR 纸质表单分组
+      const ocrGroup = document.getElementById('nav-ocr-group');
+      if (perms.ocr_recognize) {
+        document.getElementById('nav-ocr-recognize').style.display = 'flex';
+        document.getElementById('nav-ocr-template-design').style.display = 'flex';
+        ocrGroup.style.display = 'block';
+      }
+
+      // 权限渲染完成后，统一初始化所有一级菜单为折叠状态
+      initSidebarGroups();
+    }
+  } catch (e) {
+    console.error('导航权限加载失败:', e);
+  }
+})();
+</script>
+</body>
+</html>

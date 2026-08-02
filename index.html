@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "SimSun", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1200px; margin: 0 auto; }
+.section { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+h2 { font-size: 18px; margin-bottom: 16px; color: #2c3e50; }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+button { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+input[type="checkbox"] { cursor: pointer; width: 16px; height: 16px; }
+.search-box { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; padding: 16px; background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+.search-box input[type="text"] { flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; outline: none; }
+.search-box .search-status { font-size: 13px; color: #718096; margin-left: auto; }
+.print-settings { display: none; }
+.print-settings.active { display: block; }
+.page-config { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf2f7; }
+.page-config label { flex: 1; font-size: 14px; }
+.page-config input[type="number"] { width: 70px; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div></div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span id="current-user" style="font-size:13px; color:#4a5568;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'" style="padding:6px 14px; font-size:13px;">关闭</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>1. 产品信息查询</h2>
+    <div class="search-box">
+      <input type="text" id="order-input" placeholder="请输入单据编号" onkeydown="if(event.key==='Enter')searchByOrderId()">
+      <button class="btn-primary" onclick="searchByOrderId()">查询</button>
+      <span class="search-status" id="search-status"></span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>2. 选择要打印的数据</h2>
+    <div class="toolbar">
+      <button class="btn-primary" onclick="selectAll(true)">全选</button>
+      <button class="btn-secondary" onclick="selectAll(false)">取消全选</button>
+      <button class="btn-success" onclick="confirmSelection()">选择</button>
+      <span id="selected-count" style="margin-left:auto; color:#718096; font-size:14px;">已选 0 条</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="check-all" onclick="toggleSelectAll()"></th>
+            <th>名称</th><th>规格</th><th>型号</th><th>配方</th><th>批次</th><th>备注</th>
+          </tr>
+        </thead>
+        <tbody id="data-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section print-settings" id="settings-panel">
+    <h2>3. 打印设置（选择模板与份数）</h2>
+    <p style="font-size:13px; color:#718096; margin-bottom:12px;">请选择需要打印的模板类型，并在后方输入框填写具体打印张数。</p>
+    <div id="page-config-list">
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="cover"> <strong>模板 A：封皮</strong> — SOR-SC-001</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="cover" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="batchrecord"> <strong>模板 B：配料工序生产记录</strong> — SOR-SC-003</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="batchrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="mixingrecord"> <strong>模板 C：密炼工序生产记录</strong> — SOR-SC-004（横向A4）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="mixingrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="calenderingrecord"> <strong>模板 D：压延工序生产记录</strong> — SOR-SC-005</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="calenderingrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="vulcanizingrecord"> <strong>模板 E：硫化工序生产记录</strong> — SOR-SC-006</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="vulcanizingrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="trimmingrecord"> <strong>模板 F：除边工序生产记录</strong> — SOR-SC-007</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="trimmingrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="cleaningrecord"> <strong>模板 G：清洗工序生产记录</strong> — SOR-SC-008</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="cleaningrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="materialbalance"> <strong>模板 H：橡胶车间物料平衡单</strong> — SOR-SC-013（双页）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="materialbalance" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="labelrecord"> <strong>模板 I：标签打印使用、销毁记录</strong> — SOR-SC-050（横向A4）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="labelrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="outsourcingrecord"> <strong>模板 J：外包工序生产记录</strong> — SOR-SC-053（横向A4）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="outsourcingrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="innerpackingrecord"> <strong>模板 K：内包工序生产记录</strong> — SOR-SC-068</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="innerpackingrecord" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="batchingcleanup"> <strong>模板 L：配料工序清场记录</strong> — SOR-SC-079（双页）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="batchingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="mixingcleanup"> <strong>模板 M：密炼工序清场记录</strong> — SOR-SC-080</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="mixingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="calenderingcleanup"> <strong>模板 N：压延出片工序清场记录</strong> — SOR-SC-081</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="calenderingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="vulcanizingcleanup"> <strong>模板 O：硫化工序清场记录</strong> — SOR-SC-082（双页）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="vulcanizingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="trimmingcleanup"> <strong>模板 P：除边工序清场记录</strong> — SOR-SC-083（双页）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="trimmingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="washingcleanup"> <strong>模板 Q：清洗工序清场记录</strong> — SOR-SC-084（双页）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="washingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="innerpackagingcleanup"> <strong>模板 R：内包工序清场记录</strong> — SOR-SC-085（双页）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="innerpackagingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="outerpackagingcleanup"> <strong>模板 S：外包工序清场记录</strong> — SOR-SC-086</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="outerpackagingcleanup" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="mixingproduction1"> <strong>模板 T：开炼工序生产记录（1#）</strong> — SOR-SC-087（A4横版）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="mixingproduction1" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="mixingproduction2"> <strong>模板 U：开炼工序生产记录（2#）</strong> — SOR-SC-088（A4横版）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="mixingproduction2" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="testsamplevulcanizing"> <strong>模板 V：试样硫化生产记录</strong> — SOR-SC-089</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="testsamplevulcanizing" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="mixingcleanup1"> <strong>模板 W：开炼工序清场记录（1#）</strong> — SOR-SC-091</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="mixingcleanup1" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="mixingcleanup2"> <strong>模板 X：开炼工序清场记录（2#）</strong> — SOR-SC-092</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="mixingcleanup2" value="0" min="0" max="99">
+      </div>
+      <div class="page-config">
+        <label><input type="checkbox" class="tpl-check" data-tpl="washingprecleanup"> <strong>模板 Y：清洗工序预清洗清场记录</strong> — SOR-SC-093（双页）</label>
+        <span style="color:#718096; font-size:13px;">打印张数：</span>
+        <input type="number" class="tpl-copies" data-tpl="washingprecleanup" value="0" min="0" max="99">
+      </div>
+    </div>
+    <div class="toolbar" style="margin-top:16px;">
+      <button class="btn-success" onclick="doPrint()">打印 / 导出 PDF</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ========== API 配置 ==========
+// 后端 API 接口（同域部署时直接写相对路径）
+const API_BASE_URL = '';
+const SEARCH_API_URL = '/api/search';
+const PDF_API_URL = '/api/print';
+
+let sourceData = [];
+let lastQueryData = ''; // 保存最后一次查询的单据编号，打印时传给后端重新查
+
+// 页面加载时获取当前登录用户名
+(async function initUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    } else if (res.status === 401) {
+      window.location.href = '/login';
+    }
+  } catch (e) {
+    console.error('获取用户信息失败:', e);
+  }
+})();
+
+async function searchByOrderId() {
+  const input = document.getElementById('order-input');
+  const status = document.getElementById('search-status');
+  const querydata = input.value.trim();
+  if (!querydata) { status.textContent = '请输入查询内容'; status.style.color = '#c53030'; return; }
+
+  status.textContent = '查询中...';
+  status.style.color = '#2b6cb0';
+
+  try {
+    const res = await fetch(SEARCH_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ querydata })
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        alert('登录已过期，请重新登录');
+        window.location.href = '/login';
+        return;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || '查询失败：' + res.status);
+    }
+    const data = await res.json();
+
+    if (data.success && Array.isArray(data.data)) {
+      sourceData = data.data;
+      status.textContent = sourceData.length ? `找到 ${sourceData.length} 条结果` : '未找到匹配记录';
+      status.style.color = sourceData.length ? '#38a169' : '#c53030';
+      lastQueryData = querydata; // 记录查询条件，供打印时后端重新查询
+    } else {
+      status.textContent = '查询失败：返回数据异常';
+      status.style.color = '#c53030';
+      sourceData = [];
+      lastQueryData = '';
+    }
+    renderTable();
+    document.getElementById('settings-panel').classList.remove('active');
+  } catch (err) {
+    console.error(err);
+    status.textContent = '网络请求失败：' + err.message;
+    status.style.color = '#c53030';
+    sourceData = [];
+    lastQueryData = '';
+    renderTable();
+  }
+}
+
+function renderTable() {
+  const tbody = document.getElementById('data-table');
+  if (!sourceData.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#a0aec0; padding:40px 0;">暂无数据</td></tr>';
+    document.getElementById('check-all').checked = false;
+    updateCount();
+    return;
+  }
+  tbody.innerHTML = sourceData.map((row, idx) => `
+    <tr>
+      <td><input type="checkbox" class="row-check" data-pici="${row.pici || ''}"></td>
+      <td>${row.mingcheng || ''}</td>
+      <td>${row.guige || ''}</td>
+      <td>${row.xinghao || ''}</td>
+      <td>${row.peifang || ''}</td>
+      <td>${row.pici || ''}</td>
+      <td>${row.beizhu || ''}</td>
+    </tr>
+  `).join('');
+  document.querySelectorAll('.row-check').forEach(cb => cb.addEventListener('change', updateCount));
+  updateCount();
+}
+
+function toggleSelectAll() { document.querySelectorAll('.row-check').forEach(cb => cb.checked = document.getElementById('check-all').checked); updateCount(); }
+function selectAll(val) { document.getElementById('check-all').checked = val; document.querySelectorAll('.row-check').forEach(cb => cb.checked = val); updateCount(); }
+function updateCount() { document.getElementById('selected-count').textContent = `已选 ${document.querySelectorAll('.row-check:checked').length} 条`; }
+
+function confirmSelection() {
+  if (!document.querySelectorAll('.row-check:checked').length) { alert('请至少勾选一条数据'); return; }
+  document.getElementById('settings-panel').classList.add('active');
+  window.scrollTo({ top: document.getElementById('settings-panel').offsetTop - 20, behavior: 'smooth' });
+}
+
+// ========== 后端 PDF 打印（防篡改：只传查询条件和选中批次号，后端重新查真实数据） ==========
+async function doPrint() {
+  if (!lastQueryData) { alert('请先查询数据后再打印'); return; }
+
+  const checkedBoxes = document.querySelectorAll('.row-check:checked');
+  const selectedPici = Array.from(checkedBoxes).map(cb => cb.dataset.pici).filter(Boolean);
+
+  const checkedTpls = Array.from(document.querySelectorAll('.tpl-check:checked')).map(cb => cb.dataset.tpl);
+  const copiesMap = {};
+  document.querySelectorAll('.tpl-copies').forEach(inp => { copiesMap[inp.dataset.tpl] = parseInt(inp.value) || 0; });
+
+  if (checkedTpls.length === 0) { alert('请至少勾选一种模板'); return; }
+  if (selectedPici.length === 0) { alert('请至少勾选一条数据'); return; }
+
+  const tasks = checkedTpls.map(tpl => ({ template: tpl, copies: copiesMap[tpl] || 1 }));
+  const btn = document.querySelector('.btn-success[onclick="doPrint()"]');
+  const originalText = btn ? btn.textContent : '打印 / 导出 PDF';
+  if (btn) { btn.disabled = true; btn.textContent = '正在生成 PDF...'; }
+
+  try {
+    const res = await fetch(PDF_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ querydata: lastQueryData, selectedPici, tasks })
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        alert('登录已过期，请重新登录');
+        window.location.href = '/login';
+        return;
+      }
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'PDF 生成失败');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (err) {
+    console.error(err);
+    alert('打印失败：' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+  }
+}
+
+async function logout() {
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+  } catch (e) {}
+  window.location.href = '/login';
+}
+</script>
+</body>
+</html>

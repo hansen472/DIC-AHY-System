@@ -1,0 +1,375 @@
+/* ===== 打印系统样式 ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "SimSun", sans-serif;
+  background: #f5f7fa;
+  padding: 20px;
+  color: #000;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+
+/* ===== 数据选择区 ===== */
+.section { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+h2 { font-size: 18px; margin-bottom: 16px; color: #2c3e50; }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+button {
+  padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer;
+  font-size: 14px; transition: opacity 0.2s;
+}
+button:hover { opacity: 0.85; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+input[type="checkbox"] { cursor: pointer; width: 16px; height: 16px; }
+
+/* ===== 搜索区 ===== */
+.search-box {
+  display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+  padding: 16px; background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0;
+}
+.search-box input[type="text"] {
+  flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid #cbd5e0;
+  border-radius: 6px; font-size: 14px; outline: none; transition: border-color 0.2s;
+}
+.search-box input[type="text"]:focus { border-color: #2b6cb0; }
+.search-box .search-status {
+  font-size: 13px; color: #718096; margin-left: auto;
+}
+
+/* ===== 打印设置区 ===== */
+.print-settings { display: none; }
+.print-settings.active { display: block; }
+.page-config { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf2f7; }
+.page-config label { flex: 1; font-size: 14px; }
+.page-config input[type="number"] {
+  width: 70px; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px;
+}
+.page-config input[type="checkbox"] { margin-right: 8px; }
+
+/* ===== 打印页样式 ===== */
+.page-sheet {
+  width: 210mm; min-height: 297mm;
+  margin: 0 auto 20px; padding: 14mm 6mm 14mm 6mm;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  position: relative;
+  page-break-after: always;
+  overflow: hidden;
+}
+.page-sheet:last-child { page-break-after: auto; }
+.page-header {
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 2px solid #2b6cb0; padding-bottom: 10px; margin-bottom: 20px;
+}
+.page-header h1 { font-size: 22px; color: #2b6cb0; }
+.page-header .meta { font-size: 12px; color: #718096; text-align: right; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-bottom: 20px; }
+.info-row { display: flex; font-size: 14px; }
+.info-row .label { width: 100px; color: #718096; flex-shrink: 0; }
+.info-row .value { color: #2d3748; font-weight: 500; }
+.barcode-placeholder {
+  width: 200px; height: 60px; background: repeating-linear-gradient(90deg, #333 0, #333 2px, #fff 2px, #fff 4px);
+  margin: 20px 0; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: #666;
+}
+.page-footer {
+  position: absolute; bottom: 15mm; left: 20mm; right: 20mm;
+  border-top: 1px solid #e2e8f0; padding-top: 8px;
+  font-size: 11px; color: #a0aec0; display: flex; justify-content: space-between;
+}
+
+/* ===== 打印专用样式 ===== */
+@media print {
+  body { background: #fff; padding: 0; }
+  .no-print, .container { display: none !important; }
+  #print-container {
+    display: block !important;
+    position: absolute; top: 0; left: 0; width: 100%;
+  }
+  .page-sheet {
+    box-shadow: none; margin: 0; padding: 14mm 6mm 14mm 6mm;
+    width: 100%; min-height: auto;
+    page-break-after: always;
+    background: #fff;
+  }
+  .page-sheet:last-child { page-break-after: auto; }
+}
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px;
+}
+.badge-blue { background: #bee3f8; color: #2b6cb0; }
+.badge-green { background: #c6f6d5; color: #276749; }
+.badge-orange { background: #feebc8; color: #c05621; }
+
+/* ============================================================
+   打印模板专用样式（宋体 14px #000）
+   所有生产记录表格统一引用以下 class，禁止在模板中写死样式
+   ============================================================ */
+
+/* ---- 基础字体 ---- */
+.print-font {
+  font-family: 'SimSun', '宋体', serif;
+  font-size: 11pt;
+  color: #000;
+}
+
+/* ---- 顶部信息栏表格（记录编号 / 版号 / 生效日期 / 页码） ---- */
+.print-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+  font-family: 'SimSun', '宋体', serif;
+  font-size: 10.5pt;
+  color: #000;
+  margin-bottom: 15px;
+}
+
+.print-meta-table td {
+  border: 1px solid #000;
+  padding: 4px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.print-meta-table .logo-cell {
+  width: 11%;
+  height: 45px;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.print-meta-table .logo-cell img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.print-meta-table .arial-val {
+  font-family: Arial, sans-serif;
+}
+
+/* ---- 页面大标题 ---- */
+.print-page-title {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.print-page-title h1 {
+  font-size: 18px;
+  color: #000;
+  letter-spacing: 2px;
+  font-family: 'SimSun', '宋体', serif;
+  font-weight: bold;
+   /* 1. 先清除浏览器默认的边距 */
+  margin: 0; 
+  
+  /* 2. 然后单独设置你想要的上下边距 */
+  margin-top: 4px;    /* 控制标题上方的间距 */
+  margin-bottom: 4px; /* 控制标题下方的间距 */
+}
+
+/* ---- 主数据表格 ---- */
+.print-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'SimSun', '宋体', serif;
+  font-size: 14px;
+  color: #000;
+}
+
+.print-table td,
+.print-table th {
+  border: 1px solid #000;
+  padding: 6px 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.print-table td.left   { text-align: left; }
+.print-table td.right  { text-align: right; }
+.print-table td.no-pad { padding: 0; }
+.print-table td.no-border { border: none; }
+
+/* ---- 嵌套子表格（生产过程操作等） ---- */
+.print-subtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'SimSun', '宋体', serif;
+  font-size: 14px;
+  color: #000;
+}
+
+.print-subtable td {
+  border: 1px solid #000;
+  padding: 6px 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.print-subtable .section-header {
+  font-size: 14px;
+  color: #000;
+  letter-spacing: 2px;
+  font-family: 'SimSun', '宋体', serif;
+  font-weight: bold;
+  text-align: center;
+  border: 1px solid #000;
+  border-top: none;
+  padding: 7px 0;
+}
+
+.print-subtable .section-header-top {
+  font-size: 14px;
+  color: #000;
+  letter-spacing: 2px;
+  font-family: 'SimSun', '宋体', serif;
+  font-weight: bold;
+  text-align: center;
+  border: 1px solid #000;
+  padding: 7px 0;
+}
+
+/* ---- 行高控制 ---- */
+.print-row-h td {
+  height: 22px;
+  padding: 0;
+}
+
+.print-row-h-lg td {
+  height: 45px;
+}
+
+/* ---- 字间距 ---- */
+.print-letter-6  { letter-spacing: 6px; }
+.print-letter-7  { letter-spacing: 7px; }
+.print-letter-10 { letter-spacing: 10px; }
+
+/* ---- 封皮专用 ---- */
+.print-cover-header {
+  width: 100%;
+  margin-bottom: 40px;
+  font-family: 'SimSun', '宋体', serif;
+}
+
+.print-cover-title-box {
+  text-align: center;
+  margin-top: 120px;
+  margin-bottom: 80px;
+}
+
+.print-cover-title-box h1 {
+  font-size: 32px;
+  color: #000;
+  letter-spacing: 6px;
+  font-weight: bold;
+}
+
+.print-cover-info {
+  width: 70%;
+  margin: 0 auto;
+  font-size: 15px;
+  line-height: 2.8;
+  color: #000;
+}
+
+.print-cover-info .info-line {
+  display: flex;
+  align-items: baseline;
+}
+
+.print-cover-info .info-label {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.print-cover-info .info-value {
+  border-bottom: 1px solid #000;
+  flex: 1;
+  display: inline-block;
+  min-width: 200px;
+  padding-left: 8px;
+}
+
+.print-cover-info .date-box {
+  border-bottom: 1px solid #000;
+  display: inline-block;
+  text-align: center;
+}
+
+/* ---- QC 标签 ---- */
+.qc-label-box {
+  border: 2px solid #38a169;
+  border-radius: 8px;
+  padding: 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.qc-label-header {
+  text-align: center;
+  border-bottom: 1px dashed #38a169;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.qc-label-header .title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #38a169;
+}
+
+.qc-label-header .subtitle {
+  font-size: 11px;
+  color: #718096;
+  margin-top: 4px;
+}
+
+.qc-label-body {
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.qc-label-footer {
+  font-size: 11px;
+  color: #718096;
+  text-align: center;
+  border-top: 1px dashed #38a169;
+  padding-top: 6px;
+}
+
+/* ---- 横向打印页 ---- */
+.page-sheet-landscape {
+  width: 297mm;
+  min-height: 210mm;
+  margin: 0 auto 20px;
+  padding: 10mm 8mm;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  position: relative;
+  page-break-after: always;
+  overflow: hidden;
+}
+
+.page-sheet-landscape:last-child { page-break-after: auto; }
+
+@media print {
+  .page-sheet-landscape {
+    box-shadow: none;
+    margin: 0;
+    padding: 10mm 8mm;
+    width: 100%;
+    min-height: auto;
+    page-break-after: always;
+  }
+  .page-sheet-landscape:last-child { page-break-after: auto; }
+}

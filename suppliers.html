@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>供应商 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-danger { background: #e53e3e; color: #fff; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; min-width: 1200px; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+tr.selected td { background: #ebf4ff !important; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.action-col { width: 120px; text-align: center; white-space: nowrap; }
+.action-col button { padding: 4px 10px; font-size: 12px; margin: 0 2px; }
+.checkbox-col { width: 40px; text-align: center; }
+.status-normal, .status-active { color: #38a169; font-weight: 500; }
+.status-stop, .status-inactive { color: #e53e3e; font-weight: 500; }
+
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 12px; width: 90%; max-width: 700px; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #edf2f7; }
+.modal-header h3 { font-size: 16px; color: #2c3e50; }
+.modal-body { padding: 20px; overflow-y: auto; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid #edf2f7; background: #fafbfc; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-group { margin-bottom: 16px; }
+.form-group.full-width { grid-column: 1 / -1; }
+.form-group label { display: block; font-size: 13px; color: #4a5568; margin-bottom: 6px; font-weight: 500; }
+.form-group label .required { color: #e53e3e; margin-left: 2px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 14px; transition: all 0.2s; font-family: inherit;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  outline: none; border-color: #2b6cb0; box-shadow: 0 0 0 3px rgba(43,108,176,0.1);
+}
+.form-group textarea { resize: vertical; min-height: 70px; }
+
+.readonly-notice { padding: 10px 14px; background: #ebf8ff; border-radius: 6px; color: #2b6cb0; font-size: 13px; margin-bottom: 16px; display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>供应商</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+  <div id="readonly-notice" class="readonly-notice">当前账号仅有查看权限，无法新增、修改或删除供应商。</div>
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h2 style="margin:0;">供应商列表</h2>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-secondary" onclick="downloadCsvTemplate()">下载CSV模板</button>
+        <button class="btn-success edit-only" onclick="triggerCsvUpload()">上传CSV</button>
+        <input type="file" id="csv-upload-input" accept=".csv" style="display:none;" onchange="handleCsvUpload(this)">
+        <button class="btn-success edit-only" onclick="openAddModal()">新增供应商</button>
+      </div>
+    </div>
+    <div class="table-wrap" id="supplier-list">加载中...</div>
+  </div>
+</div>
+
+<div id="supplier-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">新增供应商</h3>
+      <button class="btn-secondary" onclick="closeModal()">关闭</button>
+    </div>
+    <div class="modal-body">
+      <form id="supplier-form" onsubmit="return false;">
+        <input type="hidden" id="edit-id">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>供方名称 <span class="required">*</span></label>
+            <input type="text" id="edit-supplier-name" placeholder="请输入供方名称" maxlength="200">
+          </div>
+          <div class="form-group">
+            <label>供应商类型</label>
+            <input type="text" id="edit-supplier-type" placeholder="如生产型/经销型/服务型/特殊物资类" maxlength="50">
+          </div>
+          <div class="form-group">
+            <label>物资分类</label>
+            <input type="text" id="edit-material-category" placeholder="请输入物资分类" maxlength="100">
+          </div>
+          <div class="form-group">
+            <label>联系人</label>
+            <input type="text" id="edit-contact-person" placeholder="请输入联系人" maxlength="100">
+          </div>
+          <div class="form-group">
+            <label>电话</label>
+            <input type="text" id="edit-contact-phone" placeholder="请输入电话" maxlength="50">
+          </div>
+          <div class="form-group">
+            <label>状态</label>
+            <select id="edit-status">
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>备注1</label>
+            <textarea id="edit-remarks1" placeholder="请输入备注1" maxlength="1000"></textarea>
+          </div>
+          <div class="form-group full-width">
+            <label>备注2</label>
+            <textarea id="edit-remarks2" placeholder="请输入备注2" maxlength="1000"></textarea>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal()">取消</button>
+      <button class="btn-success" id="btn-save" onclick="saveSupplier()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let supplierData = [];
+let selectedId = null;
+let canEdit = false;
+
+async function init() {
+  await loadUser();
+  await loadPermissions();
+  await loadSuppliers();
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadPermissions() {
+  try {
+    const res = await fetch('/api/my-permissions');
+    if (res.ok) {
+      const data = await res.json();
+      const perms = data.success ? data.permissions : {};
+      canEdit = perms.supplier_qualifications_edit === true;
+
+      document.querySelectorAll('.edit-only').forEach(btn => {
+        btn.style.display = canEdit ? 'inline-block' : 'none';
+      });
+
+      if (!canEdit) {
+        document.getElementById('readonly-notice').style.display = 'block';
+      }
+    }
+  } catch (e) {
+    console.error('加载权限失败:', e);
+  }
+}
+
+async function loadSuppliers() {
+  try {
+    const res = await fetch('/api/suppliers');
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    supplierData = result.data || [];
+    renderList();
+  } catch (err) {
+    document.getElementById('supplier-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderList() {
+  if (supplierData.length === 0) {
+    document.getElementById('supplier-list').innerHTML = '<div class="empty">暂无供应商数据</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th class="checkbox-col"><input type="checkbox" id="select-all" onclick="toggleSelectAll()"></th>
+        <th>供方名称</th>
+        <th>供应商类型</th>
+        <th>物资分类</th>
+        <th>联系人</th>
+        <th>电话</th>
+        <th>状态</th>
+        <th>备注1</th>
+        <th>备注2</th>
+        <th class="action-col">操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  supplierData.forEach(item => {
+    const isSelected = selectedId === item.id;
+    const isActive = item.status === 'active' || item.status === '正常';
+    const statusClass = isActive ? 'status-active' : 'status-inactive';
+    const statusText = isActive ? 'active' : 'inactive';
+    html += `
+      <tr class="supplier-row ${isSelected ? 'selected' : ''}" data-id="${item.id}" onclick="selectRow(${item.id})">
+        <td class="checkbox-col" onclick="event.stopPropagation(); selectRow(${item.id})">
+          <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); selectRow(${item.id})">
+        </td>
+        <td>${escapeHtml(item.supplier_name)}</td>
+        <td>${escapeHtml(item.supplier_type)}</td>
+        <td>${escapeHtml(item.material_category)}</td>
+        <td>${escapeHtml(item.contact_person)}</td>
+        <td>${escapeHtml(item.contact_phone)}</td>
+        <td><span class="${statusClass}">${statusText}</span></td>
+        <td>${escapeHtml(item.remarks1)}</td>
+        <td>${escapeHtml(item.remarks2)}</td>
+        <td class="action-col">
+          ${isSelected && canEdit ? `
+            <button class="btn-primary" onclick="event.stopPropagation(); openEditModal(${item.id})" style="padding:4px 10px; font-size:12px;">修改</button>
+            <button class="btn-success" onclick="event.stopPropagation(); toggleSupplierStatus(${item.id}, 'active')" style="padding:4px 10px; font-size:12px;" ${isActive ? 'disabled' : ''}>active</button>
+            <button class="btn-danger" onclick="event.stopPropagation(); toggleSupplierStatus(${item.id}, 'inactive')" style="padding:4px 10px; font-size:12px;" ${!isActive ? 'disabled' : ''}>inactive</button>
+          ` : ''}
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('supplier-list').innerHTML = html;
+}
+
+function toggleSelectAll() {
+  const cb = document.getElementById('select-all');
+  if (cb.checked) {
+    if (supplierData.length > 0) {
+      selectedId = supplierData[0].id;
+    }
+  } else {
+    selectedId = null;
+  }
+  renderList();
+}
+
+function selectRow(id) {
+  selectedId = selectedId === id ? null : id;
+  renderList();
+}
+
+function openAddModal() {
+  if (!canEdit) return;
+  document.getElementById('modal-title').textContent = '新增供应商';
+  document.getElementById('supplier-form').reset();
+  document.getElementById('edit-id').value = '';
+  document.getElementById('edit-status').value = 'active';
+  document.getElementById('supplier-modal').classList.add('active');
+}
+
+function openEditModal(id) {
+  if (!canEdit) return;
+  const item = supplierData.find(s => s.id === id);
+  if (!item) return;
+
+  document.getElementById('modal-title').textContent = '修改供应商';
+  document.getElementById('edit-id').value = item.id;
+  document.getElementById('edit-supplier-name').value = item.supplier_name || '';
+  document.getElementById('edit-supplier-type').value = item.supplier_type || '';
+  document.getElementById('edit-material-category').value = item.material_category || '';
+  document.getElementById('edit-contact-person').value = item.contact_person || '';
+  document.getElementById('edit-contact-phone').value = item.contact_phone || '';
+  document.getElementById('edit-status').value = (item.status === 'active' || item.status === '正常') ? 'active' : 'inactive';
+  document.getElementById('edit-remarks1').value = item.remarks1 || '';
+  document.getElementById('edit-remarks2').value = item.remarks2 || '';
+
+  document.getElementById('supplier-modal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('supplier-modal').classList.remove('active');
+}
+
+function getFormValue(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+
+async function saveSupplier() {
+  const id = document.getElementById('edit-id').value;
+  const supplierName = getFormValue('edit-supplier-name');
+
+  if (!supplierName) {
+    showMessage('供方名称不能为空', 'error');
+    return;
+  }
+
+  const payload = {
+    supplier_name: supplierName,
+    supplier_type: getFormValue('edit-supplier-type') || null,
+    material_category: getFormValue('edit-material-category') || null,
+    contact_person: getFormValue('edit-contact-person') || null,
+    contact_phone: getFormValue('edit-contact-phone') || null,
+    status: getFormValue('edit-status') || '正常',
+    remarks1: getFormValue('edit-remarks1') || null,
+    remarks2: getFormValue('edit-remarks2') || null
+  };
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+
+  try {
+    const url = id ? '/api/suppliers/' + id : '/api/suppliers';
+    const method = id ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '保存失败');
+
+    showMessage(result.message, 'success');
+    closeModal();
+    selectedId = null;
+    await loadSuppliers();
+  } catch (err) {
+    showMessage(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function toggleSupplierStatus(id, status) {
+  if (!canEdit) return;
+  const item = supplierData.find(s => s.id === id);
+  if (!item) return;
+
+  try {
+    const res = await fetch('/api/suppliers/' + id + '/status', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '切换状态失败');
+
+    showMessage(result.message, 'success');
+    selectedId = null;
+    await loadSuppliers();
+  } catch (err) {
+    showMessage('切换状态失败：' + err.message, 'error');
+  }
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function downloadCsvTemplate() {
+  const link = document.createElement('a');
+  link.href = '/api/suppliers/template';
+  link.download = 'suppliers-template.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function triggerCsvUpload() {
+  if (!canEdit) return;
+  document.getElementById('csv-upload-input').click();
+}
+
+async function handleCsvUpload(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file || !canEdit) return;
+
+  let text;
+  try {
+    text = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = e => reject(new Error('读取文件失败'));
+      reader.readAsText(file);
+    });
+  } catch (err) {
+    showMessage('读取 CSV 失败：' + err.message, 'error');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/suppliers/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv: text })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '上传失败');
+
+    showMessage(result.message, 'success');
+    selectedId = null;
+    await loadSuppliers();
+  } catch (err) {
+    showMessage('上传失败：' + err.message, 'error');
+  }
+}
+
+init();
+</script>
+</body>
+</html>

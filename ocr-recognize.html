@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>纸质表单识别 - 数智中心</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='15' fill='%23ff4d00'/%3E%3Ctext x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='Arial'%3EO%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/fonts/jetbrains-mono.css">
+<style>
+
+:root {
+  --bg: #0f1115;
+  --surface: #181b21;
+  --surface-2: #1f232a;
+  --border: #2a2e36;
+  --text: #e4e6eb;
+  --text-secondary: #9ca3af;
+  --accent: #ff4d00;
+  --accent-hover: #ff6a22;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+header h1::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 18px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+#current-user {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #fff;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.container {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .container { grid-template-columns: 1fr; }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.card h2 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--surface-2);
+}
+
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(255, 77, 0, 0.06);
+}
+
+.drop-zone input { display: none; }
+
+.preview-wrap {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  display: none;
+  position: relative;
+}
+
+.preview-wrap img {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  display: block;
+}
+
+.preview-wrap.picking {
+  cursor: crosshair;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.25);
+}
+
+.preview-marker {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px rgba(255, 77, 0, 0.35);
+  z-index: 2;
+}
+
+.preview-marker-label {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0,0,0,0.75);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transform: translate(-50%, -160%);
+  white-space: nowrap;
+  z-index: 3;
+}
+
+.pick-status {
+  font-size: 12px;
+  color: var(--accent);
+  margin-top: 8px;
+  min-height: 18px;
+}
+
+.pick-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.controls {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.control-row label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.control-row input[type="number"] {
+  width: 110px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+
+.control-row input[type="checkbox"] {
+  width: 16px; height: 16px; accent-color: var(--accent);
+}
+
+.control-row textarea {
+  flex: 1;
+  min-width: 220px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.corners-preview {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  position: relative;
+  display: none;
+  min-height: 120px;
+}
+
+.corners-preview img {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  display: block;
+}
+
+.corner-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.4);
+}
+
+.corner-label {
+  position: absolute;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(0,0,0,0.7);
+  padding: 1px 4px;
+  border-radius: 3px;
+  transform: translate(-50%, -150%);
+  white-space: nowrap;
+}
+
+.message {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 13px;
+  display: none;
+  border-left: 4px solid transparent;
+}
+
+.message.show { display: block; }
+.message.success { background: rgba(16, 185, 129, 0.12); border-color: var(--success); color: #6ee7b7; }
+.message.error { background: rgba(239, 68, 68, 0.12); border-color: var(--danger); color: #fca5a5; }
+.message.info { background: rgba(59, 130, 246, 0.12); border-color: #3b82f6; color: #93c5fd; }
+
+.empty-state {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 60px 20px;
+  font-size: 14px;
+}
+
+.result-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.result-banner.pass {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+}
+
+.result-banner.fail {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+.result-meta {
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+tr:hover td { background: rgba(255,255,255,0.02); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge.pass { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
+.badge.fail { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+
+.conf {
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-weight: 500;
+}
+.conf.high { color: var(--success); }
+.conf.mid { color: var(--warning); }
+.conf.low { color: var(--danger); }
+
+.text-mono {
+  font-family: "JetBrains Mono", Consolas, monospace;
+  word-break: break-word;
+}
+
+.warn-list {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.30);
+  border-radius: var(--radius);
+  color: #fcd34d;
+  font-size: 13px;
+}
+
+.warn-list strong { color: #fbbf24; }
+
+.cell-thumb {
+  width: 120px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #000;
+  display: block;
+}
+
+.cell-thumb-placeholder {
+  width: 120px;
+  height: 48px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loader {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 16px;
+}
+
+.loader.active { display: flex; }
+
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>纸质表单识别</h1>
+  <div class="header-actions">
+    <span id="current-user"></span>
+    <button class="btn" onclick="location.href='/'">返回导航</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="card">
+    <h2>上传图片</h2>
+    <div class="message" id="msg"></div>
+
+    <label class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept="image/jpeg,image/png,image/jpg">
+      <div>点击或拖拽上传表单图片</div>
+      <div class="hint">支持 JPG / PNG，建议拍摄光线均匀、表格完整的照片</div>
+    </label>
+
+    <div class="preview-wrap" id="preview-wrap">
+      <img id="preview" alt="preview">
+    </div>
+
+    <div class="controls">
+      <div class="control-row">
+        <label for="expected-aspect">长宽比</label>
+        <input type="number" id="expected-aspect" step="0.01" placeholder="自动">
+      </div>
+      <div class="control-row" style="align-items: flex-start;">
+        <label for="corners" style="padding-top: 8px;">四角坐标</label>
+        <div style="flex: 1; min-width: 220px;">
+          <textarea id="corners" placeholder="留空=自动检测；或输入8个数字 x1,y1,x2,y2,x3,y3,x4,y4"></textarea>
+          <div class="hint">顺序：左上、右上、右下、左下；坐标为原图像素值。建议点选<strong>表格外框</strong>的四个角（不是整张纸的边角），否则字段坐标会错位。</div>
+          <div class="pick-actions">
+            <button class="btn" id="pick-corners-btn" type="button">点击取点</button>
+            <button class="btn" id="clear-corners-btn" type="button">清空</button>
+          </div>
+          <div class="pick-status" id="pick-status"></div>
+        </div>
+      </div>
+      <div class="corners-preview" id="corners-preview">
+        <img id="corners-preview-img" alt="corners preview">
+      </div>
+      <div class="control-row">
+        <label for="debug">调试模式</label>
+        <input type="checkbox" id="debug">
+      </div>
+      <button class="btn btn-primary" id="submit-btn" disabled>开始识别</button>
+      <div class="loader" id="loader"><div class="spinner"></div>正在识别，请稍候…</div>
+    </div>
+  </div>
+
+  <div class="card" id="result-card">
+    <h2>识别结果</h2>
+    <div class="empty-state">上传图片后点击“开始识别”查看结果</div>
+  </div>
+</div>
+
+<script>
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const previewWrap = document.getElementById('preview-wrap');
+const preview = document.getElementById('preview');
+const submitBtn = document.getElementById('submit-btn');
+const resultCard = document.getElementById('result-card');
+const msgEl = document.getElementById('msg');
+const loader = document.getElementById('loader');
+const expectedAspectInput = document.getElementById('expected-aspect');
+const debugInput = document.getElementById('debug');
+const cornersInput = document.getElementById('corners');
+const cornersPreview = document.getElementById('corners-preview');
+const cornersPreviewImg = document.getElementById('corners-preview-img');
+const pickCornersBtn = document.getElementById('pick-corners-btn');
+const clearCornersBtn = document.getElementById('clear-corners-btn');
+const pickStatus = document.getElementById('pick-status');
+
+let currentFile = null;
+let currentPreviewUrl = null;
+let isPicking = false;
+let pickedCorners = []; // 顺序：左上、右上、右下、左下，元素为 [x, y]
+
+function showMsg(text, type = 'info') {
+  msgEl.textContent = text;
+  msgEl.className = 'message show ' + type;
+}
+function hideMsg() { msgEl.className = 'message'; }
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showMsg('请选择 JPG/PNG 图片文件', 'error');
+    return;
+  }
+  currentFile = file;
+  if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+  currentPreviewUrl = URL.createObjectURL(file);
+  preview.src = currentPreviewUrl;
+  previewWrap.style.display = 'block';
+  submitBtn.disabled = false;
+  hideMsg();
+  // 新图片上传后清空旧四角，避免旧坐标套到新图上
+  pickedCorners = [];
+  cornersInput.value = '';
+  renderCornersPreview();
+  renderPreviewMarkers();
+}
+
+function parseCornersInput(value) {
+  if (!value || !value.trim()) return null;
+  value = value.trim();
+  // 尝试 JSON 数组：[[x,y],...] 或 [x,y,x,y,...]
+  if (value.startsWith('[')) {
+    try {
+      const arr = JSON.parse(value);
+      if (Array.isArray(arr)) {
+        const flat = arr.flat();
+        if (flat.length === 8 && flat.every(n => typeof n === 'number' && !isNaN(n))) {
+          return flat;
+        }
+      }
+    } catch (e) {}
+  }
+  // 尝试逗号/空白/中括号分隔
+  const nums = value.split(/[,，\s\[\]]+/).filter(Boolean).map(Number);
+  if (nums.length === 8 && nums.every(n => !isNaN(n))) {
+    return nums;
+  }
+  return null;
+}
+
+function getDisplayedImageMetrics(img, container) {
+  /**
+   * 计算 object-fit: contain 居中显示时，图片在容器内的实际显示区域。
+   * 返回 { scale, offsetX, offsetY }，均为相对于 container 的像素值。
+   */
+  const natW = img.naturalWidth;
+  const natH = img.naturalHeight;
+  const rect = container.getBoundingClientRect();
+  if (!natW || !natH || !rect.width || !rect.height) {
+    return null;
+  }
+  const scale = Math.min(rect.width / natW, rect.height / natH);
+  const displayW = natW * scale;
+  const displayH = natH * scale;
+  const offsetX = (rect.width - displayW) / 2;
+  const offsetY = (rect.height - displayH) / 2;
+  return { scale, offsetX, offsetY, displayW, displayH };
+}
+
+function renderCornersPreview() {
+  const nums = parseCornersInput(cornersInput.value);
+  cornersPreview.innerHTML = '';
+  if (!nums || !currentPreviewUrl) {
+    cornersPreview.style.display = 'none';
+    return;
+  }
+
+  cornersPreview.style.display = 'block';
+  const img = document.createElement('img');
+  img.src = currentPreviewUrl;
+  img.onload = () => {
+    const metrics = getDisplayedImageMetrics(img, cornersPreview);
+    if (!metrics) return;
+    const { scale, offsetX, offsetY } = metrics;
+
+    const labels = ['左上', '右上', '右下', '左下'];
+    for (let i = 0; i < 4; i++) {
+      const x = nums[i * 2];
+      const y = nums[i * 2 + 1];
+      const displayX = x * scale + offsetX;
+      const displayY = y * scale + offsetY;
+      const marker = document.createElement('div');
+      marker.className = 'corner-marker';
+      marker.style.left = displayX + 'px';
+      marker.style.top = displayY + 'px';
+      const label = document.createElement('div');
+      label.className = 'corner-label';
+      label.textContent = labels[i];
+      label.style.left = displayX + 'px';
+      label.style.top = displayY + 'px';
+      cornersPreview.appendChild(marker);
+      cornersPreview.appendChild(label);
+    }
+  };
+  cornersPreview.appendChild(img);
+}
+
+cornersInput.addEventListener('input', () => {
+  // 用户手动编辑时，同步 pickedCorners 状态
+  const nums = parseCornersInput(cornersInput.value);
+  if (nums) {
+    pickedCorners = [];
+    for (let i = 0; i < 4; i++) {
+      pickedCorners.push([nums[i * 2], nums[i * 2 + 1]]);
+    }
+  } else if (!cornersInput.value.trim()) {
+    pickedCorners = [];
+  }
+  renderCornersPreview();
+  renderPreviewMarkers();
+});
+
+function updatePickStatus() {
+  const labels = ['左上角', '右上角', '右下角', '左下角'];
+  if (!isPicking) {
+    pickStatus.textContent = '';
+    return;
+  }
+  if (pickedCorners.length >= 4) {
+    pickStatus.textContent = '四角已取满，可继续点击覆盖或点击“清空”重取。';
+  } else {
+    pickStatus.textContent = `请点击：${labels[pickedCorners.length]} (${pickedCorners.length + 1}/4)`;
+  }
+}
+
+function setPicking(enabled) {
+  isPicking = enabled;
+  previewWrap.classList.toggle('picking', enabled);
+  pickCornersBtn.textContent = enabled ? '完成取点' : '点击取点';
+  pickCornersBtn.classList.toggle('btn-primary', enabled);
+  updatePickStatus();
+}
+
+function getImageCoordinatesFromEvent(e) {
+  const metrics = getDisplayedImageMetrics(preview, previewWrap);
+  if (!metrics) {
+    return { x: 0, y: 0 };
+  }
+  const { scale, offsetX, offsetY } = metrics;
+  const containerRect = previewWrap.getBoundingClientRect();
+  const natW = preview.naturalWidth;
+  const natH = preview.naturalHeight;
+
+  const x = (e.clientX - containerRect.left - offsetX) / scale;
+  const y = (e.clientY - containerRect.top - offsetY) / scale;
+
+  return {
+    x: Math.max(0, Math.min(natW, x)),
+    y: Math.max(0, Math.min(natH, y))
+  };
+}
+
+function renderPreviewMarkers() {
+  // 清除旧标记
+  previewWrap.querySelectorAll('.preview-marker, .preview-marker-label').forEach(el => el.remove());
+
+  const labels = ['左上', '右上', '右下', '左下'];
+  const metrics = getDisplayedImageMetrics(preview, previewWrap);
+  if (!metrics) return;
+  const { scale, offsetX, offsetY } = metrics;
+
+  pickedCorners.forEach((pt, i) => {
+    const x = pt[0] * scale + offsetX;
+    const y = pt[1] * scale + offsetY;
+
+    const marker = document.createElement('div');
+    marker.className = 'preview-marker';
+    marker.style.left = x + 'px';
+    marker.style.top = y + 'px';
+
+    const label = document.createElement('div');
+    label.className = 'preview-marker-label';
+    label.textContent = labels[i];
+    label.style.left = x + 'px';
+    label.style.top = y + 'px';
+
+    previewWrap.appendChild(marker);
+    previewWrap.appendChild(label);
+  });
+}
+
+function syncCornersFromPicked() {
+  // 每次取点后立即同步到 textarea，方便用户实时看到坐标并排查是否更新
+  if (pickedCorners.length > 0) {
+    const flat = pickedCorners.flat();
+    cornersInput.value = flat.map(n => Math.round(n)).join(',');
+  } else {
+    cornersInput.value = '';
+  }
+  renderCornersPreview();
+  console.log('[OCR corners] pickedCorners:', JSON.stringify(pickedCorners), 'textarea:', cornersInput.value);
+}
+
+pickCornersBtn.addEventListener('click', () => {
+  if (!currentPreviewUrl) {
+    showMsg('请先上传图片', 'error');
+    return;
+  }
+  setPicking(!isPicking);
+});
+
+clearCornersBtn.addEventListener('click', () => {
+  pickedCorners = [];
+  cornersInput.value = '';
+  renderCornersPreview();
+  renderPreviewMarkers();
+  updatePickStatus();
+});
+
+previewWrap.addEventListener('click', (e) => {
+  if (!isPicking) return;
+  const coords = getImageCoordinatesFromEvent(e);
+  console.log('[OCR corners] click raw:', e.clientX, e.clientY, '-> image:', Math.round(coords.x), Math.round(coords.y));
+  if (pickedCorners.length >= 4) {
+    pickedCorners = [];
+  }
+  pickedCorners.push([coords.x, coords.y]);
+  syncCornersFromPicked();
+  renderPreviewMarkers();
+  updatePickStatus();
+  if (pickedCorners.length === 4) {
+    setPicking(false);
+  }
+});
+
+preview.addEventListener('load', () => {
+  renderPreviewMarkers();
+  renderCornersPreview();
+});
+
+window.addEventListener('resize', () => {
+  renderPreviewMarkers();
+  renderCornersPreview();
+});
+
+fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  handleFile(e.dataTransfer.files[0]);
+});
+dropZone.addEventListener('click', () => fileInput.click());
+
+function confidenceClass(v) {
+  if (v >= 0.85) return 'high';
+  if (v >= 0.65) return 'mid';
+  return 'low';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;"','\'':'&#39;'}[c]));
+}
+
+submitBtn.addEventListener('click', async () => {
+  if (!currentFile) return;
+  hideMsg();
+  loader.classList.add('active');
+  submitBtn.disabled = true;
+
+  try {
+    // 优先以内存中的 pickedCorners 为准，避免 textarea 同步异常导致发送旧值
+    let corners = null;
+    if (pickedCorners.length === 4) {
+      corners = pickedCorners.flat();
+    } else {
+      const cornersRaw = cornersInput.value;
+      corners = parseCornersInput(cornersRaw);
+      if (cornersRaw.trim() && !corners) {
+        throw new Error('四角坐标格式不正确，请输入 8 个数字（左上、右上、右下、左下）');
+      }
+    }
+
+    const form = new FormData();
+    form.append('image', currentFile);
+    form.append('debug', debugInput.checked ? 'true' : 'false');
+    const aspect = expectedAspectInput.value.trim();
+    if (aspect) form.append('expected_aspect', aspect);
+    if (corners) {
+      const cornersStr = corners.map(n => Math.round(n)).join(',');
+      form.append('corners', cornersStr);
+      console.log('[OCR submit] sending corners:', cornersStr);
+    } else {
+      console.log('[OCR submit] no manual corners, server will auto-detect');
+    }
+
+    const res = await fetch('/api/ocr/recognize', {
+      method: 'POST',
+      body: form
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || ('HTTP ' + res.status));
+    }
+
+    renderResult(data);
+  } catch (err) {
+    showMsg('识别失败：' + err.message, 'error');
+  } finally {
+    loader.classList.remove('active');
+    submitBtn.disabled = false;
+  }
+});
+
+function renderResult(data) {
+  const fields = data.fields || {};
+  const labels = {};
+  // 从配置里拿 label 最好，但识别结果里只有 name，这里回退显示 name
+  const rows = Object.entries(fields).map(([name, f]) => ({ name, ...f }));
+
+  if (rows.length === 0) {
+    resultCard.innerHTML = '<h2>识别结果</h2><div class="empty-state">未识别到任何字段</div>';
+    return;
+  }
+
+  let html = '<h2>识别结果</h2>';
+  const cornerSource = cornersInput.value.trim() ? '手动四角' : '自动检测';
+  html += `<div class="result-banner ${data.overall_passed ? 'pass' : 'fail'}">
+    <span>${data.overall_passed ? '全部校验通过' : '存在校验未通过项'}</span>
+    <span class="result-meta">图片尺寸 ${data.image_size?.width || 0}×${data.image_size?.height || 0} · ${cornerSource} · 置信度阈值 ${data.confidence_threshold || 0.65}</span>
+  </div>`;
+
+  if (data.corners) {
+    html += `<div class="warn-list" style="margin-bottom: 16px; color: var(--text-secondary);">
+      <strong>实际使用的四角坐标：</strong>${data.corners.map(p => `(${Math.round(p[0])},${Math.round(p[1])})`).join(' · ')}
+    </div>`;
+  }
+
+  const debugImages = data.debug_images || {};
+  const hasDebugImages = Object.keys(debugImages).length > 0;
+
+  html += `<table>
+    <thead>
+      <tr>
+        ${hasDebugImages ? '<th>裁剪图</th>' : ''}
+        <th>字段</th>
+        <th>识别内容</th>
+        <th>置信度</th>
+        <th>校验结果</th>
+        <th>提示</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  for (const f of rows) {
+    const confPct = (f.confidence * 100).toFixed(1) + '%';
+    const confCls = confidenceClass(f.confidence);
+    const badge = f.passed
+      ? '<span class="badge pass">通过</span>'
+      : '<span class="badge fail">未通过</span>';
+    const imgHtml = hasDebugImages
+      ? (debugImages[f.name]
+          ? `<img class="cell-thumb" src="${debugImages[f.name]}" alt="${escapeHtml(f.name)}">`
+          : '<div class="cell-thumb-placeholder">无图</div>')
+      : '';
+    html += `<tr>
+      ${hasDebugImages ? `<td>${imgHtml}</td>` : ''}
+      <td>${escapeHtml(f.name)}</td>
+      <td class="text-mono">${escapeHtml(f.text || '')}</td>
+      <td class="conf ${confCls}">${confPct}</td>
+      <td>${badge}</td>
+      <td class="text-mono">${escapeHtml(f.message || '')}</td>
+    </tr>`;
+  }
+
+  html += '</tbody></table>';
+
+  if (data.low_confidence_fields && data.low_confidence_fields.length) {
+    html += `<div class="warn-list">
+      <strong>低置信度字段：</strong>${data.low_confidence_fields.map(escapeHtml).join('、')}
+    </div>`;
+  }
+
+  resultCard.innerHTML = html;
+}
+
+loadUser();
+</script>
+</body>
+</html>

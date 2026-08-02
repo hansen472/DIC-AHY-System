@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办审批 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1600px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-danger { background: #e53e3e; color: #fff; }
+.btn-warning { background: #dd6b20; color: #fff; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 14px 20px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 2000;
+  display: none;
+  max-width: 360px;
+  word-break: break-word;
+}
+.toast.success { background: #38a169; display: block; }
+.toast.error { background: #e53e3e; display: block; }
+.toast.info { background: #2b6cb0; display: block; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+
+.tabs-container { display: flex; gap: 12px; margin-bottom: 20px; }
+.tab-btn {
+  padding: 10px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #edf2f7;
+  color: #4a5568;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn:hover { background: #e2e8f0; }
+.tab-btn.active { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.td-wrap { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-col { width: 180px; text-align: center; white-space: nowrap; }
+.action-col button { padding: 4px 10px; font-size: 12px; margin: 0 2px; }
+.date-col { width: 150px; white-space: nowrap; }
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.status-pending { background: #ebf8ff; color: #2b6cb0; }
+.status-completed { background: #c6f6d5; color: #22543d; }
+.status-rejected { background: #fed7d7; color: #742a2a; }
+.status-transferred { background: #fefcbf; color: #744210; }
+.status-cancelled { background: #e2e8f0; color: #4a5568; }
+
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 12px; width: 90%; max-width: 640px; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #edf2f7; }
+.modal-header h3 { font-size: 16px; color: #2c3e50; }
+.modal-body { padding: 20px; overflow-y: auto; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid #edf2f7; background: #fafbfc; }
+
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; color: #4a5568; margin-bottom: 6px; font-weight: 500; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 14px; transition: all 0.2s; font-family: inherit;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  outline: none; border-color: #2b6cb0; box-shadow: 0 0 0 3px rgba(43,108,176,0.1);
+}
+.form-group textarea { resize: vertical; min-height: 80px; }
+
+.radio-group { display: flex; gap: 20px; }
+.radio-group label { display: flex; align-items: center; gap: 6px; font-weight: normal; cursor: pointer; }
+.radio-group input { width: auto; }
+
+.history-item { padding: 12px; border-left: 3px solid #2b6cb0; background: #f7fafc; border-radius: 6px; margin-bottom: 10px; }
+.history-item .meta { font-size: 12px; color: #718096; margin-bottom: 6px; }
+.history-item .action { font-weight: 600; color: #2c3e50; }
+.history-item .comment { margin-top: 6px; color: #4a5568; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>待办审批</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+  <div id="toast" class="toast"></div>
+
+  <div class="tabs-container">
+    <button class="tab-btn active" data-tab="my" onclick="switchTab('my')">我的待办</button>
+    <button class="tab-btn" id="tab-all" data-tab="all" onclick="switchTab('all')" style="display:none;">全部待办</button>
+    <button class="tab-btn btn-secondary" onclick="loadTasks()" style="margin-left:auto;">刷新</button>
+  </div>
+
+  <div class="card">
+    <h2 id="list-title">我的待办任务</h2>
+    <div id="task-list">加载中...</div>
+  </div>
+</div>
+
+<!-- 审批处理弹窗 -->
+<div id="approve-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>审批处理</h3>
+      <button class="btn-secondary" onclick="closeModal('approve-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>流程</label>
+        <input type="text" id="approve-definition-name" readonly>
+      </div>
+      <div class="form-group">
+        <label>节点</label>
+        <input type="text" id="approve-node-name" readonly>
+      </div>
+      <div class="form-group">
+        <label>业务标识</label>
+        <input type="text" id="approve-business-key" readonly>
+      </div>
+      <div class="form-group">
+        <label>审批意见 <span style="color:#e53e3e;">*</span></label>
+        <textarea id="approve-comment" placeholder="请输入审批意见"></textarea>
+      </div>
+      <div class="form-group">
+        <label>操作</label>
+        <div class="radio-group">
+          <label><input type="radio" name="approve-action" value="approve" checked> 同意</label>
+          <label><input type="radio" name="approve-action" value="reject"> 驳回</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('approve-modal')">取消</button>
+      <button class="btn-success" id="btn-submit-approve" onclick="submitApprove()">提交</button>
+    </div>
+  </div>
+</div>
+
+<!-- 转交弹窗 -->
+<div id="transfer-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>转交审批</h3>
+      <button class="btn-secondary" onclick="closeModal('transfer-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>新审批人 <span style="color:#e53e3e;">*</span></label>
+        <input type="text" id="transfer-new-assignee" placeholder="请输入新审批人用户名">
+      </div>
+      <div class="form-group">
+        <label>转交说明</label>
+        <textarea id="transfer-comment" placeholder="请输入转交说明"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('transfer-modal')">取消</button>
+      <button class="btn-warning" id="btn-submit-transfer" onclick="submitTransfer()">确认转交</button>
+    </div>
+  </div>
+</div>
+
+<!-- 历史记录弹窗 -->
+<div id="history-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>审批历史</h3>
+      <button class="btn-secondary" onclick="closeModal('history-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div id="history-list">加载中...</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('history-modal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentTab = 'my';
+let currentUser = '';
+let canViewAll = false;
+let canTransfer = false;
+let tasksData = [];
+let activeTaskId = null;
+
+async function init() {
+  await loadUser();
+  await loadPermissions();
+  await loadTasks();
+  // 每 10 秒自动刷新，避免多窗口审批后列表不同步
+  setInterval(() => {
+    if (!activeTaskId) loadTasks();
+  }, 10000);
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        currentUser = data.username;
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadPermissions() {
+  try {
+    const res = await fetch('/api/my-permissions');
+    if (res.ok) {
+      const data = await res.json();
+      const perms = data.success ? data.permissions : {};
+      canViewAll = perms.workflow_view_task === true;
+      canTransfer = perms.workflow_transfer_task === true;
+
+      if (canViewAll) {
+        document.getElementById('tab-all').style.display = 'inline-block';
+      }
+    }
+  } catch (e) {
+    console.error('加载权限失败:', e);
+  }
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  document.getElementById('list-title').textContent = tab === 'my' ? '我的待办任务' : '全部待办任务';
+  loadTasks();
+}
+
+async function loadTasks() {
+  document.getElementById('task-list').innerHTML = '加载中...';
+  try {
+    const url = currentTab === 'my' ? '/api/workflow-tasks/my' : '/api/workflow-tasks/all-pending';
+    const res = await fetch(url);
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    tasksData = result.data || [];
+    console.log('[待办列表加载]', currentTab, tasksData);
+
+    // 诊断：校验列表中第一个任务的真实状态，排查列表与单任务接口不一致的情况
+    if (tasksData.length > 0) {
+      try {
+        const verifyRes = await fetch('/api/workflow-tasks/' + tasksData[0].id);
+        if (verifyRes.ok) {
+          const verifyResult = await verifyRes.json();
+          console.log('[待办列表诊断] 任务 #' + tasksData[0].id + ' 列表状态=' + tasksData[0].status + ' 单任务状态=' + (verifyResult.data && verifyResult.data.status));
+        }
+      } catch (e) {}
+    }
+
+    renderTaskList();
+  } catch (err) {
+    document.getElementById('task-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderTaskList() {
+  if (tasksData.length === 0) {
+    document.getElementById('task-list').innerHTML = '<div class="empty">暂无待办任务</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>任务ID</th>
+        <th>流程</th>
+        <th>节点</th>
+        <th>业务标识</th>
+        <th>审批人</th>
+        <th>状态</th>
+        <th class="date-col">创建时间</th>
+        <th class="date-col">截止时间</th>
+        <th class="action-col">操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  tasksData.forEach(t => {
+    const statusHtml = formatTaskStatus(t.status);
+    const dueTime = t.due_time ? formatDateTime(t.due_time) : '-';
+    const createdAt = formatDateTime(t.created_at);
+    const isMine = t.assignee_username === currentUser;
+    html += `
+      <tr>
+        <td>${t.id}</td>
+        <td class="td-wrap" title="${escapeHtml(t.definition_name)}">${escapeHtml(t.definition_name)}</td>
+        <td class="td-wrap" title="${escapeHtml(t.node_name)}">${escapeHtml(t.node_name)}</td>
+        <td class="td-wrap" title="${escapeHtml(t.business_key)}">${escapeHtml(t.business_key)}</td>
+        <td>${escapeHtml(t.assignee_username)}</td>
+        <td>${statusHtml}</td>
+        <td class="date-col">${createdAt}</td>
+        <td class="date-col">${dueTime}</td>
+        <td class="action-col">
+          ${t.status === 'pending' ? `
+            <button class="btn-success" onclick="openApproveModal(${t.id})">审批</button>
+            ${(isMine || canTransfer) ? `<button class="btn-warning" onclick="openTransferModal(${t.id})">转交</button>` : ''}
+          ` : ''}
+          <button class="btn-primary" onclick="openHistoryModal(${t.instance_id})">历史</button>
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('task-list').innerHTML = html;
+}
+
+async function openApproveModal(taskId) {
+  activeTaskId = taskId;
+
+  // 打开弹窗前先校验任务是否仍为待处理状态（避免列表未刷新时重复提交）
+  try {
+    const res = await fetch('/api/workflow-tasks/' + taskId);
+    if (res.ok) {
+      const result = await res.json();
+      const task = result.data;
+      if (!task || task.status !== 'pending') {
+        showToast('该任务已被处理，列表将自动刷新', 'info');
+        await loadTasks();
+        return;
+      }
+    }
+  } catch (e) {}
+
+  const task = tasksData.find(t => t.id === taskId);
+  if (!task) return;
+
+  document.getElementById('approve-definition-name').value = task.definition_name || '';
+  document.getElementById('approve-node-name').value = task.node_name || '';
+  document.getElementById('approve-business-key').value = task.business_key || '';
+  document.getElementById('approve-comment').value = '';
+  document.querySelector('input[name="approve-action"][value="approve"]').checked = true;
+  document.getElementById('approve-modal').classList.add('active');
+}
+
+async function openTransferModal(taskId) {
+  activeTaskId = taskId;
+
+  // 打开弹窗前先校验任务是否仍为待处理状态
+  try {
+    const res = await fetch('/api/workflow-tasks/' + taskId);
+    if (res.ok) {
+      const result = await res.json();
+      const task = result.data;
+      if (!task || task.status !== 'pending') {
+        showToast('该任务已被处理，列表将自动刷新', 'info');
+        await loadTasks();
+        return;
+      }
+    }
+  } catch (e) {}
+
+  document.getElementById('transfer-new-assignee').value = '';
+  document.getElementById('transfer-comment').value = '';
+  document.getElementById('transfer-modal').classList.add('active');
+}
+
+async function openHistoryModal(instanceId) {
+  document.getElementById('history-list').innerHTML = '加载中...';
+  document.getElementById('history-modal').classList.add('active');
+  try {
+    const res = await fetch('/api/workflow-instances/' + instanceId + '/history');
+    if (!res.ok) throw new Error('加载历史失败');
+    const result = await res.json();
+    renderHistory(result.data || []);
+  } catch (err) {
+    document.getElementById('history-list').innerHTML = '<div class="empty">' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderHistory(history) {
+  if (history.length === 0) {
+    document.getElementById('history-list').innerHTML = '<div class="empty">暂无审批历史</div>';
+    return;
+  }
+
+  let html = '';
+  history.forEach(h => {
+    const actionText = formatHistoryAction(h.action);
+    html += `
+      <div class="history-item">
+        <div class="meta">${formatDateTime(h.created_at)} · ${escapeHtml(h.assignee_username)}</div>
+        <div class="action">${actionText} ${h.node_name ? '· ' + escapeHtml(h.node_name) : ''}</div>
+        ${h.comment ? `<div class="comment">意见：${escapeHtml(h.comment)}</div>` : ''}
+      </div>`;
+  });
+  document.getElementById('history-list').innerHTML = html;
+}
+
+async function submitApprove() {
+  const comment = document.getElementById('approve-comment').value.trim();
+  if (!comment) {
+    showToast('请输入审批意见', 'error');
+    return;
+  }
+
+  const action = document.querySelector('input[name="approve-action"]:checked').value;
+  const btn = document.getElementById('btn-submit-approve');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/workflow-tasks/' + activeTaskId + '/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, comment })
+    });
+    const result = await res.json();
+    console.log('[审批提交响应]', result);
+    if (!res.ok) throw new Error(result.error || '处理失败');
+
+    const data = result.data || {};
+    let msg = '';
+    if (data.nodeStatus === 'waiting') {
+      msg = `任务 #${activeTaskId} 已${action === 'approve' ? '同意' : '驳回'}，等待其他审批人`;
+    } else if (data.instanceStatus === 'completed') {
+      msg = `任务 #${activeTaskId} 已通过，流程结束`;
+    } else if (data.instanceStatus === 'rejected') {
+      msg = `任务 #${activeTaskId} 已驳回，流程结束`;
+    } else {
+      msg = `任务 #${activeTaskId} 已${action === 'approve' ? '同意' : '驳回'}`;
+    }
+
+    showToast(msg, 'success');
+    closeModal('approve-modal');
+    await loadTasks();
+  } catch (err) {
+    console.error('[审批提交失败]', err);
+    if (err.message && err.message.includes('任务已处理')) {
+      showToast('该任务已被处理，列表将自动刷新', 'info');
+      closeModal('approve-modal');
+      await loadTasks();
+    } else {
+      showToast('审批失败：' + err.message, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitTransfer() {
+  const newAssignee = document.getElementById('transfer-new-assignee').value.trim();
+  if (!newAssignee) {
+    showToast('请输入新审批人用户名', 'error');
+    return;
+  }
+
+  const comment = document.getElementById('transfer-comment').value.trim();
+  const btn = document.getElementById('btn-submit-transfer');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/workflow-tasks/' + activeTaskId + '/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_assignee: newAssignee, comment })
+    });
+    const result = await res.json();
+    console.log('[转交响应]', result);
+    if (!res.ok) throw new Error(result.error || '转交失败');
+
+    showToast(`任务 #${activeTaskId} 已转交给 ${newAssignee}`, 'success');
+    closeModal('transfer-modal');
+    await loadTasks();
+  } catch (err) {
+    console.error('[转交失败]', err);
+    showToast('转交失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+  activeTaskId = null;
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function showToast(text, type) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.className = 'toast ' + type;
+  setTimeout(() => { el.className = 'toast'; }, 5000);
+}
+
+function formatTaskStatus(status) {
+  const map = {
+    pending: '待审批',
+    completed: '已完成',
+    rejected: '已驳回',
+    transferred: '已转交',
+    cancelled: '已取消'
+  };
+  const text = map[status] || status;
+  const cls = 'status-' + (status || 'pending');
+  return `<span class="status-badge ${cls}">${escapeHtml(text)}</span>`;
+}
+
+function formatHistoryAction(action) {
+  const map = {
+    approve: '同意',
+    reject: '驳回',
+    transfer: '转交',
+    recall: '撤回',
+    cancel: '取消'
+  };
+  return escapeHtml(map[action] || action);
+}
+
+function formatDateTime(str) {
+  if (!str) return '';
+  const text = String(str).trim();
+  const m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2}):(\d{1,2}))?/);
+  if (m) {
+    const date = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+    if (m[4]) {
+      return `${date} ${String(m[4]).padStart(2, '0')}:${String(m[5]).padStart(2, '0')}`;
+    }
+    return date;
+  }
+  const d = new Date(text);
+  if (isNaN(d.getTime())) return text;
+  const y = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${mm}-${day} ${h}:${min}`;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

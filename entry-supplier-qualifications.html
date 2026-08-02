@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>录入供应商资质 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; height: 100vh; overflow: hidden; }
+.container { max-width: 1600px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-shrink: 0; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-danger { background: #e53e3e; color: #fff; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; display: none; flex-shrink: 0; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+
+.main-panel { flex: 1; display: flex; gap: 16px; min-height: 0; }
+.panel { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; flex-direction: column; overflow: hidden; }
+.panel-side { width: 300px; flex-shrink: 0; }
+.panel-center { flex: 1; min-width: 0; }
+.panel-header { padding: 14px 16px; border-bottom: 1px solid #edf2f7; background: #f7fafc; flex-shrink: 0; }
+.panel-header h2 { font-size: 15px; color: #2c3e50; font-weight: 600; }
+.panel-header .hint { font-size: 12px; color: #718096; margin-top: 4px; }
+.panel-search { padding: 10px 14px; border-bottom: 1px solid #edf2f7; flex-shrink: 0; }
+.panel-search input { width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; }
+.panel-list { flex: 1; overflow-y: auto; padding: 8px; }
+.list-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: all 0.15s; margin-bottom: 6px; border: 1px solid transparent; }
+.list-item:hover { background: #f1f5f9; border-color: #e2e8f0; }
+.list-item.active { background: #ebf4ff; border-color: #bee3f8; }
+.list-item .title { font-size: 14px; font-weight: 500; color: #2d3748; word-break: break-all; }
+.list-item .meta { font-size: 12px; color: #718096; margin-top: 4px; }
+.list-item .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-top: 4px; }
+.badge-yes { background: #c6f6d5; color: #22543d; }
+.badge-no { background: #edf2f7; color: #4a5568; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; font-size: 13px; }
+
+.center-header { padding: 14px 16px; border-bottom: 1px solid #edf2f7; background: #f7fafc; flex-shrink: 0; }
+.center-header h2 { font-size: 15px; color: #2c3e50; font-weight: 600; }
+.center-header .supplier-info { font-size: 13px; color: #4a5568; margin-top: 6px; }
+.center-header .supplier-info.empty { color: #a0aec0; padding: 0; text-align: left; }
+.center-body { flex: 1; overflow-y: auto; padding: 14px; }
+.center-footer { padding: 12px 16px; border-top: 1px solid #edf2f7; background: #fafbfc; display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0; }
+
+.qual-row { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+.qual-row.existing { border-left: 4px solid #38a169; }
+.qual-row-header { padding: 10px 14px; background: #f7fafc; border-bottom: 1px solid #edf2f7; display: flex; justify-content: space-between; align-items: center; }
+.qual-row-header .info { font-size: 14px; color: #2d3748; }
+.qual-row-header .info span { margin-right: 16px; }
+.qual-row-header .btn-danger { padding: 4px 10px; font-size: 12px; }
+.qual-row-body { padding: 14px; }
+.qual-row-body label { display: block; font-size: 13px; color: #4a5568; margin-bottom: 12px; }
+.qual-row-body label.inline { display: inline-flex; align-items: center; gap: 8px; margin-right: 20px; margin-bottom: 12px; }
+.qual-row-body input[type="text"], .qual-row-body input[type="date"], .qual-row-body select {
+  padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-family: inherit;
+}
+.qual-row-body input[type="text"], .qual-row-body input[type="date"], .qual-row-body select { width: 220px; }
+.qual-row-body input[type="checkbox"] { width: auto; }
+.qual-row-body input:disabled, .qual-row-body select:disabled { background: #edf2f7; color: #a0aec0; }
+.qual-row-body .field-group { display: flex; flex-wrap: wrap; gap: 16px; }
+
+.readonly-notice { padding: 10px 14px; background: #ebf8ff; border-radius: 6px; color: #2b6cb0; font-size: 13px; margin-bottom: 12px; display: none; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>录入供应商资质</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+  <div id="readonly-notice" class="readonly-notice">当前账号仅有查看权限，无法录入供应商资质。</div>
+
+  <div class="main-panel">
+    <!-- 左侧：产品列表 -->
+    <div class="panel panel-side">
+      <div class="panel-header">
+        <h2>产品列表</h2>
+        <div class="hint">双击选择产品</div>
+      </div>
+      <div class="panel-search">
+        <input type="text" id="product-search" placeholder="搜索公司/产品/型号/生产商..." oninput="filterProducts()">
+      </div>
+      <div class="panel-list" id="product-list">
+        <div class="empty">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 中间：录入区 -->
+    <div class="panel panel-center">
+      <div class="center-header">
+        <h2>资质录入 / 修改</h2>
+        <div class="supplier-info" id="selected-product">
+          <span class="empty">请从左侧双击选择一个产品</span>
+        </div>
+      </div>
+      <div class="center-body" id="qualification-rows">
+        <div class="empty">请从右侧双击选择要录入的资质</div>
+      </div>
+      <div class="center-footer">
+        <button class="btn-secondary" onclick="clearRows()">清空</button>
+        <button class="btn-success" id="btn-complete" onclick="submitRecords()">完成</button>
+      </div>
+    </div>
+
+    <!-- 右侧：资质列表 -->
+    <div class="panel panel-side">
+      <div class="panel-header">
+        <h2>资质种类</h2>
+        <div class="hint">双击添加到中间录入区</div>
+      </div>
+      <div class="panel-search">
+        <input type="text" id="qualification-search" placeholder="搜索资质名称..." oninput="filterQualifications()">
+      </div>
+      <div class="panel-list" id="qualification-list">
+        <div class="empty">加载中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let productData = [];
+let qualificationData = [];
+let selectedProduct = null;
+let addedRows = []; // { id?, qualification_type_id, qualification_name, need_expiry_check, issue_date, expiry_date, permanent_valid, current_status, description, remarks }
+let canEdit = false;
+
+async function init() {
+  await loadUser();
+  await loadPermissions();
+  await Promise.all([loadProducts(), loadQualifications()]);
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadPermissions() {
+  try {
+    const res = await fetch('/api/my-permissions');
+    if (res.ok) {
+      const data = await res.json();
+      const perms = data.success ? data.permissions : {};
+      canEdit = perms.supplier_qualifications_edit === true;
+
+      if (!canEdit) {
+        document.getElementById('readonly-notice').style.display = 'block';
+        document.getElementById('btn-complete').disabled = true;
+      }
+    }
+  } catch (e) {
+    console.error('加载权限失败:', e);
+  }
+}
+
+async function loadProducts() {
+  try {
+    const res = await fetch('/api/product-list');
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    productData = result.data || [];
+    renderProductList();
+  } catch (err) {
+    document.getElementById('product-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function loadQualifications() {
+  try {
+    const res = await fetch('/api/qualification-types');
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    qualificationData = result.data || [];
+    renderQualificationList();
+  } catch (err) {
+    document.getElementById('qualification-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderProductList() {
+  const keyword = document.getElementById('product-search').value.trim().toLowerCase();
+  const list = productData.filter(p => {
+    if (!keyword) return true;
+    const text = [
+      p.company_name, p.product_name, p.model, p.manufacturer
+    ].filter(Boolean).join(' ').toLowerCase();
+    return text.includes(keyword);
+  });
+  const container = document.getElementById('product-list');
+
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty">暂无产品数据</div>';
+    return;
+  }
+
+  container.innerHTML = list.map(p => `
+    <div class="list-item ${selectedProduct && selectedProduct.id === p.id ? 'active' : ''}"
+         data-id="${p.id}" ondblclick="selectProduct(${p.id})">
+      <div class="title">${escapeHtml(p.company_name)}</div>
+      <div class="meta">${escapeHtml(p.product_name)}${p.model ? ' · ' + escapeHtml(p.model) : ''}${p.manufacturer ? ' · ' + escapeHtml(p.manufacturer) : ''}</div>
+    </div>
+  `).join('');
+}
+
+function renderQualificationList() {
+  const keyword = document.getElementById('qualification-search').value.trim().toLowerCase();
+  const list = qualificationData.filter(q => !keyword || String(q.name).toLowerCase().includes(keyword));
+  const container = document.getElementById('qualification-list');
+
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty">暂无资质种类数据</div>';
+    return;
+  }
+
+  container.innerHTML = list.map(q => `
+    <div class="list-item" data-id="${q.id}" ondblclick="addQualificationRow(${q.id})">
+      <div class="title">${escapeHtml(q.name)}</div>
+      <div class="meta">ID: ${q.id}</div>
+      <span class="badge ${q.need_expiry_check === 1 ? 'badge-yes' : 'badge-no'}">
+        ${q.need_expiry_check === 1 ? '需过期检查' : '无需过期检查'}
+      </span>
+    </div>
+  `).join('');
+}
+
+function filterProducts() {
+  renderProductList();
+}
+
+function filterQualifications() {
+  renderQualificationList();
+}
+
+async function selectProduct(id) {
+  const p = productData.find(x => x.id === id);
+  if (!p) return;
+  selectedProduct = p;
+  renderProductList();
+  updateSelectedProductDisplay();
+  await loadExistingQualifications();
+}
+
+async function loadExistingQualifications() {
+  if (!selectedProduct) {
+    addedRows = [];
+    renderRows();
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/entry-supplier-qualifications?product_list_id=' + encodeURIComponent(selectedProduct.id));
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+
+    addedRows = (result.data || []).map(eq => {
+      const q = qualificationData.find(x => x.id === eq.qualification_type_id);
+      return {
+        id: eq.id,
+        prudoct_list_id: eq.prudoct_list_id,
+        qualification_type_id: eq.qualification_type_id,
+        qualification_name: eq.qualification_name,
+        need_expiry_check: q && q.need_expiry_check === 1 ? 1 : 0,
+        issue_date: eq.issue_date ? formatDateForInput(eq.issue_date) : '',
+        expiry_date: eq.expiry_date ? formatDateForInput(eq.expiry_date) : '',
+        permanent_valid: eq.permanent_valid === 1,
+        current_status: eq.current_status || 'active',
+        description: eq.description || '',
+        remarks: eq.remarks || ''
+      };
+    });
+
+    renderRows();
+  } catch (err) {
+    showMessage('加载已有资质失败：' + err.message, 'error');
+    addedRows = [];
+    renderRows();
+  }
+}
+
+function updateSelectedProductDisplay() {
+  const el = document.getElementById('selected-product');
+  if (!selectedProduct) {
+    el.innerHTML = '<span class="empty">请从左侧双击选择一个产品</span>';
+    return;
+  }
+  el.innerHTML = `<span>公司：${escapeHtml(selectedProduct.company_name)}</span>` +
+    `<span style="margin-left:20px;">产品：${escapeHtml(selectedProduct.product_name)}</span>` +
+    `${selectedProduct.model ? '<span style="margin-left:20px;">型号：' + escapeHtml(selectedProduct.model) + '</span>' : ''}` +
+    `${selectedProduct.manufacturer ? '<span style="margin-left:20px;">生产商：' + escapeHtml(selectedProduct.manufacturer) + '</span>' : ''}`;
+}
+
+function captureRowValues() {
+  const values = {};
+  document.querySelectorAll('.qual-row').forEach(row => {
+    const qid = row.getAttribute('data-qualification-id');
+    if (!qid) return;
+    values[qid] = {
+      issue_date: row.querySelector('.issue-date')?.value || '',
+      expiry_date: row.querySelector('.expiry-date')?.value || '',
+      permanent_valid: row.querySelector('.permanent-valid')?.checked || false,
+      current_status: row.querySelector('.current-status')?.value || 'active',
+      description: row.querySelector('.description')?.value || '',
+      remarks: row.querySelector('.remarks')?.value || ''
+    };
+  });
+  return values;
+}
+
+function restoreRowValues(values) {
+  Object.entries(values).forEach(([qid, v]) => {
+    const row = document.querySelector(`.qual-row[data-qualification-id="${qid}"]`);
+    if (!row) return;
+    const issueEl = row.querySelector('.issue-date');
+    const expiryEl = row.querySelector('.expiry-date');
+    const permanentEl = row.querySelector('.permanent-valid');
+    const statusEl = row.querySelector('.current-status');
+    const descEl = row.querySelector('.description');
+    const remarksEl = row.querySelector('.remarks');
+
+    if (issueEl) issueEl.value = v.issue_date || '';
+    if (statusEl) statusEl.value = v.current_status || 'active';
+    if (descEl) descEl.value = v.description || '';
+    if (remarksEl) remarksEl.value = v.remarks || '';
+    if (permanentEl) {
+      permanentEl.checked = v.permanent_valid || false;
+      if (expiryEl) {
+        expiryEl.disabled = permanentEl.checked;
+        expiryEl.value = permanentEl.checked ? '' : (v.expiry_date || '');
+      }
+    } else if (expiryEl) {
+      expiryEl.value = v.expiry_date || '';
+    }
+  });
+}
+
+function addQualificationRow(id) {
+  if (!canEdit) return;
+  const q = qualificationData.find(x => x.id === id);
+  if (!q) return;
+
+  // 同一资质不重复添加（已有或新增加入区均不重复）
+  if (addedRows.some(r => r.qualification_type_id === id)) {
+    showMessage('该资质已添加到录入区', 'error');
+    return;
+  }
+
+  const preservedValues = captureRowValues();
+  addedRows.push({
+    id: null,
+    qualification_type_id: q.id,
+    qualification_name: q.name,
+    need_expiry_check: q.need_expiry_check === 1 ? 1 : 0,
+    issue_date: '',
+    expiry_date: '',
+    permanent_valid: false,
+    current_status: 'active',
+    description: '',
+    remarks: ''
+  });
+  renderRows();
+  restoreRowValues(preservedValues);
+}
+
+async function removeRow(index) {
+  const row = addedRows[index];
+  if (!row) return;
+
+  if (row.id) {
+    if (!confirm(`确定要删除已有资质 "${row.qualification_name}" 吗？删除后不可恢复。`)) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/entry-supplier-qualifications/' + row.id, { method: 'DELETE' });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || '删除失败');
+      }
+      showMessage('资质已删除', 'success');
+    } catch (err) {
+      showMessage('删除失败：' + err.message, 'error');
+      return;
+    }
+  }
+
+  const preservedValues = captureRowValues();
+  addedRows.splice(index, 1);
+  renderRows();
+  restoreRowValues(preservedValues);
+}
+
+function clearRows() {
+  addedRows = [];
+  selectedProduct = null;
+  renderProductList();
+  updateSelectedProductDisplay();
+  renderRows();
+}
+
+function togglePermanent(checkbox) {
+  const row = checkbox.closest('.qual-row');
+  const expiryInput = row.querySelector('.expiry-date');
+  if (checkbox.checked) {
+    expiryInput.disabled = true;
+    expiryInput.value = '';
+  } else {
+    expiryInput.disabled = false;
+  }
+}
+
+function renderRows() {
+  const container = document.getElementById('qualification-rows');
+  if (addedRows.length === 0) {
+    container.innerHTML = '<div class="empty">请从右侧双击选择要录入的资质</div>';
+    return;
+  }
+
+  container.innerHTML = addedRows.map((r, idx) => {
+    const isExisting = !!r.id;
+    const statusOptions = ['active', 'expiring soon', 'expired', 'inactive'].map(val =>
+      `<option value="${val}" ${r.current_status === val ? 'selected' : ''}>${val}</option>`
+    ).join('');
+
+    return `
+      <div class="qual-row ${isExisting ? 'existing' : ''}" data-idx="${idx}" data-qualification-id="${r.qualification_type_id}" data-id="${r.id || ''}">
+        <div class="qual-row-header">
+          <div class="info">
+            <span><strong>资质ID：${r.qualification_type_id}</strong></span>
+            <span>资质名称：${escapeHtml(r.qualification_name)}</span>
+            ${isExisting ? '<span style="color:#38a169;font-size:12px;">[已有记录]</span>' : ''}
+          </div>
+          <button class="btn-danger" onclick="removeRow(${idx})">删除</button>
+        </div>
+        <div class="qual-row-body">
+          <div class="field-group">
+            <label>发行日期：<input type="date" class="issue-date" data-idx="${idx}" value="${r.issue_date || ''}"></label>
+            <label>过期日期：<input type="date" class="expiry-date" data-idx="${idx}" value="${r.permanent_valid ? '' : (r.expiry_date || '')}" ${r.permanent_valid ? 'disabled' : ''}></label>
+            <label class="inline"><input type="checkbox" class="permanent-valid" data-idx="${idx}" onchange="togglePermanent(this)" ${r.permanent_valid ? 'checked' : ''}> 永久有效</label>
+          </div>
+          <div class="field-group" style="margin-top:12px;">
+            <label>现在状态标志：
+              <select class="current-status" data-idx="${idx}">${statusOptions}</select>
+            </label>
+            <label>描述：<input type="text" class="description" data-idx="${idx}" placeholder="请输入描述" maxlength="500" value="${escapeHtml(r.description || '')}"></label>
+            <label>备注：<input type="text" class="remarks" data-idx="${idx}" placeholder="请输入备注" maxlength="500" value="${escapeHtml(r.remarks || '')}"></label>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function submitRecords() {
+  if (!canEdit) return;
+
+  if (!selectedProduct) {
+    showMessage('请先双击左侧选择一个产品', 'error');
+    return;
+  }
+  if (addedRows.length === 0) {
+    showMessage('请从右侧双击选择至少一个资质', 'error');
+    return;
+  }
+
+  const records = [];
+  for (let i = 0; i < addedRows.length; i++) {
+    const r = addedRows[i];
+    const rowEl = document.querySelector(`.qual-row[data-idx="${i}"]`);
+
+    const record = {
+      id: r.id || null,
+      prudoct_list_id: selectedProduct.id,
+      qualification_type_id: r.qualification_type_id,
+      qualification_name: r.qualification_name,
+      current_status: 'active',
+      permanent_valid: 0,
+      issue_date: null,
+      expiry_date: null,
+      description: null,
+      remarks: null
+    };
+
+    if (rowEl) {
+      const statusEl = rowEl.querySelector('.current-status');
+      const descEl = rowEl.querySelector('.description');
+      const remarksEl = rowEl.querySelector('.remarks');
+      const issueEl = rowEl.querySelector('.issue-date');
+      const expiryEl = rowEl.querySelector('.expiry-date');
+      const permanentEl = rowEl.querySelector('.permanent-valid');
+
+      if (statusEl) record.current_status = statusEl.value.trim() || 'active';
+      if (descEl) record.description = descEl.value.trim() || null;
+      if (remarksEl) record.remarks = remarksEl.value.trim() || null;
+
+      if (issueEl) record.issue_date = issueEl.value || null;
+      if (permanentEl) record.permanent_valid = permanentEl.checked ? 1 : 0;
+      if (expiryEl && !record.permanent_valid) {
+        record.expiry_date = expiryEl.value || null;
+        // 仅对需要过期检查的资质要求必须填写过期日期
+        if (!record.expiry_date && r.need_expiry_check === 1) {
+          showMessage(`第 ${i + 1} 个资质（${r.qualification_name}）未设置过期日期，请选择“永久有效”或填写过期日期`, 'error');
+          return;
+        }
+      }
+    }
+
+    records.push(record);
+  }
+
+  const btn = document.getElementById('btn-complete');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/entry-supplier-qualifications/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '录入失败');
+
+    showMessage(result.message, 'success');
+    clearRows();
+  } catch (err) {
+    showMessage('录入失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function formatDateForInput(str) {
+  if (!str) return '';
+  const text = String(str).trim();
+  const m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  }
+  const d = new Date(text);
+  if (isNaN(d.getTime())) return text;
+  const y = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mm}-${day}`;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

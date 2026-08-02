@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>数智中心 数字大屏</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+            text-align: center;
+            background: linear-gradient(135deg, #faf3e8 0%, #f5ebe0 30%, #ede4f0 70%, #e8f0f5 100%);
+        }
+
+        /* Loading Overlay */
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(250, 243, 232, 0.88);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.8s ease;
+        }
+        .loader-wrapper {
+            text-align: center;
+        }
+        .loader-flower {
+            width: 50px; height: 50px;
+            margin: 0 auto 20px;
+            position: relative;
+        }
+        .loader-flower::before {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 12px; height: 12px;
+            background: #d4a574;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .loader-flower span {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 10px; height: 22px;
+            background: linear-gradient(to bottom, #d4a574, #e8c9a0);
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            transform-origin: center top;
+            animation: petal 2s ease-in-out infinite;
+            opacity: 0.8;
+        }
+        .loader-flower span:nth-child(1) { transform: translate(-50%, 0) rotate(0deg); animation-delay: 0s; }
+        .loader-flower span:nth-child(2) { transform: translate(-50%, 0) rotate(72deg); animation-delay: 0.2s; }
+        .loader-flower span:nth-child(3) { transform: translate(-50%, 0) rotate(144deg); animation-delay: 0.4s; }
+        .loader-flower span:nth-child(4) { transform: translate(-50%, 0) rotate(216deg); animation-delay: 0.6s; }
+        .loader-flower span:nth-child(5) { transform: translate(-50%, 0) rotate(288deg); animation-delay: 0.8s; }
+        @keyframes petal {
+            0%, 100% { opacity: 0.5; transform: translate(-50%, 0) rotate(var(--r, 0deg)) scale(0.8); }
+            50% { opacity: 1; transform: translate(-50%, 0) rotate(var(--r, 0deg)) scale(1.1); }
+        }
+        .loader-text {
+            color: #8b7355;
+            font-size: 15px;
+            letter-spacing: 4px;
+            font-weight: 300;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 20px;
+            width: 100vw;
+            height: 100vh;
+            padding: 20px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.72);
+            border-radius: 20px;
+            padding: 16px;
+            box-shadow: 0 8px 32px rgba(139, 115, 85, 0.08);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            min-height: 0;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(12px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(139, 115, 85, 0.15);
+        }
+
+        .chart-box {
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+            background-color: transparent;
+            border-radius: 12px;
+            margin-top: 4px;
+            position: relative;
+        }
+
+        #ypmcm_resultBox, #insp_resultBox, #insppm_resultBox {
+            margin-top: 6px;
+            color: #c53030;
+            font-size: 12px;
+            min-height: 16px;
+        }
+    </style>
+
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="loader-wrapper">
+            
+            <div class="loader-flower">
+                <span style="--r:0deg"></span>
+                <span style="--r:72deg"></span>
+                <span style="--r:144deg"></span>
+                <span style="--r:216deg"></span>
+                <span style="--r:288deg"></span>
+            </div>
+            <div class="loader-text">正在加载</div>
+
+        </div>
+    </div>
+
+    <!-- 父容器：网格布局 -->
+    <div class="dashboard-grid">
+        <!-- 左上：外围维修统计 -->
+        <div class="card">
+            <div id="ypmcm_chartContainer" class="chart-box"></div>
+            <div id="ypmcm_resultBox"></div>
+        </div>
+        <!-- 中上 -->
+        <div class="card">
+            <div id="rwo_resultBox" class="chart-box"></div>
+        </div>
+        <!-- 右上：车间维修统计 -->
+        <div class="card">
+            <div id="insppm_chartContainer" class="chart-box"></div>
+            <div id="insppm_resultBox"></div>
+        </div>
+        <!-- 左下：施工信息月度汇总 -->
+        <div class="card">
+            <div id="ycm_chartContainer" class="chart-box"></div>
+        </div>
+        <!-- 中下 -->
+        <div class="card">
+            <div id="expwo_resultBox" class="chart-box"></div>
+        </div>
+        <!-- 右下：仪表工具月度校验汇总 -->
+        <div class="card">
+            <div id="insp_chartContainer" class="chart-box"></div>
+            <div id="insp_resultBox"></div>
+        </div>
+    </div>
+
+    
+    <script>
+        // Loading animation management
+        let apiLoadCount = 0;
+        const totalApis = 2;
+        function hideLoading() {
+            apiLoadCount++;
+            if (apiLoadCount >= totalApis) {
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.style.opacity = '0';
+                    setTimeout(() => {
+                        overlay.style.display = 'none';
+                    }, 600);
+                }
+            }
+        }
+
+        const WEBHOOK_URL = 'http://10.5.53.33/v1/workflows/run';
+        const ypmcm_myChart = echarts.init(document.getElementById('ypmcm_chartContainer'));
+        const ycm_myChart = echarts.init(document.getElementById('ycm_chartContainer'));
+        const insppm_myChart = echarts.init(document.getElementById('insppm_chartContainer'));
+        const insp_myChart = echarts.init(document.getElementById('insp_chartContainer'));
+
+        // 定义一个函数来执行加载逻辑，方便复用
+        function loadChartData() {
+            const ypmcm_resultBox = document.getElementById('ypmcm_resultBox');
+            const insp_resultBox = document.getElementById('insp_resultBox');
+            
+            ypmcm_resultBox.innerText = '请求中...';
+            insp_resultBox.innerText = '请求中...';
+
+            fetch(WEBHOOK_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer app-9xLMgXq40vyZ3a1DMNbtdeiV'
+                },
+                body: JSON.stringify({
+                    "inputs": {},
+                    "response_mode": "blocking",
+                    "user": "web-user-001"
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('API返回:', data);
+                const list = data?.data?.outputs?.ypmcm || data?.outputs?.ypmcm;
+                const insplist = data?.data?.outputs?.insp;
+
+                if (list && Array.isArray(list) && list.length > 0) {
+                    ypmcm_renderChart(list);
+                    ypmcm_resultBox.innerText = '';
+                hideLoading();
+                   
+                } else {
+                    console.error('未能提取到 ypmcm 数据');
+                    ypmcm_resultBox.innerText = '数据为空或格式错误';
+                hideLoading();
+                }
+ 
+                  if (insplist && Array.isArray(insplist) && insplist.length > 0) {
+                    insp_renderChart(insplist);
+                    insp_resultBox.innerText = '';
+                hideLoading();
+                   
+                } else {
+                    console.error('未能提取到 insp 数据');
+                    insp_resultBox.innerText = '数据为空或格式错误';
+                hideLoading();
+                }
+                
+
+            })
+            .catch(error => {
+                console.error('请求失败:', error);
+                ypmcm_resultBox.innerText = '请求出错: ' + error.message;
+                hideLoading();
+            });
+        }
+        
+        // 未处理工单+过期工单 提取
+        function rwo_loadData() {
+            const rwo_resultBox = document.getElementById('rwo_resultBox');
+            const expwo_resultBox = document.getElementById('expwo_resultBox');
+            const insppm_resultBox = document.getElementById('insppm_resultBox');
+           
+          
+            rwo_resultBox.innerText = '请求中...';
+            expwo_resultBox.innerText = '请求中...';
+           
+
+            fetch(WEBHOOK_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer app-Ko5VKolBcPN3PdJcY7LUDHsd'
+                },
+                body: JSON.stringify({
+                    "inputs": {},
+                    "response_mode": "blocking",
+                    "user": "web-user-001"
+                })
+            })
+            .then(rwo_response => rwo_response.json())
+            .then(rwo_data => {
+                console.log('rwo-expwo-insppm-API返回:', rwo_data);
+                const rwo_list = rwo_data?.data?.outputs?.rwo ;
+                const expwo_list = rwo_data?.data?.outputs?.expwo ;
+                const insppmlist=rwo_data?.data?.outputs?.insppm ;
+
+                 if (insppmlist && Array.isArray(insppmlist) && insppmlist.length > 0) {
+                    insppm_renderChart(insppmlist);
+                    insppm_resultBox.innerText = '';
+                hideLoading();
+                   
+                } else {
+                    console.error('未能提取到 insppm 数据');
+                    console.log('>>> 当前 insppmlist 的值为:', insppmlist); // 👈 加上这一句
+                    insppm_resultBox.innerText = '数据为空或格式错误';
+                hideLoading();
+                }
+
+
+                // 未处理工单的IF
+                if (rwo_list && Array.isArray(rwo_list) && rwo_list.length > 0) {
+
+                    const itemsPerPage = 5; // 每页显示5行
+                    let currentPage = 0;    // 当前页码，从0开始
+                    let intervalId = null;  // 定时器ID
+
+                     // 1. 定义渲染表格的函数
+                    function renderTable(page) {
+                       // 计算开始和结束位置
+                       const start = page * itemsPerPage;
+                       const end = start + itemsPerPage;
+                       const pageData = rwo_list.slice(start, end); // 截取当前页的数据
+
+                       // 生成表格 HTML
+                       let tableHTML = `
+                           <table style="border-collapse: collapse; width: 100%; text-align: left; font-size: 10px; margin-bottom: 10px;">
+                              <thead style="background-color: #f0f0f0;">
+                                  <tr>
+                                      <th style="padding: 8px;">资产</th>
+                                      <th style="padding: 8px;">报修名称</th>
+                                      <th style="padding: 8px;">失效发现时间</th>
+                                  </tr>
+                              </thead>
+                             <tbody>
+                    `;
+
+                    pageData.forEach(item => {
+                        tableHTML += '<tr>';
+                        tableHTML += `<td style="padding: 8px; border-bottom: 1px solid #ddd;">${item['asset_info'] || '-'}</td>`;
+                        tableHTML += `<td style="padding: 8px; border-bottom: 1px solid #ddd;">${item['mr_description'] || '-'}</td>`;
+                        tableHTML += `<td style="padding: 8px; border-bottom: 1px solid #ddd;">${item['mr_failure_time'] || '-'}</td>`;
+                        tableHTML += '</tr>';
+                    });
+
+                    tableHTML += '</tbody></table>';
+
+                    // 生成分页数字
+                    const totalPages = Math.ceil(rwo_list.length / itemsPerPage);
+                    let paginationHTML = '<div style="text-align: center; margin-top: 10px;font-size:8px;">';
+                    
+                    for (let i = 0; i < totalPages; i++) {
+                        // 如果是当前页，高亮显示
+                        const activeStyle = i === page ? 'font-weight:bold; color:red; font-size:8px;' : 'color:#666; margin:0 5px; cursor:pointer;';
+                        paginationHTML += `<span onclick="switchPage(${i})" style="${activeStyle}">${i + 1}</span>`;
+                    }
+                    paginationHTML += '</div>';
+
+                    // 显示到页面
+                    rwo_resultBox.innerHTML = '报修未处理信息：' + tableHTML + paginationHTML;
+                }
+ 
+                      // 2. 定义切换页码的函数
+                    window.switchPage = function(pageIndex) {
+                    currentPage = pageIndex;
+                    renderTable(currentPage);
+                    resetTimer(); // 用户手动点击后，重置计时器
+                };
+
+                      // 3. 启动自动轮播
+                     function startTimer() {
+                    intervalId = setInterval(() => {
+                        currentPage++;
+                        const totalPages = Math.ceil(rwo_list.length / itemsPerPage);
+                        if (currentPage >= totalPages) {
+                            currentPage = 0; // 回到第一页
+                        }
+                        renderTable(currentPage);
+                    }, 5000); // 5000毫秒 = 5秒
+                }
+
+                      // 4. 重置计时器（用于手动切换后）
+                     function resetTimer() {
+                    clearInterval(intervalId);
+                    startTimer();
+                }
+
+                      // 5. 鼠标悬停暂停，移开继续（可选，提升体验）
+                     rwo_resultBox.onmouseenter = () => clearInterval(intervalId);
+                     rwo_resultBox.onmouseleave = startTimer;
+
+                     // 初始化显示第一页
+                     startTimer();
+                    renderTable(0);
+
+                   
+                } else {
+                    console.error('未能提取到 rwo 数据');
+                    rwo_resultBox.innerText = '数据为空或格式错误';
+                }
+
+
+                // 过期工单的IF
+                if (expwo_list && Array.isArray(expwo_list) && expwo_list.length > 0) {
+
+                    const exp_itemsPerPage = 5; // 每页显示5行
+                    let exp_currentPage = 0;    // 当前页码，从0开始
+                    let exp_intervalId = null;  // 定时器ID
+
+                     // 1. 定义渲染表格的函数
+                    function exp_renderTable(page) {
+                       // 计算开始和结束位置
+                       const start = page * exp_itemsPerPage;
+                       const end = start + exp_itemsPerPage;
+                       const pageData = expwo_list.slice(start, end); // 截取当前页的数据
+
+                       // 生成表格 HTML
+                       let tableHTML = `
+                           <table style="border-collapse: collapse; width: 100%; text-align: left; font-size: 10px; margin-bottom: 10px;">
+                              <thead style="background-color: #f0f0f0;">
+                                  <tr>
+                                      <th style="padding: 8px;">资产</th>
+                                      <th style="padding: 8px;">工单内容</th>
+                                      <th style="padding: 8px;">目标完成时间</th>
+                                  </tr>
+                              </thead>
+                             <tbody>
+                    `;
+
+                    pageData.forEach(item => {
+                        tableHTML += '<tr>';
+                        tableHTML += `<td style="padding: 8px; border-bottom: 1px solid #ddd;">${item['asset_names'] || '-'}</td>`;
+                        tableHTML += `<td style="padding: 8px; border-bottom: 1px solid #ddd;">${item['wo_info'] || '-'}</td>`;
+                        tableHTML += `<td style="padding: 8px; border-bottom: 1px solid #ddd;">${item['wo_target_time'] || '-'}</td>`;
+                        tableHTML += '</tr>';
+                    });
+
+                    tableHTML += '</tbody></table>';
+
+                    // 生成分页数字
+                    const totalPages = Math.ceil(expwo_list.length / exp_itemsPerPage);
+                    let paginationHTML = '<div style="text-align: center; margin-top: 10px;font-size: 8px;">';
+                    
+                    for (let i = 0; i < totalPages; i++) {
+                        // 如果是当前页，高亮显示
+                        const activeStyle = i === page ? 'font-weight:bold; color:red; font-size:8px;' : 'color:#666; margin:0 5px; cursor:pointer;';
+                        paginationHTML += `<span onclick="expswitchPage(${i})" style="${activeStyle}">${i + 1}</span>`;
+                    }
+                    paginationHTML += '</div>';
+
+                    // 显示到页面
+                    expwo_resultBox.innerHTML = '过期工单信息：' + tableHTML + paginationHTML;
+                }
+ 
+                      // 2. 定义切换页码的函数
+                    window.expswitchPage = function(pageIndex) {
+                    exp_currentPage = pageIndex;
+                    exp_renderTable(currentPage);
+                    exp_resetTimer(); // 用户手动点击后，重置计时器
+                };
+
+                      // 3. 启动自动轮播
+                     function exp_startTimer() {
+                    exp_intervalId = setInterval(() => {
+                        exp_currentPage++;
+                        const totalPages = Math.ceil(expwo_list.length / exp_itemsPerPage);
+                        if (exp_currentPage >= totalPages) {
+                            exp_currentPage = 0; // 回到第一页
+                        }
+                        exp_renderTable(exp_currentPage);
+                    }, 5000); // 5000毫秒 = 5秒
+                }
+
+                      // 4. 重置计时器（用于手动切换后）
+                     function exp_resetTimer() {
+                    clearInterval(exp_intervalId);
+                    exp_startTimer();
+                }
+
+                      // 5. 鼠标悬停暂停，移开继续（可选，提升体验）
+                     rwo_resultBox.onmouseenter = () => clearInterval(exp_intervalId);
+                     rwo_resultBox.onmouseleave = exp_startTimer;
+
+                     // 初始化显示第一页
+                     exp_startTimer();
+                    exp_renderTable(0);
+
+                   
+                } else {
+                    console.error('未能提取到 rwo 数据');
+                    expwo_resultBox.innerText = '数据为空或格式错误';
+                }
+
+
+            })
+            .catch(error => {
+                console.error('请求失败:', error);
+                expwo_resultBox.innerText = '请求出错: ' + error.message;
+                hideLoading();
+            });
+        }
+
+
+        // 页面加载完成后立即执行
+        window.addEventListener('DOMContentLoaded', function() {
+            loadChartData();
+            rwo_loadData();
+
+            // 窗口大小变化时重绘图表，使其始终填满容器
+            window.addEventListener('resize', function() {
+                ypmcm_myChart.resize();
+                ycm_myChart.resize();
+                insppm_myChart.resize();
+                insp_myChart.resize();
+            });
+
+            // 左上+左下区域：每2小时自动刷新一次（2 * 60 * 60 * 1000 = 7200000 毫秒）
+            setInterval(loadChartData, 7200000);
+
+            // 中上+中下区域：每10分钟自动刷新一次（10 * 60 * 1000 = 600000 毫秒）
+            setInterval(rwo_loadData, 600000);
+        });
+
+
+
+        function ypmcm_renderChart(dataList) {
+            // 1. 数据清洗：将 API 返回的数组转换为 ECharts 需要的格式
+            const months = dataList.map(item => item.month);       // 提取月份 ['2026-01', ...]
+            const pmData = dataList.map(item => item.pm_count);   // 提取 PM 数量
+            const cmData = dataList.map(item => item.cm_count);   // 提取 CM 数量
+
+            // 2. 配置 ECharts
+            const option = {
+                   title: {
+                    text: '2026年 PM 统计',
+                     top: '5%'  // 👈 添加这一行，表示标题距离容器顶部 5% 的高度
+                },
+                  // 👇 添加 grid 配置，紧贴容器边缘
+                 grid: {
+                        top: '20%',    // 距离容器顶部 10%
+                        bottom: '18%', // 距离容器底部 15% (给X轴标签留点空间)
+                        left: '10%',    // 左侧极小留白
+                        right: '10%',   // 右侧极小留白
+                        containLabel: true // 👈 关键：确保包含坐标轴标签，否则可能会被切掉
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+
+                xAxis: {
+                    type: 'category',
+                    data: months // 使用提取的月份
+                },
+                yAxis: {
+                    type: 'value',
+                    // name: '数量'
+                },
+                series: [
+                    {
+                        name: 'PM数量',
+                        type: 'bar',
+                        data: pmData, // 使用提取的 PM 数据
+                        itemStyle: { color: '#5470C6' },
+                        // ✅ 添加 label 配置
+                        label: {
+                             show: true,           // 显示标签
+                             position: 'top',      // 位置在柱子上方
+                             fontSize: 8,         // 字体大小
+                             // fontWeight: 'bold',   // 字体加粗（可选）
+                             color: '#333'         // 字体颜色
+                                }
+                    }
+            
+                ]
+            };
+
+            const optioncm = {
+                   title: {
+                    text: '2026年 CM 统计',
+                     top: '1%'  // 👈 添加这一行，表示标题距离容器顶部 5% 的高度
+                },
+                  // 👇 添加 grid 配置，紧贴容器边缘
+                 grid: {
+                        top: '20%',    // 距离容器顶部 10%
+                        bottom: '18%', // 距离容器底部 15% (给X轴标签留点空间)
+                        left: '10%',    // 左侧极小留白
+                        right: '10%',   // 右侧极小留白
+                        containLabel: true // 👈 关键：确保包含坐标轴标签，否则可能会被切掉
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+            
+                xAxis: {
+                    type: 'category',
+                    data: months // 使用提取的月份
+                },
+                yAxis: {
+                    type: 'value',
+                    // name: '数量'
+                },
+                series: [
+        
+                    {
+                        name: 'CM数量',
+                        type: 'bar',
+                        data: cmData, // 使用提取的 CM 数据
+                        itemStyle: { color: '#91CC75' },
+                        label: {
+                             show: true,           // 显示标签
+                             position: 'top',      // 位置在柱子上方
+                             fontSize: 8,         // 字体大小
+                             // fontWeight: 'bold',   // 字体加粗（可选）
+                             color: '#333'         // 字体颜色
+                                }
+                    }
+                ]
+            };
+
+
+
+
+
+            
+            ypmcm_myChart.setOption(option);
+            ycm_myChart.setOption(optioncm);
+        }
+    
+    
+    
+    
+        function insppm_renderChart(dataList) {
+            // 1. 数据清洗：将 API 返回的数组转换为 ECharts 需要的格式
+            const months = dataList.map(item => item.month);       // 提取月份 ['2026-01', ...]
+            const inspData = dataList.map(item => item.inspr);   // 提取 insp  合格率
+            const pmData = dataList.map(item => item.pmr);   // 提取 CM 合格率
+
+
+            // 2. 配置 ECharts
+
+            const option = {
+
+                title: {
+                   text: 'INSP&PM 按时完成率',
+                   top: '1%'  // 👈 添加这一行，表示标题距离容器顶部 5% 的高度
+                },
+                  // 👇 添加 grid 配置，紧贴容器边缘
+                 grid: {
+                        top: '20%',    // 距离容器顶部 10%
+                        bottom: '18%', // 距离容器底部 15% (给X轴标签留点空间)
+                        left: '10%',    // 左侧极小留白
+                        right: '10%',   // 右侧极小留白
+                        containLabel: true // 👈 关键：确保包含坐标轴标签，否则可能会被切掉
+                },
+                xAxis: {
+                       type: 'category',
+                       data: months
+                },
+                yAxis: {
+                       type: 'value'
+                },
+                tooltip: {
+                      trigger: 'axis'
+                },
+             
+                series: [
+
+                   {
+                       data: inspData,
+                       type: 'line'
+                    },
+                   {
+                       data: pmData,
+                       type: 'line'
+                    }
+  ]
+  
+  
+};
+
+
+          
+            
+            insppm_myChart.setOption(option);
+           
+
+        }
+    
+        
+    
+        function insp_renderChart(dataList) {
+            // 1. 数据清洗：将 API 返回的数组转换为 ECharts 需要的格式
+            const months = dataList.map(item => item.month);       // 提取月份 
+            const inspData = dataList.map(item => item.counts);   // 提取 数量
+        
+
+
+            // 2. 配置 ECharts
+
+            const option = {
+
+                title: {
+                   text: '仪器/仪表 年检',
+                   top: '1%'  // 👈 添加这一行，表示标题距离容器顶部 5% 的高度
+                },
+                  // 👇 添加 grid 配置，紧贴容器边缘
+                 grid: {
+                        top: '20%',    // 距离容器顶部 10%
+                        bottom: '18%', // 距离容器底部 15% (给X轴标签留点空间)
+                        left: '10%',    // 左侧极小留白
+                        right: '10%',   // 右侧极小留白
+                        containLabel: true // 👈 关键：确保包含坐标轴标签，否则可能会被切掉
+                },
+                xAxis: {
+                       type: 'category',
+                       boundaryGap: false,
+                       data: months
+                },
+                yAxis: {
+                       type: 'value'
+                },
+                tooltip: {
+                      trigger: 'axis'
+                         },
+                series: [
+
+                   {
+                       data: inspData,
+                       type: 'line'
+                    }
+  ]
+  
+  
+};
+
+
+          
+            
+            insp_myChart.setOption(option);
+           
+
+        }
+    
+    
+    
+    
+    </script>
+</body>
+</html>

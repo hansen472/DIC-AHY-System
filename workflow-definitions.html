@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>审批流定义 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-danger { background: #e53e3e; color: #fff; }
+.btn-warning { background: #dd6b20; color: #fff; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+
+.filter-bar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+.filter-bar input, .filter-bar select {
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.filter-bar input { min-width: 220px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.td-wrap { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-col { width: 180px; text-align: center; white-space: nowrap; }
+.action-col button { padding: 4px 10px; font-size: 12px; margin: 0 2px; }
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.status-active { background: #c6f6d5; color: #22543d; }
+.status-inactive { background: #e2e8f0; color: #4a5568; }
+
+.confirm-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1100; }
+.confirm-overlay.active { display: flex; }
+.confirm-box { background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 420px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); }
+.confirm-box h4 { font-size: 16px; margin-bottom: 12px; color: #2c3e50; }
+.confirm-box p { font-size: 14px; color: #4a5568; margin-bottom: 20px; }
+.confirm-box .confirm-footer { display: flex; justify-content: flex-end; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>审批流定义</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h2>流程列表</h2>
+      <button class="btn-success" onclick="window.location.href='/workflow-designer.html'">新建流程</button>
+    </div>
+
+    <div class="filter-bar">
+      <input type="text" id="filter-name" placeholder="搜索流程名称" oninput="renderList()">
+      <select id="filter-module" onchange="renderList()">
+        <option value="">全部模块</option>
+        <option value="supplier_qualifications">供应商资质</option>
+      </select>
+      <select id="filter-status" onchange="renderList()">
+        <option value="">全部状态</option>
+        <option value="1">已启用</option>
+        <option value="0">未启用</option>
+      </select>
+    </div>
+
+    <div id="definition-list">加载中...</div>
+  </div>
+</div>
+
+<div id="confirm-overlay" class="confirm-overlay">
+  <div class="confirm-box">
+    <h4>确认删除</h4>
+    <p id="confirm-text">确定要删除该流程定义吗？删除后不可恢复。</p>
+    <div class="confirm-footer">
+      <button class="btn-secondary" onclick="closeConfirm()">取消</button>
+      <button class="btn-danger" id="btn-confirm-delete" onclick="executeDelete()">删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let definitionsData = [];
+let deleteId = null;
+
+async function init() {
+  await loadUser();
+  await loadDefinitions();
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadDefinitions() {
+  try {
+    const res = await fetch('/api/workflow-definitions');
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    definitionsData = result.data || [];
+    renderList();
+  } catch (err) {
+    document.getElementById('definition-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderList() {
+  const nameFilter = document.getElementById('filter-name').value.trim().toLowerCase();
+  const moduleFilter = document.getElementById('filter-module').value;
+  const statusFilter = document.getElementById('filter-status').value;
+
+  let filtered = definitionsData.filter(d => {
+    if (nameFilter && !(d.name || '').toLowerCase().includes(nameFilter)) return false;
+    if (moduleFilter && d.module_key !== moduleFilter) return false;
+    if (statusFilter !== '' && String(d.is_active) !== statusFilter) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    document.getElementById('definition-list').innerHTML = '<div class="empty">暂无流程定义</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>流程名称</th>
+        <th>模块</th>
+        <th>版本</th>
+        <th>触发条件</th>
+        <th>优先级</th>
+        <th>状态</th>
+        <th>创建人</th>
+        <th class="date-col">创建时间</th>
+        <th class="date-col">更新时间</th>
+        <th class="action-col">操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  filtered.forEach(d => {
+    const statusHtml = d.is_active
+      ? '<span class="status-badge status-active">已启用</span>'
+      : '<span class="status-badge status-inactive">未启用</span>';
+    html += `
+      <tr>
+        <td>${d.id}</td>
+        <td class="td-wrap" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</td>
+        <td>${escapeHtml(d.module_key)}</td>
+        <td>${d.version}</td>
+        <td class="td-wrap" title="${escapeHtml(d.condition)}">${escapeHtml(d.condition) || '<span style="color:#a0aec0">默认匹配</span>'}</td>
+        <td>${d.priority != null ? d.priority : 0}</td>
+        <td>${statusHtml}</td>
+        <td>${escapeHtml(d.created_by || '')}</td>
+        <td>${formatDateTime(d.created_at)}</td>
+        <td>${formatDateTime(d.updated_at)}</td>
+        <td class="action-col">
+          <button class="btn-primary" onclick="editDefinition(${d.id})">编辑</button>
+          ${!d.is_active ? `<button class="btn-warning" onclick="activateDefinition(${d.id})">启用</button>` : ''}
+          <button class="btn-danger" onclick="confirmDelete(${d.id})">删除</button>
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('definition-list').innerHTML = html;
+}
+
+function editDefinition(id) {
+  window.location.href = '/workflow-designer.html?id=' + id;
+}
+
+async function activateDefinition(id) {
+  if (!confirm('确定要启用该流程定义吗？同模块下的默认（无条件）流程会互斥，有条件流程可以共存。')) return;
+  try {
+    const res = await fetch('/api/workflow-definitions/' + id + '/activate', { method: 'POST' });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '启用失败');
+    showMessage('流程定义已启用', 'success');
+    await loadDefinitions();
+  } catch (err) {
+    showMessage('启用失败：' + err.message, 'error');
+  }
+}
+
+function confirmDelete(id) {
+  deleteId = id;
+  document.getElementById('confirm-overlay').classList.add('active');
+}
+
+function closeConfirm() {
+  deleteId = null;
+  document.getElementById('confirm-overlay').classList.remove('active');
+}
+
+async function executeDelete() {
+  if (!deleteId) return;
+  try {
+    const res = await fetch('/api/workflow-definitions/' + deleteId, { method: 'DELETE' });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '删除失败');
+    showMessage('流程定义已删除', 'success');
+    closeConfirm();
+    await loadDefinitions();
+  } catch (err) {
+    showMessage('删除失败：' + err.message, 'error');
+  }
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function formatDateTime(str) {
+  if (!str) return '';
+  const text = String(str).trim();
+  const m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2}):(\d{1,2}))?/);
+  if (m) {
+    const date = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+    if (m[4]) {
+      return `${date} ${String(m[4]).padStart(2, '0')}:${String(m[5]).padStart(2, '0')}`;
+    }
+    return date;
+  }
+  const d = new Date(text);
+  if (isNaN(d.getTime())) return text;
+  const y = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${mm}-${day} ${h}:${min}`;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

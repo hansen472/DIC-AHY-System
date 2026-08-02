@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>操作日志 - 数智中心</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.meta-text { color: #718096; font-size: 13px; }
+.detail-cell { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>操作日志</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-primary" onclick="exportLogs()" style="margin-right:8px;">导出 CSV</button>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div id="log-list">加载中...</div>
+  </div>
+</div>
+
+<script>
+async function init() {
+  await loadUser();
+  await loadLogs();
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadLogs() {
+  try {
+    const res = await fetch('/api/operation-logs');
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    renderLogs(result.data || []);
+  } catch (err) {
+    document.getElementById('log-list').innerHTML = '<div class="empty">加载失败：' + err.message + '</div>';
+  }
+}
+
+function renderLogs(logs) {
+  if (logs.length === 0) {
+    document.getElementById('log-list').innerHTML = '<div class="empty">暂无操作日志</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>时间</th>
+        <th>操作人</th>
+        <th>操作</th>
+        <th>对象类型</th>
+        <th>对象ID</th>
+        <th>详情</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  logs.forEach(log => {
+    html += `
+      <tr>
+        <td>${formatDate(log.created_at)}</td>
+        <td>${escapeHtml(log.username)}</td>
+        <td>${escapeHtml(log.action)}</td>
+        <td>${escapeHtml(log.target_type || '-')}</td>
+        <td>${escapeHtml(log.target_id || '-')}</td>
+        <td class="detail-cell" title="${escapeHtml(log.detail || '')}">${escapeHtml(log.detail || '-')}</td>
+        <td>${escapeHtml(log.ip_address || '-')}</td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('log-list').innerHTML = html;
+}
+
+function formatDate(str) {
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  return d.toLocaleString('zh-CN');
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function exportLogs() {
+  window.location.href = '/api/operation-logs/export';
+}
+
+init();
+</script>
+</body>
+</html>

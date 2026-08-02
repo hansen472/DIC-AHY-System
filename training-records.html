@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>培训记录录入 - 数智中心</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+
+.three-column { display: flex; gap: 20px; align-items: stretch; flex-wrap: wrap; }
+.three-column > .card { min-width: 300px; display: flex; flex-direction: column; }
+.three-column > .card:nth-child(1) { flex: 1.3; }
+.three-column > .card:nth-child(2) { flex: 1; }
+.three-column > .card:nth-child(3) { flex: 0.6; }
+.card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+
+.annual-plan-list { max-height: calc(100vh - 240px); overflow-y: auto; padding-right: 4px; }
+.annual-plan-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.annual-plan-list th,
+.annual-plan-list td { padding: 8px; text-align: left; border-bottom: 1px solid #edf2f7; }
+.annual-plan-list th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+.annual-plan-list tbody tr { cursor: pointer; }
+.annual-plan-list tbody tr:hover { background: #f7fafc; }
+.annual-plan-list .td-content { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.annual-plan-list .td-wrap { max-width: 140px; word-break: break-word; white-space: normal; }
+
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; color: #4a5568; margin-bottom: 6px; font-weight: 500; }
+.form-group label .required { color: #e53e3e; margin-left: 2px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 14px; transition: all 0.2s; font-family: inherit;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  outline: none; border-color: #2b6cb0; box-shadow: 0 0 0 3px rgba(43,108,176,0.1);
+}
+.form-group textarea { resize: vertical; min-height: 80px; }
+
+.user-list { max-height: calc(100vh - 240px); overflow-y: auto; padding-right: 4px; }
+.department-group { margin-bottom: 16px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.department-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: #f7fafc; font-weight: 600; color: #2c3e50; font-size: 14px;
+}
+.department-header input { width: 16px; height: 16px; cursor: pointer; }
+.department-users { padding: 6px 14px 10px; }
+.user-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; color: #4a5568;
+}
+.user-item:last-child { border-bottom: none; }
+.user-item input { width: 16px; height: 16px; cursor: pointer; }
+.user-item .user-name { font-weight: 500; color: #2d3748; min-width: 80px; }
+.user-item .user-dept { color: #a0aec0; font-size: 12px; margin-left: auto; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+
+.footer-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: #fff; border-top: 1px solid #e2e8f0;
+  padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+}
+.footer-bar .selected-info { font-size: 14px; color: #4a5568; }
+.footer-bar .selected-info span { font-weight: 600; color: #2b6cb0; }
+.footer-bar .actions { display: flex; gap: 10px; }
+
+body { padding-bottom: 80px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>培训记录录入</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+
+  <div class="three-column">
+    <div class="card">
+      <h2>年度培训计划</h2>
+      <div class="form-group">
+        <label>年份</label>
+        <select id="plan-year" onchange="onPlanYearChange()">
+          <option value="">请选择年份</option>
+        </select>
+      </div>
+      <div id="annual-plan-list" class="annual-plan-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>培训信息</h2>
+      <div class="form-group">
+        <label>培训日期 <span class="required">*</span></label>
+        <input type="date" id="training-date">
+      </div>
+      <div class="form-group">
+        <label>培训内容 <span class="required">*</span></label>
+        <textarea id="training-content" placeholder="请输入培训内容"></textarea>
+      </div>
+      <div class="form-group">
+        <label>培训课时</label>
+        <input type="number" id="training-hours" placeholder="请输入培训课时" step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label>培训形式</label>
+        <select id="training-form">
+          <option value="集中授课/Lecturing">1 集中授课/Lecturing</option>
+          <option value="现场实操培训/Practical Operation">2 现场实操培训/Practical Operation</option>
+          <option value="线上培训（视频教学）/Online Study">3 线上培训（视频教学）/Online Study</option>
+          <option value="实战演练/Drill Training">4 实战演练/Drill Training</option>
+          <option value="文件自学/Self-Learning">5 文件自学/Self-Learning</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>考核方法</label>
+        <select id="assessment-method">
+          <option value="现场提问/Q&A">1 现场提问/Q&A</option>
+          <option value="考试/Exam">2 考试/Exam</option>
+          <option value="实际操作/Operation">3 实际操作/Operation</option>
+          <option value="实战演练/Drill">4 实战演练/Drill</option>
+          <option value="随堂小测试/Quiz Test">5 随堂小测试/Quiz Test</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>考核结果</label>
+        <select id="assessment-result">
+          <option value="P合格/Pass">1 P合格/Pass</option>
+          <option value="F不合格/Fail">2 F不合格/Fail</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>培训讲师/负责人</label>
+        <input type="text" id="trainer" placeholder="请输入培训讲师或负责人" maxlength="100">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>参训人员选择</h2>
+      <div id="user-list" class="user-list">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer-bar">
+  <div class="selected-info">已选择 <span id="selected-count">0</span> 人</div>
+  <div class="actions">
+    <button class="btn-secondary" onclick="resetForm()">重置</button>
+    <button class="btn-success" id="btn-submit" onclick="submitTraining()">录入培训记录</button>
+  </div>
+</div>
+
+<script>
+let departmentData = [];
+let allAnnualPlans = [];
+let annualPlanData = [];
+
+async function init() {
+  await loadUser();
+  await loadAnnualPlans();
+  await loadUsers();
+  setDefaultDate();
+  setSelectDefaults();
+}
+
+function setDefaultDate() {
+  const today = new Date();
+  document.getElementById('training-date').value = formatDateInput(today);
+}
+
+function setSelectDefaults() {
+  document.getElementById('training-form').selectedIndex = 0;
+  document.getElementById('assessment-method').selectedIndex = 0;
+  document.getElementById('assessment-result').selectedIndex = 0;
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadAnnualPlans() {
+  const container = document.getElementById('annual-plan-list');
+  try {
+    const res = await fetch('/api/annual-training-plans');
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    allAnnualPlans = result.data || [];
+
+    const years = [...new Set(allAnnualPlans.map(p => p.year).filter(y => y != null))]
+      .sort((a, b) => b - a);
+    populateYearSelect(years);
+
+    const yearSelect = document.getElementById('plan-year');
+    if (years.length > 0) {
+      yearSelect.value = years[0];
+    }
+    onPlanYearChange();
+  } catch (err) {
+    container.innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function populateYearSelect(years) {
+  const select = document.getElementById('plan-year');
+  select.innerHTML = '';
+  if (years.length === 0) {
+    select.innerHTML = '<option value="">无数据</option>';
+    return;
+  }
+  years.forEach(year => {
+    const option = document.createElement('option');
+    option.value = year;
+    option.textContent = year + '年';
+    select.appendChild(option);
+  });
+}
+
+function onPlanYearChange() {
+  const selectedYear = document.getElementById('plan-year').value;
+  if (!selectedYear) {
+    annualPlanData = [];
+  } else {
+    annualPlanData = allAnnualPlans.filter(p => String(p.year) === selectedYear);
+  }
+  renderAnnualPlans();
+  setSelectDefaults();
+}
+
+function renderAnnualPlans() {
+  const container = document.getElementById('annual-plan-list');
+  if (annualPlanData.length === 0) {
+    container.innerHTML = '<div class="empty">暂无该年度培训计划</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>培训项目/课程/内容</th>
+        <th style="width:60px;">课时</th>
+        <th style="width:80px;">讲师</th>
+        <th>日程</th>
+        <th>跟踪</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  annualPlanData.forEach((p, index) => {
+    html += `
+      <tr data-index="${index}">
+        <td class="td-content" title="${escapeHtml(p.training_content)}">${escapeHtml(p.training_content)}</td>
+        <td>${p.training_hours != null ? parseFloat(p.training_hours) : ''}</td>
+        <td>${escapeHtml(p.trainer)}</td>
+        <td class="td-wrap">${escapeHtml(p.training_schedule)}</td>
+        <td class="td-wrap">${escapeHtml(p.tracking)}</td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  container.querySelectorAll('tbody tr').forEach(row => {
+    row.addEventListener('dblclick', () => {
+      const p = annualPlanData[row.dataset.index];
+      fillTrainingInfo(p.training_content, p.training_hours, p.trainer);
+    });
+  });
+}
+
+function fillTrainingInfo(content, hours, trainer) {
+  document.getElementById('training-content').value = content || '';
+  document.getElementById('training-hours').value = hours != null ? parseFloat(hours) : '';
+  document.getElementById('trainer').value = trainer || '';
+}
+
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/users/by-department');
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    departmentData = result.data || [];
+    renderUserList();
+  } catch (err) {
+    document.getElementById('user-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderUserList() {
+  const container = document.getElementById('user-list');
+  if (departmentData.length === 0) {
+    container.innerHTML = '<div class="empty">暂无用户数据</div>';
+    return;
+  }
+
+  let html = '';
+  departmentData.forEach((group, groupIndex) => {
+    const deptId = 'dept-' + groupIndex;
+    html += `
+      <div class="department-group">
+        <div class="department-header">
+          <input type="checkbox" id="${deptId}" onchange="toggleDepartment(${groupIndex})">
+          <label for="${deptId}" style="cursor:pointer; margin:0;">${escapeHtml(group.department)}</label>
+        </div>
+        <div class="department-users">
+          ${group.users.map((u, userIndex) => {
+            const inputId = 'user-' + groupIndex + '-' + userIndex;
+            return `
+              <div class="user-item">
+                <input type="checkbox" id="${inputId}" data-username="${escapeHtml(u.username)}" onchange="updateSelectedCount()">
+                <label for="${inputId}" style="cursor:pointer; margin:0; display:flex; align-items:center; flex:1; gap:10px;">
+                  <span class="user-name">${escapeHtml(u.chinese_name || u.username)}</span>
+                  <span style="color:#718096; font-size:12px;">${escapeHtml(u.username)}</span>
+                </label>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  updateSelectedCount();
+}
+
+function toggleDepartment(groupIndex) {
+  const deptCheckbox = document.getElementById('dept-' + groupIndex);
+  const checked = deptCheckbox.checked;
+  const userInputs = document.querySelectorAll(`#user-list .department-group:nth-child(${groupIndex + 1}) .user-item input[type="checkbox"]`);
+  userInputs.forEach(input => input.checked = checked);
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  const selected = document.querySelectorAll('.user-item input[type="checkbox"]:checked');
+  document.getElementById('selected-count').textContent = selected.length;
+
+  // 同步部门选择框状态
+  departmentData.forEach((group, groupIndex) => {
+    const deptCheckbox = document.getElementById('dept-' + groupIndex);
+    const userInputs = document.querySelectorAll(`#user-list .department-group:nth-child(${groupIndex + 1}) .user-item input[type="checkbox"]`);
+    if (!deptCheckbox || userInputs.length === 0) return;
+    const allChecked = Array.from(userInputs).every(input => input.checked);
+    const someChecked = Array.from(userInputs).some(input => input.checked);
+    deptCheckbox.checked = allChecked;
+    deptCheckbox.indeterminate = someChecked && !allChecked;
+  });
+}
+
+function resetForm() {
+  document.getElementById('training-date').value = '';
+  document.getElementById('training-content').value = '';
+  document.getElementById('training-hours').value = '';
+  document.getElementById('training-form').selectedIndex = 0;
+  document.getElementById('assessment-method').selectedIndex = 0;
+  document.getElementById('assessment-result').selectedIndex = 0;
+  document.getElementById('trainer').value = '';
+  document.querySelectorAll('.user-item input[type="checkbox"]').forEach(input => input.checked = false);
+  updateSelectedCount();
+  setDefaultDate();
+}
+
+async function submitTraining() {
+  const trainingDate = document.getElementById('training-date').value;
+  const trainingContent = document.getElementById('training-content').value.trim();
+  const trainingHours = document.getElementById('training-hours').value;
+  const trainingForm = document.getElementById('training-form').value;
+  const assessmentMethod = document.getElementById('assessment-method').value;
+  const assessmentResult = document.getElementById('assessment-result').value;
+  const trainer = document.getElementById('trainer').value.trim();
+
+  if (!trainingDate) {
+    showMessage('请选择培训日期', 'error');
+    return;
+  }
+  if (!trainingContent) {
+    showMessage('请输入培训内容', 'error');
+    return;
+  }
+
+  const selectedInputs = document.querySelectorAll('.user-item input[type="checkbox"]:checked');
+  const usernames = Array.from(selectedInputs).map(input => input.dataset.username);
+  if (usernames.length === 0) {
+    showMessage('至少选择一名参训人员', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/training-records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        training_date: trainingDate,
+        training_content: trainingContent,
+        training_hours: trainingHours,
+        training_form: trainingForm,
+        assessment_method: assessmentMethod,
+        assessment_result: assessmentResult,
+        trainer: trainer,
+        usernames: usernames
+      })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '录入失败');
+
+    showMessage(result.message, 'success');
+    resetForm();
+  } catch (err) {
+    showMessage('录入失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function formatDateInput(date) {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

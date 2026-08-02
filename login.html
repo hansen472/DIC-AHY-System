@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 数智中心</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Microsoft YaHei", "SimSun", sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-box {
+  background: #fff;
+  padding: 40px 36px;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  width: 100%;
+  max-width: 380px;
+}
+.login-box h2 {
+  text-align: center;
+  margin-bottom: 24px;
+  color: #2c3e50;
+  font-size: 22px;
+}
+.form-group {
+  margin-bottom: 18px;
+}
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #4a5568;
+}
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.form-group input:focus {
+  border-color: #667eea;
+}
+.btn-login {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  background: #667eea;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-login:hover { opacity: 0.9; }
+.btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+.error-msg {
+  color: #c53030;
+  font-size: 13px;
+  margin-top: 12px;
+  text-align: center;
+  min-height: 18px;
+}
+.brand-title { font-size: 28px; font-weight: 600; color: #2c3e50; line-height: 1.2; }
+.brand-subtitle { font-size: 14px; color: #718096; font-weight: 400; margin-top: 6px; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <h2>
+    <div class="brand-title">数智中心</div>
+    <div class="brand-subtitle">Digital Intelligence Center</div>
+  </h2>
+  <div class="form-group">
+    <label>用户名</label>
+    <input type="text" id="username" placeholder="请输入用户名" value="" onkeydown="if(event.key==='Enter')doLogin()">
+  </div>
+  <div class="form-group">
+    <label>密码</label>
+    <input type="password" id="password" placeholder="请输入密码" onkeydown="if(event.key==='Enter')doLogin()">
+  </div>
+  <button class="btn-login" id="btn-login" onclick="doLogin()">登录</button>
+  <div class="error-msg" id="error-msg"></div>
+</div>
+
+<script>
+async function doLogin() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const errorMsg = document.getElementById('error-msg');
+  const btn = document.getElementById('btn-login');
+
+  if (!username || !password) {
+    errorMsg.textContent = '请输入用户名和密码';
+    return;
+  }
+
+  errorMsg.textContent = '';
+  btn.disabled = true;
+  btn.textContent = '登录中...';
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      window.location.href = '/';
+    } else {
+      errorMsg.textContent = data.error || '登录失败';
+    }
+  } catch (err) {
+    errorMsg.textContent = '网络错误，请稍后重试';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '登录';
+  }
+}
+</script>
+</body>
+</html>

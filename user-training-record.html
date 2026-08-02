@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户培训记录 - 数智中心</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+
+.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.form-group { margin-bottom: 4px; }
+.form-group label { display: block; font-size: 13px; color: #4a5568; margin-bottom: 6px; font-weight: 500; }
+.form-group select, .form-group input[type="text"] {
+  width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 14px; transition: all 0.2s; font-family: inherit; background: #fff;
+}
+.form-group select:focus, .form-group input[type="text"]:focus { outline: none; border-color: #2b6cb0; box-shadow: 0 0 0 3px rgba(43,108,176,0.1); }
+.filter-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
+.table-wrapper { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.td-wrap { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pagination { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 16px; }
+.pagination button { padding: 6px 12px; font-size: 13px; }
+.pagination .page-info { font-size: 13px; color: #4a5568; }
+
+@media (max-width: 1200px) {
+  .form-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>用户培训记录</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+
+  <div class="card">
+    <h2>筛选条件</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>年份</label>
+        <select id="filter-year">
+          <option value="">请选择年份</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>用户姓名</label>
+        <input type="text" id="filter-username" list="user-options" autocomplete="off" placeholder="请选择或输入用户姓名">
+        <input type="hidden" id="filter-username-value">
+        <datalist id="user-options">
+          <option value="全部用户" data-username="__ALL__">全部用户</option>
+        </datalist>
+      </div>
+      <div class="form-group">
+        <label>培训内容</label>
+        <select id="filter-training-content">
+          <option value="">请选择培训内容</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>讲师</label>
+        <select id="filter-trainer">
+          <option value="">请选择讲师</option>
+        </select>
+      </div>
+    </div>
+    <div class="filter-actions">
+      <button class="btn-secondary" onclick="resetFilters()">重置</button>
+      <button class="btn-primary" id="btn-query" onclick="queryRecords()">查询</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>培训记录列表</h2>
+    <div id="record-list">
+      <div class="empty">请选择筛选条件后点击查询</div>
+    </div>
+    <div id="pagination" class="pagination" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+let recordsData = [];
+let userOptions = [];
+let currentPage = 1;
+const pageSize = 10;
+
+async function init() {
+  await loadUser();
+  await loadFilterOptions();
+  document.getElementById('filter-username').addEventListener('input', syncUsernameValue);
+  document.getElementById('record-list').addEventListener('click', function (e) {
+    const btn = e.target.closest('.view-summary-btn');
+    if (!btn) return;
+    e.preventDefault();
+    viewTrainingSummary(btn.dataset.username);
+  });
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadFilterOptions() {
+  try {
+    const res = await fetch('/api/training-records/filter-options');
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    const data = result.data || {};
+
+    populateSelect('filter-year', data.years || [], year => year + '年');
+    userOptions = data.users || [];
+    populateUserDatalist();
+    populateSelect('filter-training-content', data.training_contents || [], c => c);
+    populateSelect('filter-trainer', data.trainers || [], t => t);
+  } catch (err) {
+    showMessage('加载筛选选项失败：' + err.message, 'error');
+  }
+}
+
+function populateSelect(id, items, labelFn) {
+  const select = document.getElementById(id);
+  const placeholder = select.options[0];
+  select.innerHTML = '';
+  select.appendChild(placeholder);
+  items.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item;
+    option.textContent = labelFn(item);
+    select.appendChild(option);
+  });
+}
+
+function populateUserDatalist() {
+  const datalist = document.getElementById('user-options');
+  datalist.innerHTML = '<option value="全部用户" data-username="__ALL__">全部用户</option>';
+  userOptions.forEach(u => {
+    const option = document.createElement('option');
+    option.value = u.chinese_name || u.username;
+    option.textContent = u.chinese_name ? `${u.chinese_name} (${u.username})` : u.username;
+    option.dataset.username = u.username;
+    datalist.appendChild(option);
+  });
+}
+
+function syncUsernameValue() {
+  const input = document.getElementById('filter-username');
+  const hidden = document.getElementById('filter-username-value');
+  const value = input.value.trim();
+
+  if (value === '全部用户') {
+    hidden.value = '__ALL__';
+    return;
+  }
+
+  const matched = userOptions.find(u => (u.chinese_name || u.username) === value);
+  if (matched) {
+    hidden.value = matched.username;
+  } else {
+    hidden.value = '';
+  }
+}
+
+function resetFilters() {
+  document.getElementById('filter-year').value = '';
+  document.getElementById('filter-username').value = '';
+  document.getElementById('filter-username-value').value = '';
+  document.getElementById('filter-training-content').value = '';
+  document.getElementById('filter-trainer').value = '';
+  recordsData = [];
+  currentPage = 1;
+  renderRecordList();
+}
+
+async function queryRecords() {
+  const year = document.getElementById('filter-year').value;
+  const usernameValue = document.getElementById('filter-username-value').value;
+  const usernameInput = document.getElementById('filter-username').value.trim();
+  const trainingContent = document.getElementById('filter-training-content').value;
+  const trainer = document.getElementById('filter-trainer').value;
+
+  const hasUserFilter = usernameValue === '__ALL__' || usernameValue !== '' || usernameInput !== '';
+  if (!year && !hasUserFilter && !trainingContent && !trainer) {
+    showMessage('请至少填写一个筛选条件', 'error');
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (year) params.append('year', year);
+  if (usernameValue === '__ALL__') {
+    params.append('username', '__ALL__');
+  } else if (usernameValue) {
+    params.append('username', usernameValue);
+  } else if (usernameInput) {
+    params.append('chinese_name', usernameInput);
+  }
+  if (trainingContent) params.append('training_content', trainingContent);
+  if (trainer) params.append('trainer', trainer);
+
+  const btn = document.getElementById('btn-query');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/training-records?' + params.toString());
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    recordsData = result.data || [];
+    currentPage = 1;
+    renderRecordList();
+  } catch (err) {
+    showMessage('查询失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderRecordList() {
+  const container = document.getElementById('record-list');
+  const paginationEl = document.getElementById('pagination');
+
+  if (recordsData.length === 0) {
+    container.innerHTML = '<div class="empty">暂无匹配的培训记录数据</div>';
+    paginationEl.style.display = 'none';
+    return;
+  }
+
+  const totalPages = Math.ceil(recordsData.length / pageSize);
+  const start = (currentPage - 1) * pageSize;
+  const pageData = recordsData.slice(start, start + pageSize);
+
+  let html = '<div class="table-wrapper"><table><thead><tr>' +
+    '<th>ID</th>' +
+    '<th>用户姓名</th>' +
+    '<th>培训日期</th>' +
+    '<th>培训内容</th>' +
+    '<th>培训课时</th>' +
+    '<th>培训形式</th>' +
+    '<th>考核方法</th>' +
+    '<th>考核结果</th>' +
+    '<th>讲师</th>' +
+    '<th>创建时间</th>' +
+    '<th style="width:80px;">操作</th>' +
+    '</tr></thead><tbody>';
+
+  pageData.forEach(r => {
+    html += `<tr>
+      <td>${escapeHtml(String(r.id))}</td>
+      <td>${escapeHtml(r.chinese_name || r.username)}</td>
+      <td>${formatDate(r.training_date)}</td>
+      <td class="td-wrap" title="${escapeHtml(r.training_content)}">${escapeHtml(r.training_content)}</td>
+      <td>${r.training_hours != null ? parseFloat(r.training_hours) : ''}</td>
+      <td>${escapeHtml(r.training_form)}</td>
+      <td>${escapeHtml(r.assessment_method)}</td>
+      <td>${escapeHtml(r.assessment_result)}</td>
+      <td>${escapeHtml(r.trainer)}</td>
+      <td>${formatDateTime(r.created_at)}</td>
+      <td><a href="#" class="btn-primary view-summary-btn" data-username="${escapeHtml(String(r.username))}" style="padding:4px 10px; font-size:12px; border-radius:6px; text-decoration:none; display:inline-block;">查看</a></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+
+  if (totalPages > 1) {
+    paginationEl.style.display = 'flex';
+    renderPagination(totalPages);
+  } else {
+    paginationEl.style.display = 'none';
+  }
+}
+
+function renderPagination(totalPages) {
+  const el = document.getElementById('pagination');
+  let html = `<span class="page-info">第 ${currentPage} / ${totalPages} 页，共 ${recordsData.length} 条</span>`;
+  html += `<button class="btn-secondary" ${currentPage === 1 ? 'disabled' : ''} onclick="goPage(${currentPage - 1})">上一页</button>`;
+  html += `<button class="btn-secondary" ${currentPage === totalPages ? 'disabled' : ''} onclick="goPage(${currentPage + 1})">下一页</button>`;
+  el.innerHTML = html;
+}
+
+function goPage(page) {
+  const totalPages = Math.ceil(recordsData.length / pageSize);
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  renderRecordList();
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function formatDate(str) {
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatDateTime(str) {
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function viewTrainingSummary(username) {
+  if (!username) {
+    showMessage('无法获取用户名', 'error');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/print/training-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username })
+    });
+
+    if (!res.ok) {
+      let msg = '生成 PDF 失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  } catch (err) {
+    showMessage('打开个人汇总失败：' + err.message, 'error');
+  }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>供应商资质 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1600px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: top; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; white-space: nowrap; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.td-wrap { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qual-summary { min-width: 520px; line-height: 1.6; white-space: nowrap; }
+.qual-summary:empty::before { content: '—'; color: #a0aec0; }
+
+/* Tab 页签样式 */
+.tabs-container { display: flex; gap: 12px; margin-bottom: 20px; }
+.tab-btn {
+  padding: 10px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #edf2f7;
+  color: #4a5568;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn:hover { background: #e2e8f0; }
+.tab-btn.active {
+  background: #2b6cb0;
+  color: #fff;
+  border-color: #2b6cb0;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>供应商资质</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+
+  <div class="tabs-container">
+    <button class="tab-btn active" data-tab="special" onclick="switchTab('special')">特殊物资类供应商资料</button>
+    <button class="tab-btn" data-tab="service" onclick="switchTab('service')">服务型供应商资料</button>
+    <button class="tab-btn" data-tab="production" onclick="switchTab('production')">生产型经销型资料</button>
+  </div>
+
+  <div class="card">
+    <h2>供应商列表</h2>
+    <div id="supplier-list">加载中...</div>
+  </div>
+</div>
+
+<script>
+let suppliersData = [];
+let currentTab = 'special';
+
+async function init() {
+  await loadUser();
+  await loadSuppliers();
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadSuppliers() {
+  try {
+    const res = await fetch('/api/supplier-qualifications?category=' + encodeURIComponent(currentTab));
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    suppliersData = result.data || [];
+    renderSupplierList();
+  } catch (err) {
+    document.getElementById('supplier-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+
+  loadSuppliers();
+}
+
+function renderSupplierList() {
+  if (suppliersData.length === 0) {
+    document.getElementById('supplier-list').innerHTML = '<div class="empty">暂无供应商资质数据</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>供方名称</th>
+        <th>公司</th>
+        <th>产品</th>
+        <th>型号</th>
+        <th>生产商</th>
+        <th>公司状态</th>
+        <th>供应商类型</th>
+        <th>资质明细</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  suppliersData.forEach(s => {
+    html += `
+      <tr>
+        <td>${escapeHtml(s.supplier_name)}</td>
+        <td>${escapeHtml(s.company_name)}</td>
+        <td>${escapeHtml(s.product_name)}</td>
+        <td>${escapeHtml(s.model)}</td>
+        <td>${escapeHtml(s.manufacturer)}</td>
+        <td>${escapeHtml(s.product_status)}</td>
+        <td>${escapeHtml(s.supplier_type)}</td>
+        <td class="qual-summary">${formatQualificationSummary(s.qualification_summary)}</td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('supplier-list').innerHTML = html;
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function formatQualificationSummary(text) {
+  if (!text) return '';
+  return escapeHtml(String(text)).replace(/\n/g, '<br>');
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

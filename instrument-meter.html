@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仪器/仪表到期查询 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --accent: #d97706;
+  --accent-light: #fef3c7;
+  --success: #047857;
+  --danger: #dc2626;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  color: #fff;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(30, 64, 175, 0.18);
+}
+
+header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+header p {
+  font-size: 13px;
+  color: #cbd5e1;
+  margin-top: 6px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.date-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,0.12);
+  padding: 8px 14px;
+  border-radius: 10px;
+}
+
+.date-control label {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.date-control input[type="date"] {
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+button:hover { transform: translateY(-1px); }
+
+.btn-query {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
+}
+
+.btn-export {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
+}
+
+.card {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+.summary {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.summary strong {
+  color: var(--primary);
+  font-size: 18px;
+  margin: 0 4px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 1200px;
+}
+
+th, td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th {
+  background: #f8fafc;
+  color: #374151;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+th:hover { background: #eef2ff; }
+
+th .sort-icon {
+  display: inline-block;
+  margin-left: 6px;
+  color: #9ca3af;
+  font-size: 11px;
+  width: 12px;
+}
+
+th.sort-asc .sort-icon,
+th.sort-desc .sort-icon { color: var(--primary); }
+
+tbody tr:hover { background: #f9fafb; }
+
+tbody tr:last-child td { border-bottom: none; }
+
+.seq, .numeric {
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.date-col {
+  font-family: var(--mono);
+  color: var(--text-secondary);
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 60px 0;
+}
+
+.loading {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 40px 0;
+}
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: none;
+}
+.toast.error { background: var(--danger); }
+.toast.success { background: var(--success); }
+
+footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  margin-top: 20px;
+}
+.back-link:hover { color: var(--primary); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>仪器 / 仪表到期查询</h1>
+      <p>查询在指定到期日期前需要送检的在用仪器与仪表</p>
+    </div>
+    <div class="toolbar">
+      <div class="date-control">
+        <label for="expire-date">选择到期日期</label>
+        <input type="date" id="expire-date">
+      </div>
+      <button class="btn-query" onclick="loadData()">查询</button>
+      <button class="btn-export" onclick="exportData()">导出</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="summary">共查询到 <strong id="record-count">0</strong> 条记录</div>
+    <div id="result-area" class="table-wrap">
+      <div class="empty">请选择到期日期后点击“查询”</div>
+    </div>
+  </div>
+
+  <a class="back-link" href="/nav-sidebar.html">← 返回导航</a>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const COLUMNS = [
+  { key: '序号', align: 'right' },
+  { key: '仪器/仪表名称', align: 'left' },
+  { key: '型号/规格', align: 'left' },
+  { key: '仪器/仪表编码', align: 'left' },
+  { key: '制造商', align: 'left' },
+  { key: '出厂编号', align: 'left' },
+  { key: '测量范围', align: 'left' },
+  { key: '精度等级', align: 'left' },
+  { key: '所在位置', align: 'left' },
+  { key: '安装位置', align: 'left' },
+  { key: '本次检验日期', align: 'left', type: 'date' },
+  { key: '下次检验日期', align: 'left', type: 'date' },
+  { key: '送检周期（月）', align: 'right' }
+];
+
+let currentRows = [];
+let sortState = { key: '下次检验日期', asc: true };
+
+function init() {
+  const input = document.getElementById('expire-date');
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  input.value = formatDateInput(d);
+  loadData();
+}
+
+function formatDateInput(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function showToast(message, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast ' + type;
+  toast.style.display = 'block';
+  setTimeout(() => { toast.style.display = 'none'; }, 4000);
+}
+
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function loadData() {
+  const input = document.getElementById('expire-date');
+  const expireDate = input.value;
+  if (!expireDate) {
+    showToast('请选择到期日期', 'error');
+    return;
+  }
+
+  const container = document.getElementById('result-area');
+  container.innerHTML = '<div class="loading">查询中...</div>';
+
+  try {
+    const res = await fetch(`/api/instrument-meter?expireDate=${encodeURIComponent(expireDate)}`);
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '查询失败');
+    }
+    currentRows = result.data || [];
+    document.getElementById('record-count').textContent = result.count || 0;
+    sortState = { key: '下次检验日期', asc: true };
+    renderTable();
+  } catch (err) {
+    container.innerHTML = `<div class="empty">查询失败：${escapeHtml(err.message)}</div>`;
+    showToast('查询失败：' + err.message, 'error');
+  }
+}
+
+function getCellClass(col) {
+  if (col.key === '序号' || col.key === '送检周期（月）') return 'seq';
+  if (col.type === 'date') return 'date-col';
+  return '';
+}
+
+function renderTable() {
+  const container = document.getElementById('result-area');
+  if (currentRows.length === 0) {
+    container.innerHTML = '<div class="empty">未查询到符合条件的记录</div>';
+    return;
+  }
+
+  let html = '<table><thead><tr>';
+  COLUMNS.forEach(col => {
+    const activeAsc = sortState.key === col.key && sortState.asc;
+    const activeDesc = sortState.key === col.key && !sortState.asc;
+    const icon = activeAsc ? '▲' : activeDesc ? '▼' : '⇅';
+    const cls = activeAsc ? 'sort-asc' : activeDesc ? 'sort-desc' : '';
+    html += `<th class="${cls}" onclick="sortBy('${escapeHtml(col.key)}')">` +
+            `${escapeHtml(col.key)}<span class="sort-icon">${icon}</span></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  currentRows.forEach(row => {
+    html += '<tr>';
+    COLUMNS.forEach(col => {
+      const val = row[col.key];
+      const display = val === null || val === undefined ? '-' : escapeHtml(val);
+      const cls = getCellClass(col);
+      html += `<td class="${cls}" style="text-align:${col.align}">${display}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function sortBy(key) {
+  if (sortState.key === key) {
+    sortState.asc = !sortState.asc;
+  } else {
+    sortState = { key, asc: true };
+  }
+
+  const col = COLUMNS.find(c => c.key === key);
+  currentRows.sort((a, b) => {
+    let va = a[key];
+    let vb = b[key];
+    if (va === null || va === undefined) va = '';
+    if (vb === null || vb === undefined) vb = '';
+
+    let cmp = 0;
+    if (key === '序号' || key === '送检周期（月）') {
+      cmp = Number(va) - Number(vb);
+    } else if (col && col.type === 'date') {
+      cmp = String(va).localeCompare(String(vb));
+    } else {
+      cmp = String(va).localeCompare(String(vb), 'zh-CN');
+    }
+    return sortState.asc ? cmp : -cmp;
+  });
+  renderTable();
+}
+
+function exportData() {
+  const expireDate = document.getElementById('expire-date').value;
+  if (!expireDate) {
+    showToast('请选择到期日期', 'error');
+    return;
+  }
+  if (currentRows.length === 0) {
+    showToast('当前没有可导出的数据', 'error');
+    return;
+  }
+  window.location.href = `/api/instrument-meter/export?expireDate=${encodeURIComponent(expireDate)}`;
+}
+
+init();
+</script>
+</body>
+</html>

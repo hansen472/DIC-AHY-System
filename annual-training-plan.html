@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>年度培训计划 - 数智中心</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-danger { background: #e53e3e; color: #fff; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.td-wrap { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.badge-yes { background: #c6f6d5; color: #22543d; }
+.badge-no { background: #edf2f7; color: #4a5568; }
+
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 12px; width: 90%; max-width: 720px; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #edf2f7; }
+.modal-header h3 { font-size: 16px; color: #2c3e50; }
+.modal-body { padding: 20px; overflow-y: auto; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid #edf2f7; background: #fafbfc; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-group { margin-bottom: 4px; }
+.form-group.full-width { grid-column: 1 / -1; }
+.form-group label { display: block; font-size: 13px; color: #4a5568; margin-bottom: 6px; font-weight: 500; }
+.form-group label .required { color: #e53e3e; margin-left: 2px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 14px; transition: all 0.2s; font-family: inherit;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  outline: none; border-color: #2b6cb0; box-shadow: 0 0 0 3px rgba(43,108,176,0.1);
+}
+.form-group textarea { resize: vertical; min-height: 60px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>年度培训计划</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-primary" onclick="downloadTemplate()" style="margin-right:8px;">下载CSV模板</button>
+      <button class="btn-secondary" onclick="document.getElementById('csv-file-input').click()" style="margin-right:8px;">导入CSV</button>
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none;" onchange="importCsv(this)">
+      <button class="btn-success" onclick="openAddModal()" style="margin-right:8px;">新增计划</button>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+
+  <div class="card">
+    <h2>计划列表</h2>
+    <div id="plan-list">加载中...</div>
+  </div>
+</div>
+
+<div id="plan-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">新增计划</h3>
+      <button class="btn-secondary" onclick="closeModal()">关闭</button>
+    </div>
+    <div class="modal-body">
+      <form id="plan-form" onsubmit="return false;">
+        <input type="hidden" id="edit-id">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>年度 <span class="required">*</span></label>
+            <input type="number" id="edit-year" placeholder="如：2026" min="1900" max="9999">
+          </div>
+          <div class="form-group">
+            <label>部门 <span class="required">*</span></label>
+            <input type="text" id="edit-department" placeholder="请输入部门" maxlength="100">
+          </div>
+          <div class="form-group">
+            <label>培训方式</label>
+            <input type="text" id="edit-training-method" placeholder="如：集中授课、线上培训" maxlength="100">
+          </div>
+          <div class="form-group full-width">
+            <label>培训项目/课程/内容 <span class="required">*</span></label>
+            <textarea id="edit-training-content" placeholder="请输入培训项目、课程或内容"></textarea>
+          </div>
+          <div class="form-group full-width">
+            <label>目标学员</label>
+            <input type="text" id="edit-target-trainees" placeholder="请输入目标学员" maxlength="255">
+          </div>
+          <div class="form-group">
+            <label>内训/外训</label>
+            <select id="edit-training-type">
+              <option value="">请选择</option>
+              <option value="内训">内训</option>
+              <option value="外训">外训</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>讲师</label>
+            <input type="text" id="edit-trainer" placeholder="请输入讲师" maxlength="100">
+          </div>
+          <div class="form-group">
+            <label>价格</label>
+            <input type="number" id="edit-price" placeholder="请输入价格" step="0.01" min="0">
+          </div>
+          <div class="form-group">
+            <label>培训课时</label>
+            <input type="number" id="edit-training-hours" placeholder="请输入培训课时" step="0.01" min="0">
+          </div>
+          <div class="form-group full-width">
+            <label>培训日程</label>
+            <input type="text" id="edit-training-schedule" placeholder="如：第一季度、3月15日" maxlength="255">
+          </div>
+          <div class="form-group">
+            <label>是否考核</label>
+            <select id="edit-need-assessment">
+              <option value="0">否</option>
+              <option value="1">是</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>是否通知</label>
+            <select id="edit-is-notified">
+              <option value="0">否</option>
+              <option value="1">是</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>跟踪</label>
+            <textarea id="edit-tracking" placeholder="请输入跟踪情况"></textarea>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal()">取消</button>
+      <button class="btn-success" id="btn-save" onclick="savePlan()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let plansData = [];
+let isEditMode = false;
+
+async function init() {
+  await loadUser();
+  await loadPlans();
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadPlans() {
+  try {
+    const res = await fetch('/api/annual-training-plans');
+    if (!res.ok) {
+      let msg = '加载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const result = await res.json();
+    plansData = result.data || [];
+    renderPlanList();
+  } catch (err) {
+    document.getElementById('plan-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderPlanList() {
+  if (plansData.length === 0) {
+    document.getElementById('plan-list').innerHTML = '<div class="empty">暂无年度培训计划</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>年度</th>
+        <th>部门</th>
+        <th>培训项目/课程/内容</th>
+        <th>目标学员</th>
+        <th>培训方式</th>
+        <th>内训/外训</th>
+        <th>讲师</th>
+        <th>价格</th>
+        <th>课时</th>
+        <th>日程</th>
+        <th>考核</th>
+        <th>跟踪</th>
+        <th>通知</th>
+        <th style="width:120px;">操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  plansData.forEach(p => {
+    html += `
+      <tr>
+        <td>${p.year != null ? escapeHtml(String(p.year)) : ''}</td>
+        <td>${escapeHtml(p.department)}</td>
+        <td class="td-wrap" title="${escapeHtml(p.training_content)}">${escapeHtml(p.training_content)}</td>
+        <td class="td-wrap" title="${escapeHtml(p.target_trainees)}">${escapeHtml(p.target_trainees)}</td>
+        <td>${escapeHtml(p.training_method)}</td>
+        <td>${escapeHtml(p.training_type)}</td>
+        <td>${escapeHtml(p.trainer)}</td>
+        <td>${p.price != null ? p.price : ''}</td>
+        <td>${p.training_hours != null ? parseFloat(p.training_hours) : ''}</td>
+        <td>${escapeHtml(p.training_schedule)}</td>
+        <td>${p.need_assessment === 1 ? '<span class="badge badge-yes">是</span>' : '<span class="badge badge-no">否</span>'}</td>
+        <td class="td-wrap" title="${escapeHtml(p.tracking)}">${escapeHtml(p.tracking)}</td>
+        <td>${p.is_notified === 1 ? '<span class="badge badge-yes">是</span>' : '<span class="badge badge-no">否</span>'}</td>
+        <td>
+          <button class="btn-primary" onclick="openEditModal(${p.id})" style="padding:4px 10px; font-size:12px; margin-right:4px;">编辑</button>
+          <button class="btn-danger" onclick="deletePlan(${p.id})" style="padding:4px 10px; font-size:12px;">删除</button>
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('plan-list').innerHTML = html;
+}
+
+function openAddModal() {
+  isEditMode = false;
+  document.getElementById('modal-title').textContent = '新增计划';
+  document.getElementById('plan-form').reset();
+  document.getElementById('edit-id').value = '';
+  document.getElementById('edit-year').value = new Date().getFullYear();
+  document.getElementById('edit-is-notified').value = '0';
+  document.getElementById('plan-modal').classList.add('active');
+}
+
+function openEditModal(id) {
+  isEditMode = true;
+  document.getElementById('modal-title').textContent = '编辑计划';
+  const p = plansData.find(item => item.id === id);
+  if (!p) return;
+
+  document.getElementById('edit-id').value = p.id;
+  document.getElementById('edit-year').value = p.year || '';
+  document.getElementById('edit-department').value = p.department || '';
+  document.getElementById('edit-training-content').value = p.training_content || '';
+  document.getElementById('edit-target-trainees').value = p.target_trainees || '';
+  document.getElementById('edit-training-method').value = p.training_method || '';
+  document.getElementById('edit-training-type').value = p.training_type || '';
+  document.getElementById('edit-trainer').value = p.trainer || '';
+  document.getElementById('edit-price').value = p.price != null ? p.price : '';
+  document.getElementById('edit-training-hours').value = p.training_hours != null ? parseFloat(p.training_hours) : '';
+  document.getElementById('edit-training-schedule').value = p.training_schedule || '';
+  document.getElementById('edit-need-assessment').value = p.need_assessment === 1 ? '1' : '0';
+  document.getElementById('edit-tracking').value = p.tracking || '';
+  document.getElementById('edit-is-notified').value = p.is_notified === 1 ? '1' : '0';
+
+  document.getElementById('plan-modal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('plan-modal').classList.remove('active');
+}
+
+async function savePlan() {
+  const id = document.getElementById('edit-id').value;
+  const year = document.getElementById('edit-year').value;
+  const department = document.getElementById('edit-department').value.trim();
+  const trainingContent = document.getElementById('edit-training-content').value.trim();
+  const targetTrainees = document.getElementById('edit-target-trainees').value.trim();
+  const trainingMethod = document.getElementById('edit-training-method').value.trim();
+  const trainingType = document.getElementById('edit-training-type').value;
+  const trainer = document.getElementById('edit-trainer').value.trim();
+  const price = document.getElementById('edit-price').value;
+  const trainingHours = document.getElementById('edit-training-hours').value;
+  const trainingSchedule = document.getElementById('edit-training-schedule').value.trim();
+  const needAssessment = document.getElementById('edit-need-assessment').value;
+  const tracking = document.getElementById('edit-tracking').value.trim();
+  const isNotified = document.getElementById('edit-is-notified').value;
+
+  const yearValue = parseInt(year, 10);
+  if (isNaN(yearValue) || yearValue < 1900 || yearValue > 9999) {
+    showMessage('请输入正确的年度', 'error');
+    return;
+  }
+  if (!department) {
+    showMessage('请输入部门', 'error');
+    return;
+  }
+  if (!trainingContent) {
+    showMessage('请输入培训项目/课程/内容', 'error');
+    return;
+  }
+
+  const payload = {
+    year: yearValue,
+    department: department,
+    training_content: trainingContent,
+    target_trainees: targetTrainees,
+    training_method: trainingMethod,
+    training_type: trainingType,
+    trainer: trainer,
+    price: price,
+    training_hours: trainingHours,
+    training_schedule: trainingSchedule,
+    need_assessment: parseInt(needAssessment, 10),
+    tracking: tracking,
+    is_notified: parseInt(isNotified, 10)
+  };
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+
+  try {
+    const url = isEditMode ? '/api/annual-training-plans/' + id : '/api/annual-training-plans';
+    const method = isEditMode ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '保存失败');
+
+    showMessage(result.message, 'success');
+    closeModal();
+    await loadPlans();
+  } catch (err) {
+    showMessage(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deletePlan(id) {
+  if (!confirm('确定要删除该培训计划吗？')) return;
+
+  try {
+    const res = await fetch('/api/annual-training-plans/' + id, { method: 'DELETE' });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '删除失败');
+
+    showMessage('计划已删除', 'success');
+    await loadPlans();
+  } catch (err) {
+    showMessage('删除失败：' + err.message, 'error');
+  }
+}
+
+async function downloadTemplate() {
+  try {
+    const res = await fetch('/api/annual-training-plans/template');
+    if (!res.ok) {
+      let msg = '下载失败';
+      try {
+        const errData = await res.json();
+        msg = errData.error || errData.message || ('HTTP ' + res.status);
+      } catch (e) {
+        msg = 'HTTP ' + res.status;
+      }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'annual-training-plan-template.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    showMessage('下载模板失败：' + err.message, 'error');
+  }
+}
+
+async function importCsv(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const csv = e.target.result;
+    try {
+      const res = await fetch('/api/annual-training-plans/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || '导入失败');
+
+      showMessage(result.message, 'success');
+      await loadPlans();
+    } catch (err) {
+      showMessage('导入失败：' + err.message, 'error');
+    }
+  };
+  reader.onerror = function() {
+    showMessage('读取文件失败', 'error');
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 5000);
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

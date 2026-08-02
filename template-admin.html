@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模板版本管理</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1600px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-danger { background: #e53e3e; color: #fff; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.badge-active { background: #c6f6d5; color: #22543d; }
+.badge-inactive { background: #edf2f7; color: #4a5568; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 12px; width: 90%; max-width: 1200px; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; }
+.modal.wide { max-width: 1400px; }
+.modal-header { padding: 16px 20px; border-bottom: 1px solid #edf2f7; display: flex; justify-content: space-between; align-items: center; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-footer { padding: 16px 20px; border-top: 1px solid #edf2f7; display: flex; justify-content: flex-end; gap: 10px; }
+label { display: block; font-size: 13px; color: #4a5568; margin-bottom: 6px; }
+input[type="text"], textarea, select { width: 100%; padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; font-family: monospace; }
+textarea { min-height: 80px; resize: vertical; }
+.code-editor { min-height: 360px; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.version-list { max-height: 420px; overflow-y: auto; }
+.form-row { display: flex; gap: 16px; margin-bottom: 12px; }
+.form-row .form-group { flex: 1; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.checkbox-label input { width: auto; }
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.compare-box h4 { font-size: 14px; margin-bottom: 8px; color: #4a5568; }
+.compare-box textarea { min-height: 480px; }
+.meta-text { color: #718096; font-size: 13px; }
+.reason-text { color: #2d3748; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>模板版本管理</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">返回导航</button>
+    </div>
+  </header>
+
+  <div id="global-message" class="message"></div>
+
+  <div class="card">
+    <h2>全局 CSS</h2>
+    <div class="toolbar" style="margin-bottom:12px;">
+      <button class="btn-primary" onclick="openCssEditor()">编辑 CSS</button>
+    </div>
+    <div id="css-info">加载中...</div>
+  </div>
+
+  <div class="card">
+    <h2>模板列表</h2>
+    <div id="template-list">加载中...</div>
+  </div>
+</div>
+
+<!-- 升级版本弹窗 -->
+<div id="version-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="version-modal-title">升级版本</h3>
+      <button class="btn-secondary" onclick="closeModal('version-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="version-template-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label>版本号 <span class="meta-text">（建议按 1.1.0、1.2.0 递增）</span></label>
+          <input type="text" id="version-number" placeholder="例如：1.1.0">
+        </div>
+        <div class="form-group">
+          <label>修改原因</label>
+          <input type="text" id="version-reason" placeholder="例如：调整表头字段">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>备注</label>
+        <textarea id="version-remarks" placeholder="补充说明，如变更内容、注意事项等"></textarea>
+      </div>
+      <label>JS 代码（在当前版本基础上修改）</label>
+      <textarea id="version-code" class="code-editor" placeholder="function renderXxx(row, idx) { ... }"></textarea>
+      <div style="margin-top:12px;">
+        <label class="checkbox-label">
+          <input type="checkbox" id="version-activate" checked>
+          <span>保存后立即激活该版本</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('version-modal')">取消</button>
+      <button class="btn-primary" onclick="previewCurrentCode()">查看</button>
+      <button class="btn-success" onclick="saveVersion()">保存版本</button>
+    </div>
+  </div>
+</div>
+
+<!-- 版本历史弹窗 -->
+<div id="history-modal" class="modal-overlay">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3 id="history-modal-title">版本历史</h3>
+      <button class="btn-secondary" onclick="closeModal('history-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div id="version-history">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<!-- 版本对比弹窗 -->
+<div id="compare-modal" class="modal-overlay">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3 id="compare-modal-title">版本对比</h3>
+      <button class="btn-secondary" onclick="closeModal('compare-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="compare-grid">
+        <div class="compare-box">
+          <h4 id="compare-left-title">版本 A</h4>
+          <textarea id="compare-left-code" readonly></textarea>
+        </div>
+        <div class="compare-box">
+          <h4 id="compare-right-title">版本 B</h4>
+          <textarea id="compare-right-code" readonly></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CSS 编辑弹窗 -->
+<div id="css-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>编辑全局 CSS</h3>
+      <button class="btn-secondary" onclick="closeModal('css-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="css-editor" class="code-editor"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('css-modal')">取消</button>
+      <button class="btn-success" onclick="saveCss()">保存 CSS</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let templatesData = [];
+let cssData = null;
+
+async function init() {
+  await loadUser();
+  await loadTemplates();
+  await loadCss();
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadTemplates() {
+  try {
+    const res = await fetch('/api/templates');
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    templatesData = result.data || [];
+    renderTemplateList();
+  } catch (err) {
+    document.getElementById('template-list').innerHTML = '<div class="empty">加载失败：' + err.message + '</div>';
+  }
+}
+
+function renderTemplateList() {
+  if (templatesData.length === 0) {
+    document.getElementById('template-list').innerHTML = '<div class="empty">暂无模板数据</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>模板标识</th>
+        <th>模板名称</th>
+        <th>渲染函数</th>
+        <th>当前版本</th>
+        <th>修改原因</th>
+        <th>创建人</th>
+        <th>更新时间</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  templatesData.forEach(tpl => {
+    const statusClass = tpl.is_active ? 'badge-active' : 'badge-inactive';
+    const statusText = tpl.is_active ? '启用' : '禁用';
+    html += `
+      <tr>
+        <td>${tpl.template_key}</td>
+        <td>${tpl.name}</td>
+        <td>${tpl.render_function_name}</td>
+        <td>${tpl.version || '-'}</td>
+        <td class="reason-text" title="${escapeHtml(tpl.reason || '')}">${tpl.reason || '-'}</td>
+        <td>${tpl.created_by || '-'}</td>
+        <td>${formatDate(tpl.version_created_at)}</td>
+        <td><span class="badge ${statusClass}">${statusText}</span></td>
+        <td>
+          <button class="btn-primary" onclick="openUpgradeModal(${tpl.id})" style="padding:4px 10px; font-size:12px;">升级版本</button>
+          <button class="btn-secondary" onclick="openHistoryModal(${tpl.id})" style="padding:4px 10px; font-size:12px; margin-left:6px;">版本历史</button>
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('template-list').innerHTML = html;
+}
+
+async function loadCss() {
+  try {
+    const res = await fetch('/api/css');
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    cssData = result.data;
+    document.getElementById('css-info').innerHTML = `
+      <div>样式名称：${cssData.name}</div>
+      <div style="margin-top:6px; color:#718096; font-size:13px;">最后更新：${formatDate(cssData.updated_at)}</div>
+    `;
+  } catch (err) {
+    document.getElementById('css-info').innerHTML = '<div class="empty">加载失败：' + err.message + '</div>';
+  }
+}
+
+function openCssEditor() {
+  if (!cssData) return;
+  document.getElementById('css-editor').value = cssData.css_content || '';
+  document.getElementById('css-modal').classList.add('active');
+}
+
+async function saveCss() {
+  const cssContent = document.getElementById('css-editor').value;
+  try {
+    const res = await fetch('/api/css', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ css_content: cssContent })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '保存失败');
+    showMessage('CSS 已更新', 'success');
+    closeModal('css-modal');
+    await loadCss();
+  } catch (err) {
+    showMessage('保存失败：' + err.message, 'error');
+  }
+}
+
+async function openUpgradeModal(templateId) {
+  const tpl = templatesData.find(t => t.id === templateId);
+  document.getElementById('version-template-id').value = templateId;
+  document.getElementById('version-modal-title').textContent = '升级版本 - ' + (tpl ? tpl.name : '');
+  document.getElementById('version-number').value = '';
+  document.getElementById('version-reason').value = '';
+  document.getElementById('version-remarks').value = '';
+  document.getElementById('version-code').value = '加载中...';
+  document.getElementById('version-activate').checked = true;
+  document.getElementById('version-modal').classList.add('active');
+
+  // 自动加载当前生效版本的 JS 代码
+  if (tpl && tpl.current_version_id) {
+    try {
+      const res = await fetch(`/api/templates/${templateId}/versions/${tpl.current_version_id}/code`);
+      if (!res.ok) throw new Error('加载失败');
+      const result = await res.json();
+      document.getElementById('version-code').value = result.data.js_code || '';
+    } catch (err) {
+      document.getElementById('version-code').value = '// 加载当前版本代码失败，请手动粘贴\n';
+    }
+  } else {
+    document.getElementById('version-code').value = '';
+  }
+}
+
+async function openHistoryModal(templateId) {
+  const tpl = templatesData.find(t => t.id === templateId);
+  document.getElementById('history-modal-title').textContent = '版本历史 - ' + (tpl ? tpl.name : '');
+  document.getElementById('history-modal').classList.add('active');
+  document.getElementById('version-history').innerHTML = '加载中...';
+
+  try {
+    const res = await fetch('/api/templates/' + templateId);
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    renderVersionHistory(templateId, result.data);
+  } catch (err) {
+    document.getElementById('version-history').innerHTML = '<div class="empty">加载失败：' + err.message + '</div>';
+  }
+}
+
+function renderVersionHistory(templateId, data) {
+  const versions = data.versions || [];
+  if (versions.length === 0) {
+    document.getElementById('version-history').innerHTML = '<div class="empty">暂无版本记录</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th style="width:40px;"><input type="checkbox" id="compare-all" onclick="toggleCompareAll()"></th>
+        <th>版本号</th>
+        <th>状态</th>
+        <th>修改原因</th>
+        <th>备注</th>
+        <th>创建人</th>
+        <th>创建时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  versions.forEach(v => {
+    const statusClass = v.is_active ? 'badge-active' : 'badge-inactive';
+    const statusText = v.is_active ? '生效中' : '历史';
+    html += `
+      <tr>
+        <td><input type="checkbox" class="compare-check" data-version="${v.version}" data-id="${v.id}" onchange="updateCompareButton()"></td>
+        <td>${v.version}</td>
+        <td><span class="badge ${statusClass}">${statusText}</span></td>
+        <td class="reason-text" title="${escapeHtml(v.reason || '')}">${v.reason || '-'}</td>
+        <td class="reason-text" title="${escapeHtml(v.remarks || '')}">${v.remarks || '-'}</td>
+        <td>${v.created_by || '-'}</td>
+        <td>${formatDate(v.created_at)}</td>
+        <td>
+          <button class="btn-secondary" onclick="previewVersion(${templateId}, ${v.id})" style="padding:4px 10px; font-size:12px;">查看</button>
+          ${v.is_active ? '' : `<button class="btn-success" onclick="activateVersion(${templateId}, ${v.id})" style="padding:4px 10px; font-size:12px; margin-left:4px;">激活</button>`}
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  html += `<div style="margin-top:12px;">
+    <button class="btn-secondary" id="btn-compare" onclick="compareSelected(${templateId})" disabled>对比选中版本</button>
+    <span class="meta-text" style="margin-left:8px;">请勾选两个版本进行对比</span>
+  </div>`;
+  document.getElementById('version-history').innerHTML = html;
+}
+
+function toggleCompareAll() {
+  const checked = document.getElementById('compare-all').checked;
+  document.querySelectorAll('.compare-check').forEach(cb => {
+    cb.checked = checked;
+  });
+  updateCompareButton();
+}
+
+function updateCompareButton() {
+  const checked = document.querySelectorAll('.compare-check:checked');
+  document.getElementById('btn-compare').disabled = checked.length !== 2;
+}
+
+async function compareSelected(templateId) {
+  const checked = Array.from(document.querySelectorAll('.compare-check:checked'));
+  if (checked.length !== 2) return;
+
+  const leftId = checked[0].dataset.id;
+  const rightId = checked[1].dataset.id;
+  const leftVersion = checked[0].dataset.version;
+  const rightVersion = checked[1].dataset.version;
+
+  try {
+    const [leftRes, rightRes] = await Promise.all([
+      fetch(`/api/templates/${templateId}/versions/${leftId}/code`),
+      fetch(`/api/templates/${templateId}/versions/${rightId}/code`)
+    ]);
+    const leftResult = await leftRes.json();
+    const rightResult = await rightRes.json();
+
+    document.getElementById('compare-left-title').textContent = '版本 ' + leftVersion;
+    document.getElementById('compare-right-title').textContent = '版本 ' + rightVersion;
+    document.getElementById('compare-left-code').value = leftResult.data.js_code || '';
+    document.getElementById('compare-right-code').value = rightResult.data.js_code || '';
+    document.getElementById('compare-modal').classList.add('active');
+  } catch (err) {
+    showMessage('对比加载失败：' + err.message, 'error');
+  }
+}
+
+function previewVersion(templateId, versionId) {
+  window.open(`/api/templates/${templateId}/versions/${versionId}/preview`, '_blank');
+}
+
+async function previewCurrentCode() {
+  const templateId = document.getElementById('version-template-id').value;
+  const jsCode = document.getElementById('version-code').value;
+
+  if (!jsCode.trim()) {
+    showMessage('请先输入 JS 代码', 'error');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/templates/' + templateId + '/preview-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ js_code: jsCode })
+    });
+
+    if (!res.ok) {
+      const result = await res.json().catch(() => ({}));
+      throw new Error(result.error || '预览失败');
+    }
+
+    const html = await res.text();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    showMessage('查看失败：' + err.message, 'error');
+  }
+}
+
+async function saveVersion() {
+  const templateId = document.getElementById('version-template-id').value;
+  const version = document.getElementById('version-number').value.trim();
+  const reason = document.getElementById('version-reason').value.trim();
+  const remarks = document.getElementById('version-remarks').value.trim();
+  const jsCode = document.getElementById('version-code').value;
+  const activate = document.getElementById('version-activate').checked;
+
+  if (!version) { showMessage('请输入版本号', 'error'); return; }
+  if (!jsCode.trim()) { showMessage('请输入 JS 代码', 'error'); return; }
+
+  try {
+    const res = await fetch('/api/templates/' + templateId + '/versions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version, js_code: jsCode, reason, remarks, activate })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '保存失败');
+    showMessage(result.message, 'success');
+    closeModal('version-modal');
+    await loadTemplates();
+  } catch (err) {
+    showMessage('保存失败：' + err.message, 'error');
+  }
+}
+
+async function activateVersion(templateId, versionId) {
+  if (!confirm('确定要激活该版本吗？激活后新打印请求将使用此版本。')) return;
+
+  try {
+    const res = await fetch('/api/templates/' + templateId + '/versions/' + versionId + '/activate', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '激活失败');
+    showMessage('版本已激活', 'success');
+    closeModal('history-modal');
+    await loadTemplates();
+  } catch (err) {
+    showMessage('激活失败：' + err.message, 'error');
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 4000);
+}
+
+function formatDate(str) {
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  return d.toLocaleString('zh-CN');
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

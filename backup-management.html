@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>备份管理 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+h1 { font-size: 22px; color: #2c3e50; }
+button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.meta-text { color: #718096; font-size: 13px; }
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.status-success { background: #c6f6d5; color: #22543d; }
+.status-running { background: #bee3f8; color: #2a4365; }
+.status-failed { background: #fed7d7; color: #742a2a; }
+.error-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c53030; }
+.path-cell { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: none;
+}
+.toast.success { background: #38a169; }
+.toast.error { background: #e53e3e; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>数据库备份管理</h1>
+    <div>
+      <span id="current-user" style="font-size:13px; color:#4a5568; margin-right:12px;"></span>
+      <button class="btn-success" id="btn-run" onclick="runBackup()">立即备份</button>
+      <button class="btn-primary" onclick="loadBackups()" style="margin-left:8px;">刷新</button>
+      <button class="btn-secondary" onclick="window.location.href='/'" style="margin-left:8px;">返回导航</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="toolbar">
+      <span class="meta-text">每日凌晨 2:00 自动执行全量备份，备份文件保存在服务器 /backup/mariadb 目录。</span>
+    </div>
+    <div id="backup-list">加载中...</div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+async function init() {
+  await loadUser();
+  await loadBackups();
+}
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadBackups() {
+  const container = document.getElementById('backup-list');
+  container.innerHTML = '加载中...';
+  try {
+    const res = await fetch('/api/backups');
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    renderBackups(result.data || []);
+  } catch (err) {
+    container.innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function runBackup() {
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  btn.textContent = '备份中...';
+  try {
+    const res = await fetch('/api/backups/run', { method: 'POST' });
+    const result = await res.json();
+    if (result.success) {
+      showToast(result.message, 'success');
+      // 5 秒后自动刷新，等待后台完成
+      setTimeout(loadBackups, 5000);
+    } else {
+      showToast(result.error || '备份启动失败', 'error');
+    }
+  } catch (err) {
+    showToast('备份启动失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '立即备份';
+  }
+}
+
+function renderBackups(backups) {
+  if (backups.length === 0) {
+    document.getElementById('backup-list').innerHTML = '<div class="empty">暂无备份记录</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>备份名称</th>
+        <th>状态</th>
+        <th>文件大小</th>
+        <th>开始时间</th>
+        <th>完成时间</th>
+        <th>触发方式</th>
+        <th>错误信息</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  backups.forEach(b => {
+    html += `
+      <tr>
+        <td>${escapeHtml(b.backup_name)}</td>
+        <td>${renderStatus(b.status)}</td>
+        <td>${formatFileSize(b.file_size)}</td>
+        <td>${formatDate(b.started_at)}</td>
+        <td>${formatDate(b.completed_at)}</td>
+        <td>${escapeHtml(b.created_by || '-')}</td>
+        <td class="error-cell" title="${escapeHtml(b.error_message || '')}">${escapeHtml(b.error_message || '-')}</td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('backup-list').innerHTML = html;
+}
+
+function renderStatus(status) {
+  const map = {
+    success: '<span class="status-badge status-success">成功</span>',
+    running: '<span class="status-badge status-running">进行中</span>',
+    failed: '<span class="status-badge status-failed">失败</span>'
+  };
+  return map[status] || escapeHtml(status);
+}
+
+function formatFileSize(bytes) {
+  if (bytes === null || bytes === undefined || bytes === 0) return '-';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let i = 0;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i++;
+  }
+  return size.toFixed(2) + ' ' + units[i];
+}
+
+function formatDate(str) {
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  return d.toLocaleString('zh-CN');
+}
+
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function showToast(message, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast ' + type;
+  toast.style.display = 'block';
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 4000);
+}
+
+init();
+</script>
+</body>
+</html>

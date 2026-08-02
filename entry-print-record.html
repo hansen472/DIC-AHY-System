@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>录入打印记录</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Microsoft YaHei", "SimSun", "宋体", serif;
+  background: #f5f7fa;
+  padding: 16px;
+  color: #333;
+}
+.container { max-width: 800px; margin: 0 auto; }
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 { font-size: 18px; margin-bottom: 12px; color: #2c3e50; }
+h3 { font-size: 16px; margin-bottom: 14px; color: #2c3e50; font-weight: 600; }
+button {
+  padding: 10px 18px; border: none; border-radius: 6px; cursor: pointer;
+  font-size: 14px; transition: opacity 0.2s;
+}
+button:hover { opacity: 0.85; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.form-row label {
+  font-size: 14px;
+  color: #4a5568;
+  font-weight: 500;
+}
+input[type="text"],
+input[type="datetime-local"],
+select {
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+  background: #fff;
+}
+input[type="text"]:focus,
+input[type="datetime-local"]:focus,
+select:focus { border-color: #2b6cb0; }
+input[readonly] {
+  background: #f7fafc;
+  color: #4a5568;
+  cursor: not-allowed;
+}
+
+.two-col,
+.datetime-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 18px 0 12px;
+  color: #2c3e50;
+  border-left: 4px solid #2b6cb0;
+  padding-left: 8px;
+}
+
+.process-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.process-table {
+  width: 400%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.process-table td {
+  width: 12.5%;
+  border: 1px solid #e2e8f0;
+  padding: 10px;
+  vertical-align: middle;
+}
+.process-table td:first-child {
+  position: sticky;
+  left: 0;
+  background: #f7fafc;
+  font-weight: 500;
+  color: #4a5568;
+  z-index: 1;
+}
+.process-table input[type="text"],
+.process-table select {
+  padding: 8px 10px;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 600px) {
+  .two-col { grid-template-columns: 1fr 1fr; }
+  .datetime-row { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <h2>录入打印记录（配料工序生产记录 SOR-SC-003）</h2>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span id="current-user" style="font-size:13px; color:#4a5568;"></span>
+        <button class="btn-secondary" onclick="window.location.href='/select-print-record.html'">返回</button>
+        <button class="btn-primary" onclick="saveRecords()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="forms-container"></div>
+</div>
+
+<script>
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderForm(row, idx) {
+  const cols = [1, 2, 3, 4, 5, 6, 7];
+
+  const dianziOptions = ['<option value="">请选择</option>']
+    .concat(['DZJSC41013', 'DZJSC41014', 'DZJSC41015', 'DZJSC41016']
+      .map(v => `<option value="${v}">${v}</option>`))
+    .join('');
+
+  return `
+    <form class="record-form card" data-index="${idx}">
+      <h3>配料工序生产记录 — ${escapeHtml(row.mingcheng || '')} / ${escapeHtml(row.pici || '')} / 生产任务号：${escapeHtml(row.num || '')}</h3>
+
+      <div class="form-row">
+        <label>产品名称</label>
+        <input type="text" name="mingcheng" value="${escapeHtml(row.mingcheng)}" readonly>
+      </div>
+
+      <div class="form-row">
+        <label>生产批号</label>
+        <input type="text" name="pici" value="${escapeHtml(row.pici)}" readonly>
+      </div>
+
+      <div class="form-row two-col">
+        <div class="form-row" style="margin-bottom:0;">
+          <label>型 号</label>
+          <input type="text" name="xinghao" value="${escapeHtml(row.xinghao)}" readonly>
+        </div>
+        <div class="form-row" style="margin-bottom:0;">
+          <label>规 格</label>
+          <input type="text" name="guige" value="${escapeHtml(row.guige)}" readonly>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>配方号</label>
+        <input type="text" name="peifang" value="${escapeHtml(row.peifang)}" readonly>
+      </div>
+
+      <div class="form-row datetime-row">
+        <div class="form-row" style="margin-bottom:0;">
+          <label>生产日期 — 开始时间</label>
+          <input type="datetime-local" name="start-time">
+        </div>
+        <div class="form-row" style="margin-bottom:0;">
+          <label>生产日期 — 结束时间</label>
+          <input type="datetime-local" name="end-time">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>班 次</label>
+        <select name="banci-${idx}">
+          <option value="">请选择</option>
+          <option value="白班">白班</option>
+          <option value="夜班">夜班</option>
+        </select>
+      </div>
+
+      <div class="section-title">生产过程操作</div>
+
+      <div class="process-table-wrapper">
+        <table class="process-table">
+          <tbody>
+            <tr>
+              <td>物料序号</td>
+              ${cols.map(n => `<td>${n}</td>`).join('')}
+            </tr>
+            <tr>
+              <td>电子秤编号</td>
+              ${cols.map(n => `<td><select name="dianzi-cheng-${idx}-${n}">${dianziOptions}</select></td>`).join('')}
+            </tr>
+            <tr>
+              <td>物料代码</td>
+              ${cols.map(n => `<td><input type="text" name="wuliao-daima-${idx}-${n}" placeholder=""></td>`).join('')}
+            </tr>
+            <tr>
+              <td>原料批号</td>
+              ${cols.map(n => `<td><input type="text" name="yuanliao-pihao-${idx}-${n}" placeholder=""></td>`).join('')}
+            </tr>
+            <tr>
+              <td>配方表重量（kg）</td>
+              ${cols.map(n => `<td><input type="text" name="peifang-zhongliang-${idx}-${n}" placeholder=""></td>`).join('')}
+            </tr>
+            <tr>
+              <td>每车称重重量（kg）</td>
+              ${cols.map(n => `<td><input type="text" name="meiche-zhongliang-${idx}-${n}" placeholder=""></td>`).join('')}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </form>
+  `;
+}
+
+function renderForms() {
+  const stored = sessionStorage.getItem('batchRecordSelectedRows');
+  const rows = stored ? JSON.parse(stored) : [];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    alert('未选择记录，请先在选择打印记录页面勾选数据。');
+    window.location.href = '/select-print-record.html';
+    return;
+  }
+
+  const container = document.getElementById('forms-container');
+  container.innerHTML = rows.map((row, idx) => renderForm(row, idx)).join('');
+}
+
+function saveRecords() {
+  const forms = document.querySelectorAll('.record-form');
+  if (!forms.length) { alert('没有可保存的记录'); return; }
+
+  const records = Array.from(forms).map(form => {
+    const data = {};
+    const formData = new FormData(form);
+    formData.forEach((value, key) => { data[key] = value; });
+    return data;
+  });
+
+  console.log('[录入打印记录] 保存数据:', records);
+  alert(`已收集 ${records.length} 条记录数据，请查看控制台或对接后端保存接口。`);
+
+  // TODO: 替换为真实保存接口
+  // fetch('/api/batch-record', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(records) });
+}
+
+(function initUser() {
+  fetch('/api/session')
+    .then(res => {
+      if (res.status === 401) {
+        window.location.href = '/login';
+        throw new Error('未登录');
+      }
+      return res.json();
+    })
+    .then(data => {
+      if (data.success && data.username) {
+        document.getElementById('current-user').textContent = '当前用户：' + data.username;
+      }
+    })
+    .catch(e => { if (e.message !== '未登录') console.error('获取用户信息失败:', e); });
+})();
+
+renderForms();
+</script>
+</body>
+</html>

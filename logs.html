@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>打印记录</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "SimSun", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1200px; margin: 0 auto; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header h1 { font-size: 20px; color: #2c3e50; }
+.header .meta { display: flex; align-items: center; gap: 10px; }
+.header span { font-size: 13px; color: #4a5568; }
+button { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.section { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.td-wrap { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-loading { color: #2b6cb0; font-size: 13px; }
+.status-error { color: #c53030; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>打印记录</h1>
+    <div class="meta">
+      <span id="current-user"></span>
+      <button class="btn-primary" onclick="exportLogs()">导出 CSV</button>
+      <button class="btn-secondary" onclick="window.location.href='/'">关闭</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div id="log-status" class="status-loading">加载中...</div>
+    <div style="overflow-x:auto;">
+      <table id="log-table" style="display:none;">
+        <thead>
+          <tr>
+            <th style="width:50px;">序号</th>
+            <th>用户名</th>
+            <th>单据编号</th>
+            <th>选中批次</th>
+            <th>使用模板</th>
+            <th style="width:120px;">IP地址</th>
+            <th style="width:160px;">打印时间</th>
+          </tr>
+        </thead>
+        <tbody id="log-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(async function init() {
+  const statusEl = document.getElementById('log-status');
+
+  // 先获取当前用户信息
+  try {
+    const sessionRes = await fetch('/api/session');
+    if (!sessionRes.ok) {
+      if (sessionRes.status === 401) {
+        alert('登录已过期，请重新登录');
+        window.location.href = '/login';
+        return;
+      }
+      throw new Error('获取用户信息失败');
+    }
+    const sessionData = await sessionRes.json();
+    if (sessionData.success && sessionData.username) {
+      document.getElementById('current-user').textContent = '当前用户：' + sessionData.username;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
+  // 获取打印日志
+  try {
+    const res = await fetch('/api/print-logs');
+    if (!res.ok) {
+      if (res.status === 401) {
+        alert('登录已过期，请重新登录');
+        window.location.href = '/login';
+        return;
+      }
+      throw new Error('查询失败：' + res.status);
+    }
+    const data = await res.json();
+
+    const tbody = document.getElementById('log-tbody');
+    if (!data.success || !data.data || data.data.length === 0) {
+      statusEl.textContent = '';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无打印记录</td></tr>';
+      document.getElementById('log-table').style.display = 'table';
+      return;
+    }
+
+    const TPL_NAME_MAP = {
+      cover: '封皮',
+      batchrecord: '配料工序生产记录',
+      mixingrecord: '密炼工序生产记录',
+      calenderingrecord: '压延工序生产记录',
+      vulcanizingrecord: '硫化工序生产记录',
+      trimmingrecord: '除边工序生产记录',
+      cleaningrecord: '清洗工序生产记录',
+      materialbalance: '橡胶车间物料平衡单',
+      labelrecord: '标签打印使用、销毁记录',
+      outsourcingrecord: '外包工序生产记录',
+      innerpackingrecord: '内包工序生产记录',
+      batchingcleanup: '配料工序清场记录',
+      mixingcleanup: '密炼工序清场记录',
+      calenderingcleanup: '压延出片工序清场记录',
+      vulcanizingcleanup: '硫化工序清场记录',
+      trimmingcleanup: '除边工序清场记录',
+      washingcleanup: '清洗工序清场记录',
+      innerpackagingcleanup: '内包工序清场记录',
+      outerpackagingcleanup: '外包工序清场记录',
+      mixingcleanup1: '开炼工序清场记录（1#）',
+      mixingcleanup2: '开炼工序清场记录（2#）',
+      washingprecleanup: '清洗工序预清洗清场记录',
+      mixingproduction1: '开炼工序生产记录（1#）',
+      mixingproduction2: '开炼工序生产记录（2#）',
+      testsamplevulcanizing: '试样硫化生产记录'
+    };
+
+    tbody.innerHTML = data.data.map((row, idx) => {
+      let templatesStr = '';
+      try {
+        const tpls = JSON.parse(row.templates);
+        templatesStr = tpls.map(t => {
+          const name = TPL_NAME_MAP[t.template] || t.template;
+          return name + ' × ' + (t.copies || 1) + '张';
+        }).join('，');
+      } catch (e) {
+        templatesStr = row.templates || '';
+      }
+
+      let piciStr = '';
+      try {
+        const picis = JSON.parse(row.selected_pici);
+        piciStr = Array.isArray(picis) ? picis.join('，') : row.selected_pici;
+      } catch (e) {
+        piciStr = row.selected_pici || '';
+      }
+
+      return `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${row.username || ''}</td>
+          <td>${row.querydata || ''}</td>
+          <td class="td-wrap" title="${piciStr}">${piciStr}</td>
+          <td class="td-wrap" title="${templatesStr}">${templatesStr}</td>
+          <td>${row.ip_address || ''}</td>
+          <td>${formatTime(row.created_at)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    statusEl.textContent = `共 ${data.data.length} 条记录`;
+    document.getElementById('log-table').style.display = 'table';
+  } catch (err) {
+    console.error(err);
+    statusEl.className = 'status-error';
+    statusEl.textContent = '加载失败：' + err.message;
+  }
+})();
+
+function formatTime(dt) {
+  if (!dt) return '';
+  const d = new Date(dt);
+  if (isNaN(d)) return dt;
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function exportLogs() {
+  window.location.href = '/api/print-logs/export';
+}
+</script>
+</body>
+</html>
