@@ -70,6 +70,15 @@ body {
   text-align: center;
   min-height: 18px;
 }
+.error-msg.locked {
+  color: #c05621;
+  background: #fffaf0;
+  border: 1px solid #fbd38d;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .brand-title { font-size: 28px; font-weight: 600; color: #2c3e50; line-height: 1.2; }
 .brand-subtitle { font-size: 14px; color: #718096; font-weight: 400; margin-top: 6px; letter-spacing: 0.5px; }
 </style>
@@ -119,6 +128,11 @@ async function doLogin() {
       window.location.href = '/';
     } else {
       errorMsg.textContent = data.error || '登录失败';
+      if (data.locked) {
+        errorMsg.className = 'error-msg locked';
+      } else {
+        errorMsg.className = 'error-msg';
+      }
     }
   } catch (err) {
     errorMsg.textContent = '网络错误，请稍后重试';

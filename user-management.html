@@ -32,6 +32,9 @@ tr { cursor: pointer; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .badge-active { background: #c6f6d5; color: #22543d; }
 .badge-inactive { background: #edf2f7; color: #4a5568; }
+.badge-locked { background: #feebc8; color: #c05621; }
+.btn-warning { background: #ed8936; color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 12px; border-radius: 4px; }
 .hint { color: #718096; font-size: 13px; margin-bottom: 12px; }
 
 /* Modal */
@@ -203,6 +206,8 @@ function renderUserList() {
         <th>Email</th>
         <th>入职日期</th>
         <th>状态</th>
+        <th>账户锁定</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody>`;
@@ -210,6 +215,23 @@ function renderUserList() {
   usersData.forEach(u => {
     const statusClass = u.status === 1 ? 'badge-active' : 'badge-inactive';
     const statusText = u.status === 1 ? '启用' : '禁用';
+
+    // 判断锁定状态
+    let lockBadge = '';
+    let unlockBtn = '';
+    if (u.locked_until) {
+      const lockedUntil = new Date(u.locked_until);
+      if (lockedUntil > new Date()) {
+        const remainMin = Math.ceil((lockedUntil - new Date()) / 60000);
+        lockBadge = `<span class="badge badge-locked">已锁定 (${remainMin}分钟)</span>`;
+        unlockBtn = `<button class="btn-warning btn-sm" onclick="event.stopPropagation(); unlockUser('${escapeHtml(u.username)}')">解锁</button>`;
+      } else {
+        lockBadge = '<span class="badge badge-active">正常</span>';
+      }
+    } else {
+      lockBadge = '<span class="badge badge-active">正常</span>';
+    }
+
     html += `
       <tr ondblclick="openEditModal('${escapeHtml(u.username)}')">
         <td>${escapeHtml(u.username)}</td>
@@ -220,6 +242,8 @@ function renderUserList() {
         <td>${escapeHtml(u.email)}</td>
         <td>${formatDate(u.hire_date)}</td>
         <td><span class="badge ${statusClass}">${statusText}</span></td>
+        <td>${lockBadge}</td>
+        <td>${unlockBtn}</td>
       </tr>`;
   });
 
@@ -417,6 +441,22 @@ function formatDateInput(str) {
 function escapeHtml(text) {
   if (!text) return '';
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function unlockUser(username) {
+  if (!confirm(`确定要解锁用户 "${username}" 的账户吗？`)) return;
+  try {
+    const res = await fetch('/api/users/' + encodeURIComponent(username) + '/unlock', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '解锁失败');
+    showMessage(`用户 ${username} 的账户已解锁`, 'success');
+    await loadUsers();
+  } catch (err) {
+    showMessage('解锁失败：' + err.message, 'error');
+  }
 }
 
 init();

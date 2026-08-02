@@ -1,0 +1,14 @@
+# OCR 服务依赖
+# 注意：Python 3.12 上 PaddlePaddle 2.5.x 没有 wheel，2.6.2 在部分 CPU 会触发 SIGILL，
+# 因此使用 PaddlePaddle 3.x + PaddleOCR 2.8.x 组合，numpy 仍保持低于 2.x。
+# 本文件用于在 Ubuntu 24.04 (Python 3.12) 或 Windows Python 3.12 环境中安装。
+
+numpy==1.26.4
+opencv-python<=4.6.0.66
+opencv-python-headless==4.6.0.66
+paddlepaddle==3.0.0
+paddleocr==2.8.1
+scipy==1.11.4
+scikit-image==0.24.0
+tifffile==2024.5.10
+flask

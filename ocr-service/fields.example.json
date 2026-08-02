@@ -1,0 +1,82 @@
+{
+  "comment": "x/y/w/h 均为相对于矫正后表格正视图的 0~1 比例坐标，请根据你的纸质表格拍照后量取或用调试模式裁剪出的正视图标注。",
+  "fields": [
+    {
+      "name": "company_name",
+      "label": "公司名称",
+      "x": 0.15,
+      "y": 0.08,
+      "w": 0.55,
+      "h": 0.05
+    },
+    {
+      "name": "product_name",
+      "label": "产品名称",
+      "x": 0.15,
+      "y": 0.15,
+      "w": 0.35,
+      "h": 0.05
+    },
+    {
+      "name": "model",
+      "label": "型号",
+      "x": 0.55,
+      "y": 0.15,
+      "w": 0.25,
+      "h": 0.05
+    },
+    {
+      "name": "quantity",
+      "label": "数量",
+      "x": 0.15,
+      "y": 0.23,
+      "w": 0.15,
+      "h": 0.05
+    },
+    {
+      "name": "inspect_date",
+      "label": "检验日期",
+      "x": 0.55,
+      "y": 0.23,
+      "w": 0.2,
+      "h": 0.05
+    },
+    {
+      "name": "qualified",
+      "label": "是否合格",
+      "x": 0.15,
+      "y": 0.31,
+      "w": 0.15,
+      "h": 0.05
+    }
+  ],
+  "validation": {
+    "company_name": {
+      "required": true,
+      "min_length": 2,
+      "max_length": 100
+    },
+    "product_name": {
+      "required": true,
+      "min_length": 1
+    },
+    "model": {
+      "required": true,
+      "max_length": 50
+    },
+    "quantity": {
+      "required": true,
+      "type": "integer",
+      "min": 0,
+      "max": 999999
+    },
+    "inspect_date": {
+      "required": true,
+      "type": "date"
+    },
+    "qualified": {
+      "required": true,
+      "options": ["是", "否", "合格", "不合格", "Y", "N"]
+    }
+  }
+}

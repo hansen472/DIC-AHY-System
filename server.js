@@ -174,9 +174,11 @@ app.post('/api/login', async (req, res) => {
     return res.status(400).json({ error: '缺少用户名或密码' });
   }
 
+  const clientIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress || '';
+
   try {
     const [rows] = await pool.execute(
-      'SELECT id, username, password_hash, status FROM users WHERE username = ?',
+      'SELECT id, username, password_hash, status, locked_until FROM users WHERE username = ?',
       [username]
     );
 
@@ -190,13 +192,84 @@ app.post('/api/login', async (req, res) => {
       return res.status(403).json({ error: '账号已被禁用' });
     }
 
-    if (hashPassword(password) !== user.password_hash) {
-      return res.status(401).json({ error: '用户名或密码错误' });
+    // 检查账户是否处于锁定状态
+    if (user.locked_until) {
+      const lockedUntil = new Date(user.locked_until);
+      if (lockedUntil > new Date()) {
+        const remainMin = Math.ceil((lockedUntil - new Date()) / 60000);
+        return res.status(423).json({
+          error: `账户已锁定，请在 ${remainMin} 分钟后再试`,
+          locked: true,
+          locked_until: user.locked_until
+        });
+      } else {
+        // 锁定已过期，自动解锁并清除历史失败记录
+        await pool.execute(
+          'UPDATE users SET locked_until = NULL WHERE id = ?',
+          [user.id]
+        );
+        await pool.execute(
+          'DELETE FROM login_attempts WHERE username = ?',
+          [user.username]
+        );
+      }
     }
+
+    if (hashPassword(password) !== user.password_hash) {
+      // 记录失败尝试
+      await pool.execute(
+        'INSERT INTO login_attempts (username, ip_address) VALUES (?, ?)',
+        [user.username, clientIp]
+      );
+
+      // 统计 24 小时内的失败尝试次数
+      const [attempts] = await pool.execute(
+        'SELECT COUNT(*) AS cnt FROM login_attempts WHERE username = ? AND attempted_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)',
+        [user.username]
+      );
+      const failedCount = attempts[0].cnt;
+      const remaining = LOGIN_MAX_FAILED_ATTEMPTS - failedCount;
+
+      if (remaining <= 0) {
+        // 达到上限，锁定账户
+        const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_DURATION_MS);
+        const lockUntilStr = lockUntil.toISOString().slice(0, 19).replace('T', ' ');
+        await pool.execute(
+          'UPDATE users SET locked_until = ? WHERE id = ?',
+          [lockUntilStr, user.id]
+        );
+
+        // 记录锁定日志
+        try {
+          await pool.execute(
+            'INSERT INTO operation_logs (username, action, target_type, target_id, detail, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
+            [user.username, '账户锁定', 'user', user.id, `24小时内密码错误累计${failedCount}次，账户已锁定30分钟`, clientIp]
+          );
+        } catch (logErr) {
+          console.error('锁定日志记录失败:', logErr.message);
+        }
+
+        return res.status(423).json({
+          error: '密码错误次数过多，账户已锁定 30 分钟',
+          locked: true,
+          locked_until: lockUntilStr
+        });
+      }
+
+      return res.status(401).json({
+        error: `用户名或密码错误（还可尝试 ${remaining} 次）`
+      });
+    }
+
+    // 登录成功：清除失败尝试记录
+    await pool.execute(
+      'DELETE FROM login_attempts WHERE username = ?',
+      [user.username]
+    );
 
     // 更新上次登录时间
     await pool.execute(
-      'UPDATE users SET last_login = NOW() WHERE id = ?',
+      'UPDATE users SET last_login = NOW(), locked_until = NULL WHERE id = ?',
       [user.id]
     );
 
@@ -206,7 +279,6 @@ app.post('/api/login', async (req, res) => {
 
     // 记录登录日志
     try {
-      const clientIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress || '';
       await pool.execute(
         'INSERT INTO operation_logs (username, action, target_type, target_id, detail, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
         [user.username, '用户登录', 'session', null, '登录成功', clientIp]
@@ -273,7 +345,7 @@ app.get('/api/my-permissions', requireAuth, async (req, res) => {
 app.get('/api/users', requireAdmin, async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT id, username, status, last_login,
+      `SELECT id, username, status, last_login, locked_until,
               chinese_name, department, direct_manager, email, position, hire_date
        FROM users ORDER BY id ASC`
     );
@@ -368,6 +440,34 @@ app.put('/api/users/:username/password', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('修改密码失败:', err);
     res.status(500).json({ error: '修改失败' });
+  }
+});
+
+// API：解锁用户账户（仅管理员）
+app.put('/api/users/:username/unlock', requireAdmin, async (req, res) => {
+  const username = req.params.username;
+
+  try {
+    const [result] = await pool.execute(
+      'UPDATE users SET locked_until = NULL WHERE username = ?',
+      [username]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+
+    // 清除失败尝试记录
+    await pool.execute(
+      'DELETE FROM login_attempts WHERE username = ?',
+      [username]
+    );
+
+    await logOperation(req, '解锁用户账户', 'user', username, `用户名: ${username}`);
+
+    res.json({ success: true, message: '账户已解锁' });
+  } catch (err) {
+    console.error('解锁用户失败:', err);
+    res.status(500).json({ error: '解锁失败' });
   }
 });
 
@@ -508,7 +608,7 @@ app.get('/api/users/:username', requireAdmin, async (req, res) => {
   const username = req.params.username;
   try {
     const [rows] = await pool.execute(
-      `SELECT id, username, status, last_login,
+      `SELECT id, username, status, last_login, locked_until,
               chinese_name, department, direct_manager, email, position, hire_date
        FROM users WHERE username = ?`,
       [username]
@@ -2790,6 +2890,11 @@ const sessions = new Map(); // sid -> { username, createdAt }
 
 const SESSION_COOKIE_NAME = 'sid';
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 小时
+
+// ========== 账户锁定策略 ==========
+const LOGIN_MAX_FAILED_ATTEMPTS = 5;       // 24 小时内允许的最大失败次数
+const LOGIN_ATTEMPT_WINDOW_MS = 24 * 60 * 60 * 1000; // 失败尝试统计窗口：24 小时
+const ACCOUNT_LOCK_DURATION_MS = 30 * 60 * 1000;      // 锁定时长：30 分钟
 
 // 默认账号已迁移到数据库，见 sql/db-setup.sql
 
