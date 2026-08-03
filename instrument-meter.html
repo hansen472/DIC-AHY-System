@@ -117,6 +117,12 @@ button:hover { transform: translateY(-1px); }
   box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
 }
 
+.btn-back {
+  background: #64748b;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
+}
+
 .card {
   background: var(--panel);
   border-radius: 16px;
@@ -256,6 +262,7 @@ footer-actions {
       </div>
       <button class="btn-query" onclick="loadData()">查询</button>
       <button class="btn-export" onclick="exportData()">导出</button>
+      <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
     </div>
   </header>
 
@@ -275,11 +282,11 @@ footer-actions {
 const COLUMNS = [
   { key: '序号', align: 'right' },
   { key: '仪器/仪表名称', align: 'left' },
+  { key: '仪器/仪表编码', align: 'left' },
   { key: '本次检验日期', align: 'left', type: 'date' },
   { key: '下次检验日期', align: 'left', type: 'date' },
   { key: '安装位置', align: 'left' },
   { key: '型号/规格', align: 'left' },
-  { key: '仪器/仪表编码', align: 'left' },
   { key: '制造商', align: 'left' },
   { key: '出厂编号', align: 'left' },
   { key: '测量范围', align: 'left' },
@@ -427,7 +434,10 @@ function exportData() {
     showToast('当前没有可导出的数据', 'error');
     return;
   }
-  window.location.href = `/api/instrument-meter/export?expireDate=${encodeURIComponent(expireDate)}`;
+  // 将当前排序方式传递给导出接口，确保导出顺序与页面显示一致
+  const sortKey = encodeURIComponent(sortState.key);
+  const sortAsc = sortState.asc ? '1' : '0';
+  window.location.href = `/api/instrument-meter/export?expireDate=${encodeURIComponent(expireDate)}&sortKey=${sortKey}&sortAsc=${sortAsc}`;
 }
 
 init();

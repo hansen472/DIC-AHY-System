@@ -28,6 +28,7 @@ const { startDailyCheck } = require('./email-notifier');
 const { setupWorkflowRoutes } = require('./workflow-routes');
 const { runBackup, listBackups, startDailyBackup } = require('./backup-service');
 const { queryInstruments } = require('./instrument-meter-service');
+const { startWeeklyCheck } = require('./instrument-meter-notifier');
 const { setupOcrRoutes } = require('./ocr-routes');
 const nodemailer = require('nodemailer');
 const multer = require('multer');
@@ -3950,7 +3951,7 @@ app.get('/api/instrument-meter', requirePermission('instrument_meter'), async (r
  * 导出仪器/仪表到期查询结果（CSV，带 UTF-8 BOM）
  */
 app.get('/api/instrument-meter/export', requirePermission('instrument_meter'), async (req, res) => {
-  const { expireDate } = req.query;
+  const { expireDate, sortKey, sortAsc } = req.query;
   if (!expireDate || !/^\d{4}-\d{2}-\d{2}$/.test(expireDate)) {
     return res.status(400).json({ error: '缺少或无效的到期日期，格式应为 YYYY-MM-DD' });
   }
@@ -3960,16 +3961,40 @@ app.get('/api/instrument-meter/export', requirePermission('instrument_meter'), a
       return res.status(404).json({ error: '没有可导出的数据' });
     }
 
-    const headers = Object.keys(rows[0]);
+    // 按前端传递的排序参数对结果进行排序，确保导出顺序与页面显示一致
+    if (sortKey) {
+      const decodedKey = decodeURIComponent(sortKey);
+      const isAsc = sortAsc !== '0';
+      rows.sort((a, b) => {
+        let va = a[decodedKey];
+        let vb = b[decodedKey];
+        if (va === null || va === undefined) va = '';
+        if (vb === null || vb === undefined) vb = '';
+        let cmp = 0;
+        if (decodedKey === '序号' || decodedKey === '送检周期（月）') {
+          cmp = Number(va) - Number(vb);
+        } else {
+          cmp = String(va).localeCompare(String(vb), 'zh-CN');
+        }
+        return isAsc ? cmp : -cmp;
+      });
+    }
+
+    // 按 COLUMNS 定义的顺序导出列，与页面显示顺序保持一致
+    const exportColumns = [
+      '序号', '仪器/仪表名称', '仪器/仪表编码', '本次检验日期', '下次检验日期',
+      '安装位置', '型号/规格', '制造商', '出厂编号', '测量范围',
+      '精度等级', '所在位置', '送检周期（月）'
+    ];
     const csvRows = rows.map(row =>
-      headers.map(h => {
+      exportColumns.map(h => {
         const val = row[h];
         if (val === null || val === undefined) return '';
         const str = String(val).replace(/"/g, '""');
         return `"${str}"`;
       }).join(',')
     );
-    const csv = '\uFEFF' + [headers.join(','), ...csvRows].join('\n');
+    const csv = '\uFEFF' + [exportColumns.join(','), ...csvRows].join('\n');
 
     const filename = `instrument-meter-${expireDate}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -4529,8 +4554,11 @@ app.listen(PORT, async () => {
     console.warn('警告：MSSQL 连接失败，数据查询功能将不可用，请检查 ERP1 数据库配置及网络');
   }
 
-  // 启动营业执照到期邮件提醒任务
+  // 启动营业执照到期邮件提醒任务（每天 8:00）
   startDailyCheck();
+
+  // 启动仪器/仪表到期周报邮件提醒任务（每周二 8:10）
+  startWeeklyCheck();
 
   // 启动数据库每日凌晨 2 点自动备份任务
   startDailyBackup();
