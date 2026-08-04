@@ -10,6 +10,7 @@ const QUERY_SQL = `
 SELECT
   ROW_NUMBER() OVER (ORDER BY asset_list.asset_ff_10 ASC) AS \`序号\`,
   asset_list.asset_name AS \`仪器/仪表名称\`,
+  mic_asset_status.asset_status_name AS \`资产状态\`,
   asset_list.asset_model AS \`型号/规格\`,
   asset_list.asset_code AS \`仪器/仪表编码\`,
   pur_supplier.supplier_name AS \`制造商\`,
