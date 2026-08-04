@@ -27,7 +27,7 @@ LEFT JOIN mic_asset_status ON asset_list.asset_status = mic_asset_status.asset_s
 LEFT JOIN asset_location ON asset_list.location_id = asset_location.location_id
 LEFT JOIN asset_list_calibration_data ON asset_list.asset_id = asset_list_calibration_data.asset_id
 WHERE asset_list.asset_nature = 8
-  AND mic_asset_status.asset_status_name = '在用'
+  AND mic_asset_status.asset_status_name IN ('在用', '备用')
   AND asset_list.asset_ff_10 < ?
 ORDER BY asset_list.asset_ff_10 ASC
 `;
