@@ -89,6 +89,42 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .modal h3 { font-size: 15px; margin-bottom: 14px; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+/* 审批人选择器 */
+.assignees-row { display: flex; gap: 6px; }
+.assignees-row input { flex: 1; }
+.btn-pick-user {
+  white-space: nowrap; background: #2b6cb0; color: #fff; font-size: 12px;
+  padding: 8px 10px; border-radius: 6px; flex-shrink: 0;
+}
+.up-modal { max-width: 460px; }
+.up-search {
+  width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;
+  font-size: 13px; margin-bottom: 12px;
+}
+.up-role-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px;
+  cursor: pointer; background: #f7fafc;
+}
+.up-role-item:hover { background: #edf2f7; }
+.up-role-item.selected { border-color: #2b6cb0; background: #ebf8ff; }
+.up-role-badge {
+  display: inline-block; background: #805ad5; color: #fff; font-size: 11px;
+  padding: 2px 8px; border-radius: 9999px; font-weight: 600;
+}
+.up-role-desc { font-size: 12px; color: #718096; margin-left: auto; }
+.up-list { max-height: 300px; overflow-y: auto; }
+.up-user-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 6px;
+  cursor: pointer; transition: background 0.15s;
+}
+.up-user-item:hover { background: #f7fafc; }
+.up-user-item.selected { border-color: #2b6cb0; background: #ebf8ff; }
+.up-user-item input[type="checkbox"] { accent-color: #2b6cb0; flex-shrink: 0; }
+.up-user-name { font-size: 13px; font-weight: 500; }
+.up-user-meta { font-size: 11px; color: #a0aec0; margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -147,7 +183,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
       </div>
       <div class="form-group" id="pg-assignees">
         <label>审批人（逗号分隔用户名）</label>
-        <input type="text" id="inp-assignees" onchange="updateSelectedNode()">
+        <div class="assignees-row">
+          <input type="text" id="inp-assignees" onchange="updateSelectedNode()">
+          <button class="btn-pick-user" onclick="openUserPicker()">选择人员</button>
+        </div>
       </div>
       <div class="form-group" id="pg-mode">
         <label>会签模式</label>
@@ -200,6 +239,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeSaveModal()">取消</button>
       <button class="btn-primary" onclick="confirmSaveAs()">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="user-picker-modal" class="modal-overlay">
+  <div class="modal up-modal">
+    <h3>选择审批人</h3>
+    <input type="text" id="up-search" class="up-search" placeholder="搜索用户名或姓名..." oninput="filterUserPicker()">
+    <div id="up-virtual-roles"></div>
+    <div id="up-user-list" class="up-list"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeUserPicker()">取消</button>
+      <button class="btn-primary" onclick="confirmUserPicker()">确定</button>
     </div>
   </div>
 </div>
@@ -750,6 +802,138 @@ async function loadUser() {
   } catch (e) {
     window.location.href = '/login';
   }
+}
+
+// ========== 审批人选择器 ==========
+let userPickerUsers = [];   // 从接口获取的用户列表
+let userPickerSelected = new Set(); // 当前已勾选的用户名
+let virtualRoleSelected = false;    // “部门经理”虚拟角色是否选中
+
+/**
+ * 打开审批人选择弹窗
+ */
+async function openUserPicker() {
+  // 预填当前审批人输入框中已有的用户名
+  const currentVal = document.getElementById('inp-assignees').value || '';
+  userPickerSelected = new Set(
+    currentVal.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+  );
+  virtualRoleSelected = userPickerSelected.has('[部门经理]');
+
+  try {
+    const res = await fetch('/api/users/simple-list');
+    const result = await res.json();
+    if (!res.ok || !result.success) throw new Error(result.error || '获取用户列表失败');
+    userPickerUsers = result.users || [];
+  } catch (err) {
+    showMessage('获取用户列表失败：' + err.message, 'error');
+    return;
+  }
+
+  // 渲染虚拟角色区
+  const rolesDiv = document.getElementById('up-virtual-roles');
+  rolesDiv.innerHTML = `
+    <div class="up-role-item ${virtualRoleSelected ? 'selected' : ''}" id="up-role-mgr" onclick="toggleVirtualRole()">
+      <input type="checkbox" ${virtualRoleSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleVirtualRole()">
+      <span class="up-role-badge">部门经理</span>
+      <span class="up-role-desc">运行时自动解析为发起人的直属经理</span>
+    </div>
+  `;
+
+  // 渲染用户列表
+  renderUserPickerList('');
+  document.getElementById('up-search').value = '';
+  document.getElementById('user-picker-modal').classList.add('active');
+}
+
+/**
+ * 关闭选择弹窗
+ */
+function closeUserPicker() {
+  document.getElementById('user-picker-modal').classList.remove('active');
+}
+
+/**
+ * 渲染用户列表（支持搜索过滤）
+ */
+function renderUserPickerList(filter) {
+  const listDiv = document.getElementById('up-user-list');
+  const keyword = (filter || '').trim().toLowerCase();
+  const filtered = userPickerUsers.filter(u =>
+    !keyword ||
+    u.username.toLowerCase().includes(keyword) ||
+    (u.chinese_name && u.chinese_name.toLowerCase().includes(keyword)) ||
+    (u.department && u.department.toLowerCase().includes(keyword))
+  );
+
+  if (filtered.length === 0) {
+    listDiv.innerHTML = '<div style="text-align:center; color:#a0aec0; padding:20px; font-size:13px;">无匹配用户</div>';
+    return;
+  }
+
+  listDiv.innerHTML = filtered.map(u => {
+    const checked = userPickerSelected.has(u.username);
+    const meta = [u.chinese_name, u.department].filter(Boolean).join(' · ');
+    return `
+      <div class="up-user-item ${checked ? 'selected' : ''}" onclick="toggleUserSelection('${escapeHtml(u.username)}')">
+        <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation(); toggleUserSelection('${escapeHtml(u.username)}')">
+        <span class="up-user-name">${escapeHtml(u.username)}</span>
+        ${meta ? `<span class="up-user-meta">${escapeHtml(meta)}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+/**
+ * 搜索框输入时过滤用户
+ */
+function filterUserPicker() {
+  const keyword = document.getElementById('up-search').value;
+  renderUserPickerList(keyword);
+}
+
+/**
+ * 切换某个用户的选中状态
+ */
+function toggleUserSelection(username) {
+  if (userPickerSelected.has(username)) {
+    userPickerSelected.delete(username);
+  } else {
+    userPickerSelected.add(username);
+  }
+  // 重新渲染当前列表
+  const keyword = document.getElementById('up-search').value;
+  renderUserPickerList(keyword);
+}
+
+/**
+ * 切换“部门经理”虚拟角色的选中状态
+ */
+function toggleVirtualRole() {
+  virtualRoleSelected = !virtualRoleSelected;
+  if (virtualRoleSelected) {
+    userPickerSelected.add('[部门经理]');
+  } else {
+    userPickerSelected.delete('[部门经理]');
+  }
+  // 更新虚拟角色区的视觉状态
+  const roleEl = document.getElementById('up-role-mgr');
+  if (roleEl) {
+    const cb = roleEl.querySelector('input[type="checkbox"]');
+    if (cb) cb.checked = virtualRoleSelected;
+    roleEl.classList.toggle('selected', virtualRoleSelected);
+  }
+}
+
+/**
+ * 确认选择，将勾选的用户写入审批人输入框
+ */
+function confirmUserPicker() {
+  // 将选中的用户名（包括 [部门经理]）写入输入框
+  const names = Array.from(userPickerSelected);
+  document.getElementById('inp-assignees').value = names.join(', ');
+  updateSelectedNode();
+  closeUserPicker();
 }
 
 init();

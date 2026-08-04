@@ -390,6 +390,22 @@ app.get('/api/users', requireAdmin, async (req, res) => {
   }
 });
 
+// API：获取用户简易列表（所有已登录用户可用，排除 admin，用于流程设计器审批人选择）
+app.get('/api/users/simple-list', requireAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT username, chinese_name, department
+       FROM users
+       WHERE username != 'admin'
+       ORDER BY username ASC`
+    );
+    res.json({ success: true, users: rows });
+  } catch (err) {
+    console.error('获取用户简易列表失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
 // API：新增用户（仅管理员）
 app.post('/api/users', requireAdmin, async (req, res) => {
   const { username, password, chinese_name, department, direct_manager, email, position, hire_date } = req.body;
