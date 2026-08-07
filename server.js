@@ -4054,7 +4054,9 @@ app.get('/api/coa-product-data', requirePermission('coa_report'), async (req, re
 
 /**
  * POST /api/coa-product-data/sync
- * 从云端 Azure SQL 的 report_product_data 表同步数据到本地 COA_report_product_data
+ * 从云端 Azure SQL 的 report_product_data 表增量同步数据到本地 COA_report_product_data
+ *
+ * 只插入新记录或更新已变更的记录，未变化的记录跳过不写。
  */
 app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (req, res) => {
   try {
@@ -4068,45 +4070,79 @@ app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (r
     const cloudRows = cloudResult.recordset || [];
 
     if (cloudRows.length === 0) {
-      return res.json({ success: true, message: '云端无数据', synced: 0 });
+      return res.json({ success: true, message: '云端无数据', inserted: 0, updated: 0, skipped: 0 });
     }
 
-    // 逐条 UPSERT 到本地表
-    let synced = 0;
+    // 获取本地已有数据，用于逐条比对
+    let localMap = {};
+    try {
+      const [localRows] = await pool.execute(
+        `SELECT product_id, product_code, tenant_id, product_name,
+                check_gist, norm, creation_date, created_by, last_updated_by
+         FROM COA_report_product_data`
+      );
+      localRows.forEach(r => { localMap[r.product_id] = r; });
+    } catch (e) {
+      // 本地表可能不存在，视为全部新增
+    }
+
+    // 字段值标准化，用于比对
+    const norm = (v) => {
+      if (v === null || v === undefined) return '';
+      if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
+      return String(v).trim();
+    };
+    const FIELDS = ['product_code', 'tenant_id', 'product_name', 'check_gist', 'norm', 'creation_date', 'created_by', 'last_updated_by'];
+
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-      for (const row of cloudRows) {
-        await connection.execute(
-          `INSERT INTO COA_report_product_data
-             (product_id, product_code, tenant_id, product_name, check_gist, norm,
-              creation_date, created_by, last_updated_by, synced_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-           ON DUPLICATE KEY UPDATE
-             product_code = VALUES(product_code),
-             tenant_id = VALUES(tenant_id),
-             product_name = VALUES(product_name),
-             check_gist = VALUES(check_gist),
-             norm = VALUES(norm),
-             creation_date = VALUES(creation_date),
-             created_by = VALUES(created_by),
-             last_updated_by = VALUES(last_updated_by),
-             synced_at = NOW()`,
-          [
-            row.product_id, row.product_code, row.tenant_id, row.product_name,
-            row.check_gist, row.norm, row.creation_date,
-            row.created_by, row.last_updated_by
-          ]
-        );
-        synced++;
+      for (const cloud of cloudRows) {
+        const local = localMap[cloud.product_id];
+
+        if (!local) {
+          // 新记录 → INSERT
+          await connection.execute(
+            `INSERT INTO COA_report_product_data
+               (product_id, product_code, tenant_id, product_name, check_gist, norm,
+                creation_date, created_by, last_updated_by, synced_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [cloud.product_id, cloud.product_code, cloud.tenant_id, cloud.product_name,
+             cloud.check_gist, cloud.norm, cloud.creation_date,
+             cloud.created_by, cloud.last_updated_by]
+          );
+          inserted++;
+        } else {
+          // 比对各字段，有差异才 UPDATE
+          const changed = FIELDS.some(f => norm(cloud[f]) !== norm(local[f]));
+          if (changed) {
+            await connection.execute(
+              `UPDATE COA_report_product_data SET
+                 product_code = ?, tenant_id = ?, product_name = ?,
+                 check_gist = ?, norm = ?, creation_date = ?,
+                 created_by = ?, last_updated_by = ?, synced_at = NOW()
+               WHERE product_id = ?`,
+              [cloud.product_code, cloud.tenant_id, cloud.product_name,
+               cloud.check_gist, cloud.norm, cloud.creation_date,
+               cloud.created_by, cloud.last_updated_by, cloud.product_id]
+            );
+            updated++;
+          } else {
+            skipped++;
+          }
+        }
       }
       await connection.commit();
     } finally {
       connection.release();
     }
 
-    console.log(`[COA] 同步完成：云端 ${cloudRows.length} 条 → 本地已同步 ${synced} 条`);
-    res.json({ success: true, message: `同步完成，共 ${synced} 条记录`, synced });
+    const msg = `同步完成：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条`;
+    console.log(`[COA] ${msg}（云端共 ${cloudRows.length} 条）`);
+    res.json({ success: true, message: msg, inserted, updated, skipped });
   } catch (err) {
     console.error('[COA] 同步失败:', err);
     res.status(500).json({ error: '同步失败: ' + err.message });

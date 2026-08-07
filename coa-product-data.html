@@ -276,7 +276,6 @@ async function loadData() {
       throw new Error(result.error || '查询失败');
     }
     allRows = result.data || [];
-    document.getElementById('record-count').textContent = result.count || 0;
     sortState = { key: 'product_name', asc: true };
     filterData();
   } catch (err) {
@@ -286,15 +285,17 @@ async function loadData() {
 }
 
 function filterData() {
+  // 默认只显示 tenant_id = 3 的数据
+  let filtered = allRows.filter(r => String(r.tenant_id) === '3');
+
   const keyword = (document.getElementById('search-input').value || '').trim().toLowerCase();
-  if (!keyword) {
-    renderTable(allRows);
-    return;
+  if (keyword) {
+    filtered = filtered.filter(r =>
+      (r.product_name && r.product_name.toLowerCase().includes(keyword)) ||
+      (r.product_code && r.product_code.toLowerCase().includes(keyword))
+    );
   }
-  const filtered = allRows.filter(r =>
-    (r.product_name && r.product_name.toLowerCase().includes(keyword)) ||
-    (r.product_code && r.product_code.toLowerCase().includes(keyword))
-  );
+  document.getElementById('record-count').textContent = filtered.length;
   renderTable(filtered);
 }
 
@@ -365,8 +366,9 @@ async function syncData() {
     }
     showToast(result.message, 'success');
     // 更新同步时间信息
+    const { inserted, updated, skipped } = result;
     document.getElementById('sync-info').textContent =
-      `上次同步：${new Date().toLocaleString('zh-CN')}，共 ${result.synced} 条`;
+      `上次同步：${new Date().toLocaleString('zh-CN')} 新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条`;
     // 重新加载数据
     await loadData();
   } catch (err) {
