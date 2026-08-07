@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS COA_report_product_data (
   product_name       VARCHAR(500)                     COMMENT '产品名称',
   check_gist         TEXT                             COMMENT '检验标准',
   norm               TEXT                             COMMENT '规格标准',
-  object_creation_date DATETIME                       COMMENT '创建时间',
+  creation_date      DATETIME                       COMMENT '创建时间',
   created_by         VARCHAR(200)                     COMMENT '创建人',
   last_updated_by    VARCHAR(200)                     COMMENT '最后更新人',
   synced_at          DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '最近同步时间'
