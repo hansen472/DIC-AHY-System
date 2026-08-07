@@ -85,6 +85,9 @@ app.get('/instrument-meter.html', requirePermissionPage('instrument_meter'), (re
 app.get('/coa-product-data.html', requirePermissionPage('coa_report'), (req, res) => {
   res.sendFile(path.join(__dirname, 'coa-product-data.html'));
 });
+app.get('/coa-client-data.html', requirePermissionPage('coa_report'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'coa-client-data.html'));
+});
 app.get('/logs.html', requirePermissionPage('logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'logs.html'));
 });
@@ -4146,6 +4149,25 @@ app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (r
   } catch (err) {
     console.error('[COA] 同步失败:', err);
     res.status(500).json({ error: '同步失败: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/coa-client-data
+ * 从云端 Azure SQL 的 report_client_data 表查询客户数据（仅 tenant_id = 3）
+ */
+app.get('/api/coa-client-data', requirePermission('coa_report'), async (req, res) => {
+  try {
+    const result = await coaPool.request()
+      .query(`SELECT client_name, product_codes
+              FROM report_client_data
+              WHERE tenant_id = '3'
+              ORDER BY client_name ASC`);
+    const rows = result.recordset || [];
+    res.json({ success: true, count: rows.length, data: rows });
+  } catch (err) {
+    console.error('[COA] 查询客户数据失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
   }
 });
 

@@ -430,6 +430,9 @@ body {
         <a href="/coa-product-data.html" class="nav-sub-item" id="nav-coa-product-data" style="display:none;">
           <span>产品数据维护</span>
         </a>
+        <a href="/coa-client-data.html" class="nav-sub-item" id="nav-coa-client-data" style="display:none;">
+          <span>客户主数据维护</span>
+        </a>
       </div>
     </div>
   </div>
@@ -587,6 +590,7 @@ function initSidebarGroups() {
       const coaGroup = document.getElementById('nav-coa-group');
       if (perms.coa_report) {
         document.getElementById('nav-coa-product-data').style.display = 'flex';
+        document.getElementById('nav-coa-client-data').style.display = 'flex';
         coaGroup.style.display = 'block';
       }
 
