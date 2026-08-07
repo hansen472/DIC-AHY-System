@@ -24,6 +24,7 @@ const dns = require('dns');
 const util = require('util');
 const mssql = require('mssql');
 const { pool, mssqlPool, testConnection, testMssqlConnection } = require('./db-config');
+const { coaPool, testCoaConnection } = require('./db-coa-config');
 const { startDailyCheck } = require('./email-notifier');
 const { setupWorkflowRoutes } = require('./workflow-routes');
 const { runBackup, listBackups, startDailyBackup } = require('./backup-service');
@@ -80,6 +81,9 @@ app.get('/backup-management.html', requirePermissionPage('backup_management'), (
 });
 app.get('/instrument-meter.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'instrument-meter.html'));
+});
+app.get('/coa-product-data.html', requirePermissionPage('coa_report'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'coa-product-data.html'));
 });
 app.get('/logs.html', requirePermissionPage('logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'logs.html'));
@@ -3053,7 +3057,8 @@ const PERMISSION_FEATURES = [
   'print', 'logs', 'dashboard', 'template_admin', 'operation_logs', 'training_records',
   'supplier_qualifications', 'supplier_qualifications_edit',
   'workflow_design', 'workflow_view_task', 'workflow_transfer_task', 'workflow_recall_task',
-  'ocr_recognize', 'ocr_template_design', 'backup_management', 'instrument_meter'
+  'ocr_recognize', 'ocr_template_design', 'backup_management', 'instrument_meter',
+  'coa_report'
 ];
 
 async function checkPermission(username, featureKey) {
@@ -4022,6 +4027,92 @@ app.get('/api/instrument-meter/export', requirePermission('instrument_meter'), a
   }
 });
 
+// ========== COA 产品数据同步（云端 Azure SQL → 本地 MariaDB） ==========
+
+/**
+ * GET /api/coa-product-data
+ * 查询本地 COA_report_product_data 表
+ */
+app.get('/api/coa-product-data', requirePermission('coa_report'), async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT product_id, product_code, tenant_id, product_name,
+              check_gist, norm, object_creation_date,
+              create_by, last_update_by, synced_at
+       FROM COA_report_product_data
+       ORDER BY product_name ASC`
+    );
+    res.json({ success: true, count: rows.length, data: rows });
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') {
+      return res.json({ success: true, count: 0, data: [] });
+    }
+    console.error('查询 COA 产品数据失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+/**
+ * POST /api/coa-product-data/sync
+ * 从云端 Azure SQL 的 report_product_data 表同步数据到本地 COA_report_product_data
+ */
+app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (req, res) => {
+  try {
+    // 从云端 Azure SQL 查询数据
+    const cloudResult = await coaPool.request().query(
+      `SELECT product_id, product_code, tenant_id, product_name,
+              check_gist, norm, object_creation_date,
+              create_by, last_update_by
+       FROM report_product_data`
+    );
+    const cloudRows = cloudResult.recordset || [];
+
+    if (cloudRows.length === 0) {
+      return res.json({ success: true, message: '云端无数据', synced: 0 });
+    }
+
+    // 逐条 UPSERT 到本地表
+    let synced = 0;
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      for (const row of cloudRows) {
+        await connection.execute(
+          `INSERT INTO COA_report_product_data
+             (product_id, product_code, tenant_id, product_name, check_gist, norm,
+              object_creation_date, create_by, last_update_by, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE
+             product_code = VALUES(product_code),
+             tenant_id = VALUES(tenant_id),
+             product_name = VALUES(product_name),
+             check_gist = VALUES(check_gist),
+             norm = VALUES(norm),
+             object_creation_date = VALUES(object_creation_date),
+             create_by = VALUES(create_by),
+             last_update_by = VALUES(last_update_by),
+             synced_at = NOW()`,
+          [
+            row.product_id, row.product_code, row.tenant_id, row.product_name,
+            row.check_gist, row.norm, row.object_creation_date,
+            row.create_by, row.last_update_by
+          ]
+        );
+        synced++;
+      }
+      await connection.commit();
+    } finally {
+      connection.release();
+    }
+
+    console.log(`[COA] 同步完成：云端 ${cloudRows.length} 条 → 本地已同步 ${synced} 条`);
+    res.json({ success: true, message: `同步完成，共 ${synced} 条记录`, synced });
+  } catch (err) {
+    console.error('[COA] 同步失败:', err);
+    res.status(500).json({ error: '同步失败: ' + err.message });
+  }
+});
+
 /**
  * POST /api/search
  * Body: { querydata: '单据编号' }
@@ -4568,6 +4659,12 @@ app.listen(PORT, async () => {
   const mssqlOk = await testMssqlConnection();
   if (!mssqlOk) {
     console.warn('警告：MSSQL 连接失败，数据查询功能将不可用，请检查 ERP1 数据库配置及网络');
+  }
+
+  // 启动时测试 Azure SQL 连接（COA）
+  const coaOk = await testCoaConnection();
+  if (!coaOk) {
+    console.warn('警告：Azure SQL (COA) 连接失败，COA 产品数据同步功能将不可用');
   }
 
   // 启动营业执照到期邮件提醒任务（每天 8:00）

@@ -417,6 +417,21 @@ body {
         </a>
       </div>
     </div>
+
+    <div class="nav-group sidebar-group" id="nav-coa-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">🧪</span>
+          <span>实验室报告管理</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
+        <a href="/coa-product-data.html" class="nav-sub-item" id="nav-coa-product-data" style="display:none;">
+          <span>产品数据维护</span>
+        </a>
+      </div>
+    </div>
   </div>
   <div class="sidebar-footer">
     <div id="current-user"></div>
@@ -566,6 +581,13 @@ function initSidebarGroups() {
         document.getElementById('nav-ocr-recognize').style.display = 'flex';
         document.getElementById('nav-ocr-template-design').style.display = 'flex';
         ocrGroup.style.display = 'block';
+      }
+
+      // 实验室报告管理分组
+      const coaGroup = document.getElementById('nav-coa-group');
+      if (perms.coa_report) {
+        document.getElementById('nav-coa-product-data').style.display = 'flex';
+        coaGroup.style.display = 'block';
       }
 
       // 权限渲染完成后，统一初始化所有一级菜单为折叠状态

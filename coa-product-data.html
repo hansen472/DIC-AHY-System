@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>产品数据维护 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --accent: #d97706;
+  --success: #047857;
+  --danger: #dc2626;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container { max-width: 1600px; margin: 0 auto; }
+
+header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  color: #fff;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(30, 64, 175, 0.18);
+}
+
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; }
+header p { font-size: 13px; color: #cbd5e1; margin-top: 6px; }
+
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.search-input {
+  padding: 9px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  width: 220px;
+  outline: none;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+button:hover { transform: translateY(-1px); }
+button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.btn-sync {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
+}
+
+.btn-back {
+  background: #64748b;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
+}
+
+.card {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+.summary {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.summary strong { color: var(--primary); font-size: 18px; margin: 0 4px; }
+.sync-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  max-height: calc(100vh - 320px);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 900px;
+}
+
+th, td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th {
+  background: #f8fafc;
+  color: #374151;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+th:hover { background: #eef2ff; }
+
+th .sort-icon {
+  display: inline-block;
+  margin-left: 6px;
+  color: #9ca3af;
+  font-size: 11px;
+  width: 12px;
+}
+th.sort-asc .sort-icon,
+th.sort-desc .sort-icon { color: var(--primary); }
+
+tbody tr:hover { background: #f9fafb; }
+tbody tr:last-child td { border-bottom: none; }
+
+.cell-wrap {
+  white-space: normal;
+  word-break: break-word;
+  max-width: 400px;
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 60px 0;
+}
+
+.loading {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 40px 0;
+}
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: none;
+}
+.toast.error { background: var(--danger); }
+.toast.success { background: var(--success); }
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  margin-top: 20px;
+}
+.back-link:hover { color: var(--primary); }
+
+/* 同步按钮旋转动画 */
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-sync.syncing { pointer-events: none; }
+.btn-sync.syncing::before {
+  content: '⏳ ';
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>产品数据维护</h1>
+      <p>从云端 Azure SQL 同步 report_product_data 产品数据</p>
+    </div>
+    <div class="toolbar">
+      <input type="text" class="search-input" id="search-input" placeholder="搜索产品名称 / 编码..." oninput="filterData()">
+      <button class="btn-sync" id="btn-sync" onclick="syncData()">从云端更新</button>
+      <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="summary">共 <strong id="record-count">0</strong> 条记录</div>
+    <div class="sync-info" id="sync-info"></div>
+    <div id="result-area" class="table-wrap">
+      <div class="loading">正在加载数据...</div>
+    </div>
+  </div>
+
+  <a class="back-link" href="/nav-sidebar.html">← 返回导航</a>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let allRows = [];
+let sortState = { key: 'product_name', asc: true };
+
+const DISPLAY_COLUMNS = [
+  { key: 'product_name', label: '产品名称', wrap: true },
+  { key: 'check_gist', label: '检验标准', wrap: true },
+  { key: 'norm', label: '规格标准', wrap: true },
+  { key: 'product_code', label: '产品编码', wrap: false }
+];
+
+function init() {
+  loadData();
+}
+
+function showToast(message, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast ' + type;
+  toast.style.display = 'block';
+  setTimeout(() => { toast.style.display = 'none'; }, 4000);
+}
+
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function loadData() {
+  const container = document.getElementById('result-area');
+  container.innerHTML = '<div class="loading">正在加载数据...</div>';
+
+  try {
+    const res = await fetch('/api/coa-product-data');
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '查询失败');
+    }
+    allRows = result.data || [];
+    document.getElementById('record-count').textContent = result.count || 0;
+    sortState = { key: 'product_name', asc: true };
+    filterData();
+  } catch (err) {
+    container.innerHTML = `<div class="empty">加载失败：${escapeHtml(err.message)}</div>`;
+    showToast('加载失败：' + err.message, 'error');
+  }
+}
+
+function filterData() {
+  const keyword = (document.getElementById('search-input').value || '').trim().toLowerCase();
+  if (!keyword) {
+    renderTable(allRows);
+    return;
+  }
+  const filtered = allRows.filter(r =>
+    (r.product_name && r.product_name.toLowerCase().includes(keyword)) ||
+    (r.product_code && r.product_code.toLowerCase().includes(keyword))
+  );
+  renderTable(filtered);
+}
+
+function renderTable(rows) {
+  const container = document.getElementById('result-area');
+  if (rows.length === 0) {
+    container.innerHTML = '<div class="empty">暂无数据，请点击右上角"从云端更新"同步数据</div>';
+    return;
+  }
+
+  let html = '<table><thead><tr>';
+  html += '<th style="text-align:right; width:50px;">序号</th>';
+  DISPLAY_COLUMNS.forEach(col => {
+    const activeAsc = sortState.key === col.key && sortState.asc;
+    const activeDesc = sortState.key === col.key && !sortState.asc;
+    const icon = activeAsc ? '▲' : activeDesc ? '▼' : '⇅';
+    const cls = activeAsc ? 'sort-asc' : activeDesc ? 'sort-desc' : '';
+    html += `<th class="${cls}" onclick="sortBy('${escapeHtml(col.key)}')">` +
+            `${escapeHtml(col.label)}<span class="sort-icon">${icon}</span></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // 排序
+  const sorted = [...rows];
+  sorted.sort((a, b) => {
+    let va = a[sortState.key] || '';
+    let vb = b[sortState.key] || '';
+    const cmp = String(va).localeCompare(String(vb), 'zh-CN');
+    return sortState.asc ? cmp : -cmp;
+  });
+
+  sorted.forEach((row, idx) => {
+    html += '<tr>';
+    html += `<td style="text-align:right; font-family:var(--mono);">${idx + 1}</td>`;
+    DISPLAY_COLUMNS.forEach(col => {
+      const val = row[col.key];
+      const display = val === null || val === undefined ? '-' : escapeHtml(val);
+      const cls = col.wrap ? 'cell-wrap' : '';
+      html += `<td class="${cls}">${display}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function sortBy(key) {
+  if (sortState.key === key) {
+    sortState.asc = !sortState.asc;
+  } else {
+    sortState = { key, asc: true };
+  }
+  filterData();
+}
+
+async function syncData() {
+  const btn = document.getElementById('btn-sync');
+  btn.disabled = true;
+  btn.classList.add('syncing');
+  btn.textContent = '正在同步...';
+
+  try {
+    const res = await fetch('/api/coa-product-data/sync', { method: 'POST' });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '同步失败');
+    }
+    showToast(result.message, 'success');
+    // 更新同步时间信息
+    document.getElementById('sync-info').textContent =
+      `上次同步：${new Date().toLocaleString('zh-CN')}，共 ${result.synced} 条`;
+    // 重新加载数据
+    await loadData();
+  } catch (err) {
+    showToast('同步失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('syncing');
+    btn.textContent = '从云端更新';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
