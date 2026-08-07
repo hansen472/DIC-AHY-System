@@ -27,7 +27,8 @@ const coaConfig = {
   password: process.env.COA_PASSWORD || 'hansenmima',
   options: {
     encrypt: true,
-    trustServerCertificate: false
+    trustServerCertificate: false,
+    readOnlyIntent: true    // 只读连接，禁止对云端数据库做任何写入/修改操作
   },
   connectionTimeout: 30000,
   pool: {
