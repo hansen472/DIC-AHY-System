@@ -20,3 +20,6 @@ paddleocr-models.tar.gz
 backup/
 db-config.js
 db-mic-config.js
+db-coa-config.js
+db-azure-config.js
+
