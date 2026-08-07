@@ -4038,7 +4038,7 @@ app.get('/api/coa-product-data', requirePermission('coa_report'), async (req, re
     const [rows] = await pool.execute(
       `SELECT product_id, product_code, tenant_id, product_name,
               check_gist, norm, object_creation_date,
-              create_by, last_updated_by, synced_at
+              created_by, last_updated_by, synced_at
        FROM COA_report_product_data
        ORDER BY product_name ASC`
     );
@@ -4062,7 +4062,7 @@ app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (r
     const cloudResult = await coaPool.request().query(
       `SELECT product_id, product_code, tenant_id, product_name,
               check_gist, norm, object_creation_date,
-              create_by, last_updated_by
+              created_by, last_updated_by
        FROM report_product_data`
     );
     const cloudRows = cloudResult.recordset || [];
@@ -4080,7 +4080,7 @@ app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (r
         await connection.execute(
           `INSERT INTO COA_report_product_data
              (product_id, product_code, tenant_id, product_name, check_gist, norm,
-              object_creation_date, create_by, last_updated_by, synced_at)
+              object_creation_date, created_by, last_updated_by, synced_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
            ON DUPLICATE KEY UPDATE
              product_code = VALUES(product_code),
@@ -4089,13 +4089,13 @@ app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (r
              check_gist = VALUES(check_gist),
              norm = VALUES(norm),
              object_creation_date = VALUES(object_creation_date),
-             create_by = VALUES(create_by),
+             created_by = VALUES(created_by),
              last_updated_by = VALUES(last_updated_by),
              synced_at = NOW()`,
           [
             row.product_id, row.product_code, row.tenant_id, row.product_name,
             row.check_gist, row.norm, row.object_creation_date,
-            row.create_by, row.last_updated_by
+            row.created_by, row.last_updated_by
           ]
         );
         synced++;

@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS COA_report_product_data (
   check_gist         TEXT                             COMMENT '检验标准',
   norm               TEXT                             COMMENT '规格标准',
   object_creation_date DATETIME                       COMMENT '创建时间',
-  create_by          VARCHAR(200)                     COMMENT '创建人',
+  created_by         VARCHAR(200)                     COMMENT '创建人',
   last_updated_by    VARCHAR(200)                     COMMENT '最后更新人',
   synced_at          DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '最近同步时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品数据（同步自云端 Azure SQL report_product_data）';
