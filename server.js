@@ -4210,10 +4210,10 @@ app.get('/api/coa-client-data', requirePermission('coa_report'), async (req, res
 app.get('/api/coa-seal-data', requirePermission('coa_report'), async (req, res) => {
   try {
     const result = await coaPool.request()
-      .query(`SELECT seal_id, last_upload_time AS last_update_date, version_name, status, url
+      .query(`SELECT seal_id, last_update_date, version_name, status, url
               FROM report_seal_data
               WHERE tenant_id = 3
-              ORDER BY last_upload_time DESC`);
+              ORDER BY last_update_date DESC`);
     const rows = result.recordset || [];
     res.json({ success: true, count: rows.length, data: rows });
   } catch (err) {
