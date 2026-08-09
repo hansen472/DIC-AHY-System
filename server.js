@@ -4154,15 +4154,44 @@ app.post('/api/coa-product-data/sync', requirePermission('coa_report'), async (r
 
 /**
  * GET /api/coa-client-data
- * 从云端 Azure SQL 的 report_client_data 表查询客户数据（仅 tenant_id = 3）
+ * 从云端 Azure SQL 三表关联查询客户-产品数据（仅 tenant_id = 3）
+ *
+ * 关联表：report_client_data → client_product_mapping → report_product_data
+ * 按客户产品数量降序 → 客户名称升序 → 产品名称升序
  */
 app.get('/api/coa-client-data', requirePermission('coa_report'), async (req, res) => {
   try {
     const result = await coaPool.request()
-      .query(`SELECT client_name, product_codes
-              FROM report_client_data
-              WHERE tenant_id = '3'
-              ORDER BY client_name ASC`);
+      .query(`
+        WITH client_count AS (
+          SELECT
+            rcd.client_name,
+            COUNT(*) AS total_cnt
+          FROM report_client_data rcd
+          INNER JOIN client_product_mapping cpm
+            ON rcd.client_id = cpm.client_id
+          INNER JOIN report_product_data rpd
+            ON cpm.product_id = rpd.product_id
+          WHERE rcd.tenant_id = 3
+          GROUP BY rcd.client_name
+        )
+        SELECT
+          rcd.client_name,
+          rpd.product_name,
+          rpd.product_code
+        FROM report_client_data rcd
+        INNER JOIN client_product_mapping cpm
+          ON rcd.client_id = cpm.client_id
+        INNER JOIN report_product_data rpd
+          ON cpm.product_id = rpd.product_id
+        INNER JOIN client_count cc
+          ON rcd.client_name = cc.client_name
+        WHERE rcd.tenant_id = 3
+        ORDER BY
+          cc.total_cnt DESC,
+          rcd.client_name ASC,
+          rpd.product_name ASC
+      `);
     const rows = result.recordset || [];
     res.json({ success: true, count: rows.length, data: rows });
   } catch (err) {

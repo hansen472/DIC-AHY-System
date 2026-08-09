@@ -1,0 +1,36 @@
+在云端数据库中有三个表格，分别 report_client_data    report_product_data  client_product_mapping
+先从 report_client_data 取出字段 client_id 筛选条件是 tenant_id=3。
+再根据report_client_data表中client_id 的值去 client_product_mapping 表中找到对应的 client_product_mapping表中product_id.
+（注意，client_id 与product_id 是一对多的关系）
+再根据client_product_mapping表中product_id ，在report_product_data 中找出对应的 product_name以及product_code
+最后选择出的数据为 report_client_data.client_name   report_product_data.product_name以及product_code 显示这三列的内容。
+以客户出现的产口数量多少为降序排列
+
+WITH client_count AS (
+    SELECT
+        rcd.client_name,
+        COUNT(*) AS total_cnt
+    FROM report_client_data rcd
+    INNER JOIN client_product_mapping cpm
+        ON rcd.client_id = cpm.client_id
+    INNER JOIN report_product_data rpd
+        ON cpm.product_id = rpd.product_id
+    WHERE rcd.tenant_id = 3
+    GROUP BY rcd.client_name
+)
+SELECT
+    rcd.client_name,
+    rpd.product_name,
+    rpd.product_code
+FROM report_client_data rcd
+INNER JOIN client_product_mapping cpm
+    ON rcd.client_id = cpm.client_id
+INNER JOIN report_product_data rpd
+    ON cpm.product_id = rpd.product_id
+INNER JOIN client_count cc
+    ON rcd.client_name = cc.client_name
+WHERE rcd.tenant_id = 3
+ORDER BY
+    cc.total_cnt DESC,   -- 客户产品出现次数降序
+    rcd.client_name ASC, -- 次数相同，按客户名称升序
+    rpd.product_name ASC;-- 同一客户内部按产品名称排序

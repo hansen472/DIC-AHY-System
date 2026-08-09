@@ -113,7 +113,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  min-width: 600px;
+  min-width: 800px;
 }
 
 th, td {
@@ -207,10 +207,10 @@ tbody tr:last-child td { border-bottom: none; }
   <header>
     <div>
       <h1>客户主数据维护</h1>
-      <p>从云端 Azure SQL 读取 report_client_data 客户数据（tenant_id = 3）</p>
+      <p>从云端 Azure SQL 关联查询客户-产品数据（tenant_id = 3）</p>
     </div>
     <div class="toolbar">
-      <input type="text" class="search-input" id="search-input" placeholder="搜索客户名称..." oninput="filterData()">
+      <input type="text" class="search-input" id="search-input" placeholder="搜索客户名称 / 产品名称 / 编码..." oninput="filterData()">
       <button class="btn-refresh" id="btn-refresh" onclick="refreshData()">刷新数据</button>
       <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
     </div>
@@ -234,7 +234,8 @@ let sortState = { key: 'client_name', asc: true };
 
 const COLUMNS = [
   { key: 'client_name',    label: '客户名称', wrap: true },
-  { key: 'product_codes',  label: '产品编码', wrap: true }
+  { key: 'product_name',   label: '产品名称', wrap: true },
+  { key: 'product_code',   label: '产品编码', wrap: false }
 ];
 
 function init() {
@@ -284,7 +285,8 @@ function filterData() {
   if (keyword) {
     filtered = allRows.filter(r =>
       (r.client_name && r.client_name.toLowerCase().includes(keyword)) ||
-      (r.product_codes && r.product_codes.toLowerCase().includes(keyword))
+      (r.product_name && r.product_name.toLowerCase().includes(keyword)) ||
+      (r.product_code && r.product_code.toLowerCase().includes(keyword))
     );
   }
   document.getElementById('record-count').textContent = filtered.length;
