@@ -260,11 +260,11 @@ tbody tr:last-child td { border-bottom: none; }
 
 <script>
 let allRows = [];
-let sortState = { key: 'last_upload_time', asc: false };
+let sortState = { key: 'last_update_date', asc: false };
 
 const COLUMNS = [
   { key: 'seal_id',          label: '编号',       wrap: false, sortable: true },
-  { key: 'last_upload_time', label: '上传时间',   wrap: false, sortable: true },
+  { key: 'last_update_date', label: '上传时间',   wrap: false, sortable: true },
   { key: 'version_name',     label: '版本名称',   wrap: true,  sortable: true },
   { key: 'status',           label: '状态',       wrap: false, sortable: true },
   { key: '_action',          label: '操作',       wrap: false, sortable: false }
@@ -311,7 +311,7 @@ async function loadData() {
       throw new Error(result.error || '查询失败');
     }
     allRows = result.data || [];
-    sortState = { key: 'last_upload_time', asc: false };
+    sortState = { key: 'last_update_date', asc: false };
     filterData();
   } catch (err) {
     container.innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
@@ -387,8 +387,8 @@ function renderTable(rows) {
         }
       } else if (col.key === 'status') {
         html += '<td>' + renderStatusBadge(row.status) + '</td>';
-      } else if (col.key === 'last_upload_time') {
-        html += '<td>' + formatDateTime(row.last_upload_time) + '</td>';
+      } else if (col.key === 'last_update_date') {
+        html += '<td>' + formatDateTime(row.last_update_date) + '</td>';
       } else {
         const val = row[col.key];
         const display = val === null || val === undefined ? '-' : escapeHtml(val);

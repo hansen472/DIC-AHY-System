@@ -4,3 +4,4 @@
 页面包含一个表格，表格包含以下列：编号、上传时间、版本名称、状态、操作（查看）。
 其值取云端数据库中report_seal_data 表中的seal_id、last_upload_time、version_name、status字段。操作列的查看按钮用于查看该文件的内容，直接使用url的值打开。
 加一个限制条件 tenant_id = 3
+将上面查询的last_upload_time 字段名更改为last_update_date
