@@ -88,6 +88,9 @@ app.get('/coa-product-data.html', requirePermissionPage('coa_report'), (req, res
 app.get('/coa-client-data.html', requirePermissionPage('coa_report'), (req, res) => {
   res.sendFile(path.join(__dirname, 'coa-client-data.html'));
 });
+app.get('/coa-seal-data.html', requirePermissionPage('coa_report'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'coa-seal-data.html'));
+});
 app.get('/logs.html', requirePermissionPage('logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'logs.html'));
 });
@@ -4196,6 +4199,25 @@ app.get('/api/coa-client-data', requirePermission('coa_report'), async (req, res
     res.json({ success: true, count: rows.length, data: rows });
   } catch (err) {
     console.error('[COA] 查询客户数据失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/coa-seal-data
+ * 从云端 Azure SQL 的 report_seal_data 表查询印单数据
+ */
+app.get('/api/coa-seal-data', requirePermission('coa_report'), async (req, res) => {
+  try {
+    const result = await coaPool.request()
+      .query(`SELECT seal_id, last_upload_time, version_name, status, url
+              FROM report_seal_data
+              WHERE tenant_id = 3
+              ORDER BY last_upload_time DESC`);
+    const rows = result.recordset || [];
+    res.json({ success: true, count: rows.length, data: rows });
+  } catch (err) {
+    console.error('[COA] 查询印单数据失败:', err);
     res.status(500).json({ error: '查询失败: ' + err.message });
   }
 });

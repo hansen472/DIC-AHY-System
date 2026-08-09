@@ -433,6 +433,9 @@ body {
         <a href="/coa-client-data.html" class="nav-sub-item" id="nav-coa-client-data" style="display:none;">
           <span>客户主数据维护</span>
         </a>
+        <a href="/coa-seal-data.html" class="nav-sub-item" id="nav-coa-seal-data" style="display:none;">
+          <span>印单维护</span>
+        </a>
       </div>
     </div>
   </div>
@@ -591,6 +594,7 @@ function initSidebarGroups() {
       if (perms.coa_report) {
         document.getElementById('nav-coa-product-data').style.display = 'flex';
         document.getElementById('nav-coa-client-data').style.display = 'flex';
+        document.getElementById('nav-coa-seal-data').style.display = 'flex';
         coaGroup.style.display = 'block';
       }
 

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>印单维护 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --success: #047857;
+  --danger: #dc2626;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container { max-width: 1600px; margin: 0 auto; }
+
+header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  color: #fff;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(30, 64, 175, 0.18);
+}
+
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; }
+header p { font-size: 13px; color: #cbd5e1; margin-top: 6px; }
+
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.search-input {
+  padding: 9px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  width: 220px;
+  outline: none;
+}
+
+.btn-refresh {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  transition: transform 0.12s ease;
+}
+.btn-refresh:hover { transform: translateY(-1px); }
+.btn-refresh:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.btn-back {
+  background: #64748b;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
+  transition: transform 0.12s ease;
+}
+.btn-back:hover { transform: translateY(-1px); }
+
+.card {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+.summary {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.summary strong { color: var(--primary); font-size: 18px; margin: 0 4px; }
+
+.table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  max-height: calc(100vh - 300px);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 800px;
+}
+
+th, td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th {
+  background: #f8fafc;
+  color: #374151;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+th:hover { background: #eef2ff; }
+
+th .sort-icon {
+  display: inline-block;
+  margin-left: 6px;
+  color: #9ca3af;
+  font-size: 11px;
+  width: 12px;
+}
+th.sort-asc .sort-icon,
+th.sort-desc .sort-icon { color: var(--primary); }
+
+tbody tr:hover { background: #f9fafb; }
+tbody tr:last-child td { border-bottom: none; }
+
+.cell-wrap {
+  white-space: normal;
+  word-break: break-word;
+  max-width: 300px;
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 60px 0;
+}
+
+.loading {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 40px 0;
+}
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: none;
+}
+.toast.error { background: var(--danger); }
+.toast.success { background: var(--success); }
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  margin-top: 20px;
+}
+.back-link:hover { color: var(--primary); }
+
+.btn-view {
+  display: inline-block;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--primary);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.btn-view:hover { background: #1e3a8a; }
+.btn-view.disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.status-active  { background: #dcfce7; color: #15803d; }
+.status-expired { background: #fee2e2; color: #b91c1c; }
+.status-pending { background: #fef9c3; color: #a16207; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-refresh.refreshing { pointer-events: none; }
+.btn-refresh.refreshing::before {
+  content: '⏳ ';
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>印单维护</h1>
+      <p>从云端 Azure SQL 查询 report_seal_data 印单数据</p>
+    </div>
+    <div class="toolbar">
+      <input type="text" class="search-input" id="search-input" placeholder="搜索编号 / 版本名称..." oninput="filterData()">
+      <button class="btn-refresh" id="btn-refresh" onclick="refreshData()">刷新数据</button>
+      <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="summary">共 <strong id="record-count">0</strong> 条记录</div>
+    <div id="result-area" class="table-wrap">
+      <div class="loading">正在加载数据...</div>
+    </div>
+  </div>
+
+  <a class="back-link" href="/nav-sidebar.html">← 返回导航</a>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let allRows = [];
+let sortState = { key: 'last_upload_time', asc: false };
+
+const COLUMNS = [
+  { key: 'seal_id',          label: '编号',       wrap: false, sortable: true },
+  { key: 'last_upload_time', label: '上传时间',   wrap: false, sortable: true },
+  { key: 'version_name',     label: '版本名称',   wrap: true,  sortable: true },
+  { key: 'status',           label: '状态',       wrap: false, sortable: true },
+  { key: '_action',          label: '操作',       wrap: false, sortable: false }
+];
+
+function init() {
+  loadData();
+}
+
+function showToast(message, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast ' + type;
+  toast.style.display = 'block';
+  setTimeout(() => { toast.style.display = 'none'; }, 4000);
+}
+
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatDateTime(val) {
+  if (!val) return '-';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+async function loadData() {
+  const container = document.getElementById('result-area');
+  container.innerHTML = '<div class="loading">正在加载数据...</div>';
+
+  try {
+    const res = await fetch('/api/coa-seal-data');
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '查询失败');
+    }
+    allRows = result.data || [];
+    sortState = { key: 'last_upload_time', asc: false };
+    filterData();
+  } catch (err) {
+    container.innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+    showToast('加载失败：' + err.message, 'error');
+  }
+}
+
+function filterData() {
+  const keyword = (document.getElementById('search-input').value || '').trim().toLowerCase();
+  let filtered = allRows;
+  if (keyword) {
+    filtered = allRows.filter(r =>
+      (r.seal_id && String(r.seal_id).toLowerCase().includes(keyword)) ||
+      (r.version_name && r.version_name.toLowerCase().includes(keyword))
+    );
+  }
+  document.getElementById('record-count').textContent = filtered.length;
+  renderTable(filtered);
+}
+
+function renderStatusBadge(status) {
+  if (!status) return '-';
+  const s = String(status).toLowerCase();
+  let cls = 'status-pending';
+  if (s === 'active' || s === '正常' || s === '有效' || s === '1') cls = 'status-active';
+  else if (s === 'expired' || s === '过期' || s === '失效' || s === '0') cls = 'status-expired';
+  return '<span class="status-badge ' + cls + '">' + escapeHtml(status) + '</span>';
+}
+
+function renderTable(rows) {
+  const container = document.getElementById('result-area');
+  if (rows.length === 0) {
+    container.innerHTML = '<div class="empty">暂无数据</div>';
+    return;
+  }
+
+  let html = '<table><thead><tr>';
+  html += '<th style="text-align:right; width:50px;">序号</th>';
+  COLUMNS.forEach(col => {
+    if (!col.sortable) {
+      html += '<th style="cursor:default;">' + escapeHtml(col.label) + '</th>';
+      return;
+    }
+    const activeAsc = sortState.key === col.key && sortState.asc;
+    const activeDesc = sortState.key === col.key && !sortState.asc;
+    const icon = activeAsc ? '▲' : activeDesc ? '▼' : '⇅';
+    const cls = activeAsc ? 'sort-asc' : activeDesc ? 'sort-desc' : '';
+    html += '<th class="' + cls + '" onclick="sortBy(\'' + escapeHtml(col.key) + '\')">' +
+            escapeHtml(col.label) + '<span class="sort-icon">' + icon + '</span></th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  const sorted = [...rows];
+  sorted.sort((a, b) => {
+    let va = a[sortState.key];
+    let vb = b[sortState.key];
+    if (va === null || va === undefined) va = '';
+    if (vb === null || vb === undefined) vb = '';
+    const cmp = String(va).localeCompare(String(vb), 'zh-CN');
+    return sortState.asc ? cmp : -cmp;
+  });
+
+  sorted.forEach((row, idx) => {
+    html += '<tr>';
+    html += '<td style="text-align:right; font-family:var(--mono);">' + (idx + 1) + '</td>';
+    COLUMNS.forEach(col => {
+      if (col.key === '_action') {
+        const url = row.url;
+        if (url) {
+          html += '<td><a class="btn-view" href="' + escapeHtml(url) + '" target="_blank" rel="noopener">查看</a></td>';
+        } else {
+          html += '<td><span class="btn-view disabled">查看</span></td>';
+        }
+      } else if (col.key === 'status') {
+        html += '<td>' + renderStatusBadge(row.status) + '</td>';
+      } else if (col.key === 'last_upload_time') {
+        html += '<td>' + formatDateTime(row.last_upload_time) + '</td>';
+      } else {
+        const val = row[col.key];
+        const display = val === null || val === undefined ? '-' : escapeHtml(val);
+        const cls = col.wrap ? 'cell-wrap' : '';
+        html += '<td class="' + cls + '">' + display + '</td>';
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function sortBy(key) {
+  if (sortState.key === key) {
+    sortState.asc = !sortState.asc;
+  } else {
+    sortState = { key, asc: true };
+  }
+  filterData();
+}
+
+async function refreshData() {
+  const btn = document.getElementById('btn-refresh');
+  btn.disabled = true;
+  btn.classList.add('refreshing');
+  btn.textContent = '正在刷新...';
+
+  try {
+    await loadData();
+    showToast('数据刷新成功', 'success');
+  } catch (err) {
+    showToast('刷新失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('refreshing');
+    btn.textContent = '刷新数据';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
