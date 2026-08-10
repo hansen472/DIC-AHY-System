@@ -140,8 +140,8 @@ tr { cursor: pointer; }
           <div class="form-grid">
             <div class="form-group full-width">
               <label>密码 <span style="color:#e53e3e;">*</span></label>
-              <input type="password" id="edit-password" placeholder="请输入密码（至少 6 位）">
-              <div class="input-hint">密码长度不能少于 6 位</div>
+              <input type="password" id="edit-password" placeholder="请输入密码">
+              <div class="input-hint">至少 6 位，须含字母和数字，连续字母/数字不超过 3 位，不可含用户名</div>
             </div>
           </div>
         </div>
@@ -152,7 +152,7 @@ tr { cursor: pointer; }
             <div class="form-group full-width">
               <label>新密码</label>
               <input type="password" id="edit-new-password" placeholder="不修改请留空">
-              <div class="input-hint">如需修改密码，请输入至少 6 位的新密码</div>
+              <div class="input-hint">至少 6 位，须含字母和数字，连续字母/数字不超过 3 位，不可含用户名</div>
             </div>
           </div>
         </div>
@@ -417,6 +417,29 @@ function closeModal() {
   document.getElementById('user-modal').classList.remove('active');
 }
 
+/**
+ * 前端密码复杂度校验（与 server.js validatePassword 逻辑一致）
+ */
+function validatePassword(password, username) {
+  if (!password || password.length < 6) return '密码长度不能少于 6 位';
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) return '密码必须同时包含字母和数字';
+  if (/[a-zA-Z]{4,}/.test(password)) return '密码中连续字母不能超过 3 个';
+  if (/[0-9]{4,}/.test(password)) return '密码中连续数字不能超过 3 个';
+  if (username && username.trim()) {
+    const un = username.trim();
+    const variants = [un, un.toLowerCase(), un.toUpperCase(), un.split('').reverse().join('')]
+      .filter(v => v && v.length > 0);
+    const unique = [...new Set(variants)];
+    const pwdLower = password.toLowerCase();
+    for (const v of unique) {
+      if (password.includes(v) || pwdLower.includes(v.toLowerCase())) {
+        return '密码不能包含用户名或用户名的变体';
+      }
+    }
+  }
+  return null;
+}
+
 async function saveUser() {
   const username = document.getElementById('edit-username-input').value.trim();
   const chineseName = document.getElementById('edit-chinese-name').value.trim();
@@ -475,9 +498,8 @@ async function saveUser() {
       // 修改密码（如有填写）
       const newPassword = document.getElementById('edit-new-password').value;
       if (newPassword) {
-        if (newPassword.length < 6) {
-          throw new Error('新密码长度不能少于 6 位');
-        }
+        const pwdErr = validatePassword(newPassword, originalUsername);
+        if (pwdErr) throw new Error(pwdErr);
         const pwdRes = await fetch('/api/users/' + encodeURIComponent(originalUsername) + '/password', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -495,8 +517,9 @@ async function saveUser() {
         btn.disabled = false;
         return;
       }
-      if (password.length < 6) {
-        showMessage('密码长度不能少于 6 位', 'error');
+      const pwdErr = validatePassword(password, username);
+      if (pwdErr) {
+        showMessage(pwdErr, 'error');
         btn.disabled = false;
         return;
       }

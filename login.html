@@ -181,7 +181,8 @@ body {
       </div>
       <div class="form-group">
         <label>新密码</label>
-        <input type="password" id="pwd-new" placeholder="请输入新密码（至少 6 位）">
+        <input type="password" id="pwd-new" placeholder="请输入新密码">
+        <div style="font-size:12px;color:#a0aec0;margin-top:4px;">至少 6 位，须含字母和数字，连续字母/数字不超过 3 位，不可含用户名</div>
       </div>
       <div class="form-group">
         <label>确认新密码</label>
@@ -303,6 +304,29 @@ async function doLogin() {
 
 // ========== 修改密码功能 ==========
 
+/**
+ * 前端密码复杂度校验（与 server.js validatePassword 逻辑一致）
+ */
+function validatePassword(password, username) {
+  if (!password || password.length < 6) return '密码长度不能少于 6 位';
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) return '密码必须同时包含字母和数字';
+  if (/[a-zA-Z]{4,}/.test(password)) return '密码中连续字母不能超过 3 个';
+  if (/[0-9]{4,}/.test(password)) return '密码中连续数字不能超过 3 个';
+  if (username && username.trim()) {
+    const un = username.trim();
+    const variants = [un, un.toLowerCase(), un.toUpperCase(), un.split('').reverse().join('')]
+      .filter(v => v && v.length > 0);
+    const unique = [...new Set(variants)];
+    const pwdLower = password.toLowerCase();
+    for (const v of unique) {
+      if (password.includes(v) || pwdLower.includes(v.toLowerCase())) {
+        return '密码不能包含用户名或用户名的变体';
+      }
+    }
+  }
+  return null;
+}
+
 // 打开修改密码弹窗
 function openChangePassword() {
   const loginUsername = document.getElementById('username').value.trim();
@@ -336,8 +360,9 @@ async function doChangePassword() {
     msgEl.className = 'error-msg';
     return;
   }
-  if (newPassword.length < 6) {
-    msgEl.textContent = '新密码长度不能少于 6 位';
+  const pwdErr = validatePassword(newPassword, username);
+  if (pwdErr) {
+    msgEl.textContent = pwdErr;
     msgEl.className = 'error-msg';
     return;
   }

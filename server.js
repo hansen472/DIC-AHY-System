@@ -433,8 +433,9 @@ app.post('/api/users', requireAdmin, async (req, res) => {
   if (!password || typeof password !== 'string') {
     return res.status(400).json({ error: '缺少密码' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: '密码长度不能少于 6 位' });
+  const pwdErr = validatePassword(password, trimmedUsername);
+  if (pwdErr) {
+    return res.status(400).json({ error: pwdErr });
   }
 
   // 简单校验邮箱格式（如有填写）
@@ -480,8 +481,9 @@ app.put('/api/users/:username/password', requireAdmin, async (req, res) => {
   if (!password || typeof password !== 'string') {
     return res.status(400).json({ error: '缺少新密码' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: '密码长度不能少于 6 位' });
+  const pwdErr = validatePassword(password, username);
+  if (pwdErr) {
+    return res.status(400).json({ error: pwdErr });
   }
 
   try {
@@ -509,8 +511,9 @@ app.post('/api/change-password', async (req, res) => {
   if (!username || !oldPassword || !newPassword) {
     return res.status(400).json({ error: '请填写用户名、旧密码和新密码' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: '新密码长度不能少于 6 位' });
+  const pwdErr = validatePassword(newPassword, username);
+  if (pwdErr) {
+    return res.status(400).json({ error: pwdErr });
   }
   if (oldPassword === newPassword) {
     return res.status(400).json({ error: '新密码不能与旧密码相同' });
@@ -2978,6 +2981,57 @@ const PASSWORD_GRACE_DAYS = 30;   // 过期后宽限天数（1 个月，宽限�
 
 function hashPassword(pwd) {
   return crypto.createHash('sha256').update(pwd).digest('hex');
+}
+
+/**
+ * 密码复杂度校验
+ * 规则：
+ *   1. 长度 >= 6
+ *   2. 必须同时包含字母和数字
+ *   3. 连续字母或连续数字不超过 3 个
+ *   4. 不能包含用户名（原值、全大写、全小写、反转）
+ * @param {string} password - 待校验密码
+ * @param {string} username - 用户名（用于规则 4）
+ * @returns {string|null} 错误信息，通过则返回 null
+ */
+function validatePassword(password, username) {
+  if (!password || password.length < 6) {
+    return '密码长度不能少于 6 位';
+  }
+
+  // 必须包含字母和数字
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+    return '密码必须同时包含字母和数字';
+  }
+
+  // 连续字母或连续数字不能超过 3 个
+  if (/[a-zA-Z]{4,}/.test(password)) {
+    return '密码中连续字母不能超过 3 个';
+  }
+  if (/[0-9]{4,}/.test(password)) {
+    return '密码中连续数字不能超过 3 个';
+  }
+
+  // 不能包含用户名或其变体
+  if (username && typeof username === 'string' && username.trim()) {
+    const pwdLower = password.toLowerCase();
+    const un = username.trim();
+    const unLower = un.toLowerCase();
+    const unUpper = un.toUpperCase();
+    const unReversed = un.split('').reverse().join('');
+
+    const variants = [un, unLower, unUpper, unReversed]
+      .filter(v => v && v.length > 0);
+    const uniqueVariants = [...new Set(variants)];
+
+    for (const variant of uniqueVariants) {
+      if (password.includes(variant) || pwdLower.includes(variant.toLowerCase())) {
+        return '密码不能包含用户名或用户名的变体';
+      }
+    }
+  }
+
+  return null;
 }
 
 function generateSessionId() {
