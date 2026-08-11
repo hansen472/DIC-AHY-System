@@ -30,6 +30,7 @@ const { setupWorkflowRoutes } = require('./workflow-routes');
 const { runBackup, listBackups, startDailyBackup } = require('./backup-service');
 const { queryInstruments } = require('./instrument-meter-service');
 const { startWeeklyCheck } = require('./instrument-meter-notifier');
+const { micPool } = require('./db-mic-config');
 const { setupOcrRoutes } = require('./ocr-routes');
 const nodemailer = require('nodemailer');
 const multer = require('multer');
@@ -81,6 +82,9 @@ app.get('/backup-management.html', requirePermissionPage('backup_management'), (
 });
 app.get('/instrument-meter.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'instrument-meter.html'));
+});
+app.get('/overdue-workorder-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'overdue-workorder-push.html'));
 });
 app.get('/coa-product-data.html', requirePermissionPage('coa_report'), (req, res) => {
   res.sendFile(path.join(__dirname, 'coa-product-data.html'));
@@ -4120,6 +4124,98 @@ app.get('/api/instrument-meter/export', requirePermission('instrument_meter'), a
   } catch (err) {
     console.error('导出仪器/仪表数据失败:', err);
     res.status(500).json({ error: '导出失败: ' + err.message });
+  }
+});
+
+// ========== 设备过期工单推送（MIC 数据库 → 企业微信） ==========
+
+const OVERDUE_WORKORDER_DEFAULT_SQL = `SELECT
+  CONCAT(wo.wo_id, ' ', wo.wo_name) AS wo_info,
+  CONCAT(a.asset_code, ' ', a.asset_name) AS asset_names,
+  wo.wo_creation_time,
+  wo.wo_target_time,
+  CONCAT(mp.priority_code, ' ', mp.priority_name) AS asset_prioritys,
+  CONCAT(mt.type_code, ' ', mt.type_name) AS asset_types,
+  wo.wo_creator,
+  ms.status_name_cn,
+  COUNT(*) OVER() AS total_count
+FROM wo_list wo
+LEFT JOIN asset_list a ON wo.wo_asset_id = a.asset_id
+LEFT JOIN mic_priority mp ON wo.wo_priority_id = mp.priority_id
+LEFT JOIN mic_type mt ON wo.wo_type_id = mt.type_id
+LEFT JOIN mic_status ms ON wo.wo_status = ms.status_id
+WHERE wo.wo_target_time < NOW() AND wo.wo_status <= 5`;
+
+// 获取默认 SQL
+app.get('/api/overdue-workorder/sql', requirePermission('instrument_meter'), (req, res) => {
+  res.json({ success: true, sql: OVERDUE_WORKORDER_DEFAULT_SQL });
+});
+
+// 查询过期工单
+app.post('/api/overdue-workorder', requirePermission('instrument_meter'), async (req, res) => {
+  const sql = (req.body && req.body.sql) || OVERDUE_WORKORDER_DEFAULT_SQL;
+  try {
+    const [rows] = await micPool.execute(sql);
+    const total = rows.length > 0 ? (rows[0].total_count || rows.length) : 0;
+    res.json({ success: true, total, data: rows });
+  } catch (err) {
+    console.error('查询过期工单失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+// 推送到企业微信
+app.post('/api/overdue-workorder/push', requirePermission('instrument_meter'), async (req, res) => {
+  const { data, total } = req.body;
+  if (!Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: '无数据可推送' });
+  }
+
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+  const statusEmoji = {
+    '已创建': '⚪', '等待备件': '🟡', '等待外委': '🟣',
+    '已安排': '🔵', '已搁置': '🔴', '进行中': '🟢'
+  };
+
+  const clean = (v) => v ? String(v).replace(/\|/g, ' ').replace(/\n/g, ' ').trim() : '';
+  const batchSize = 15;
+  const totalBatches = Math.ceil(data.length / batchSize);
+  const results = [];
+
+  try {
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batchNo = Math.floor(i / batchSize) + 1;
+      const batch = data.slice(i, i + batchSize);
+
+      const lines = [
+        '### 📋 延迟的工单列表',
+        `#### 共查询到 ${total || data.length} 条延迟工单`,
+        `#### 第 ${batchNo}/${totalBatches} 批`,
+        '| 工单 | 资产 | 目标完成时间 | 类型 | 状态 |',
+        '| :--- | :--- | :--- | :--- | :--- |'
+      ];
+
+      batch.forEach(item => {
+        const woInfo = clean(item.wo_info);
+        const assetName = clean(item.asset_names);
+        const targetTime = clean(item.wo_target_time);
+        const assetType = clean(item.asset_types);
+        const statusName = clean(item.status_name_cn);
+        const emoji = statusEmoji[statusName] || '⚪';
+        lines.push(`| ${woInfo} | ${assetName} | ${targetTime} | ${assetType} | ${emoji} ${statusName} |`);
+      });
+
+      const markdown = lines.join('\n');
+      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+
+      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+      results.push({ batch: batchNo, status: resp.status, data: resp.data });
+    }
+
+    res.json({ success: true, batch_count: results.length, results });
+  } catch (err) {
+    console.error('推送企业微信失败:', err);
+    res.status(500).json({ error: '推送失败: ' + (err.response ? JSON.stringify(err.response.data) : err.message) });
   }
 });
 

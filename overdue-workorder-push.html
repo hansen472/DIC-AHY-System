@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设备过期工单推送</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; }
+.page-wrapper { display: flex; min-height: 100vh; }
+.main-content { flex: 1; margin-left: 260px; padding: 24px; }
+h1 { font-size: 22px; color: #2c3e50; margin-bottom: 20px; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+button { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.btn-success { background: #38a169; color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-danger { background: #e53e3e; color: #fff; }
+.btn-wechat { background: #07c160; color: #fff; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; white-space: nowrap; }
+tr:hover td { background: #f7fafc; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.badge-green { background: #c6f6d5; color: #22543d; }
+.badge-yellow { background: #fefcbf; color: #744210; }
+.badge-blue { background: #bee3f8; color: #2a4365; }
+.badge-red { background: #fed7d7; color: #742a2a; }
+.badge-purple { background: #e9d8fd; color: #44337a; }
+.badge-gray { background: #edf2f7; color: #4a5568; }
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #c6f6d5; color: #22543d; display: block; }
+.message.error { background: #fed7d7; color: #742a2a; display: block; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.stat-bar { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+.stat-item { background: #f7fafc; border-radius: 8px; padding: 12px 20px; min-width: 120px; }
+.stat-item .label { font-size: 12px; color: #718096; }
+.stat-item .value { font-size: 22px; font-weight: 700; color: #2d3748; margin-top: 4px; }
+.sql-editor-wrap { margin-top: 12px; }
+.sql-editor-wrap textarea { width: 100%; min-height: 180px; padding: 10px 14px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; font-family: 'JetBrains Mono', 'Consolas', monospace; resize: vertical; line-height: 1.5; }
+.sql-editor-wrap textarea:focus { outline: none; border-color: #2b6cb0; }
+.log-area { max-height: 200px; overflow-y: auto; background: #1a202c; color: #a0e8af; border-radius: 6px; padding: 12px 16px; font-size: 12px; font-family: 'JetBrains Mono', 'Consolas', monospace; line-height: 1.6; }
+.log-area .log-error { color: #fc8181; }
+.log-area .log-info { color: #90cdf4; }
+.log-area .log-time { color: #718096; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 12px; width: 90%; max-width: 800px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
+.modal-header { padding: 16px 20px; border-bottom: 1px solid #edf2f7; display: flex; justify-content: space-between; align-items: center; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-footer { padding: 16px 20px; border-top: 1px solid #edf2f7; display: flex; justify-content: flex-end; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+  <div id="nav-sidebar"></div>
+  <div class="main-content">
+    <h1>设备过期工单推送</h1>
+    <div id="global-message" class="message"></div>
+
+    <div class="card">
+      <div class="stat-bar" id="stat-bar">
+        <div class="stat-item"><div class="label">过期工单数</div><div class="value" id="stat-total">-</div></div>
+        <div class="stat-item"><div class="label">查询时间</div><div class="value" id="stat-time" style="font-size:14px;">-</div></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn-primary" onclick="loadData()">刷新数据</button>
+        <button class="btn-wechat" onclick="pushToWechat()">推送到企业微信</button>
+        <button class="btn-secondary" onclick="toggleSqlEditor()">编辑 SQL</button>
+      </div>
+      <div class="sql-editor-wrap" id="sql-editor-wrap" style="display:none;">
+        <textarea id="sql-editor"></textarea>
+        <div style="margin-top:8px; display:flex; gap:10px;">
+          <button class="btn-primary" onclick="applySql()" style="padding:6px 14px; font-size:13px;">应用并查询</button>
+          <button class="btn-secondary" onclick="resetSql()" style="padding:6px 14px; font-size:13px;">恢复默认</button>
+          <span style="font-size:12px; color:#718096; line-height:32px;">修改 SQL 后点击"应用并查询"刷新数据</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>过期工单列表</h2>
+      <div id="data-table">加载中...</div>
+    </div>
+
+    <div class="card">
+      <h2>推送日志</h2>
+      <div class="log-area" id="log-area"><span class="log-time">系统就绪，等待操作...</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let tableData = [];
+let defaultSql = '';
+let currentSql = '';
+
+async function init() {
+  const res = await fetch('/nav-sidebar.html');
+  document.getElementById('nav-sidebar').innerHTML = await res.text();
+  await loadDefaultSql();
+  await loadData();
+}
+
+async function loadDefaultSql() {
+  try {
+    const res = await fetch('/api/overdue-workorder/sql');
+    if (res.ok) {
+      const result = await res.json();
+      defaultSql = result.sql || '';
+      currentSql = defaultSql;
+      document.getElementById('sql-editor').value = currentSql;
+    }
+  } catch (e) {}
+}
+
+async function loadData() {
+  try {
+    const body = currentSql ? { sql: currentSql } : {};
+    const res = await fetch('/api/overdue-workorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || '查询失败');
+    }
+    const result = await res.json();
+    tableData = result.data || [];
+    renderTable();
+    document.getElementById('stat-total').textContent = result.total || tableData.length;
+    document.getElementById('stat-time').textContent = new Date().toLocaleString('zh-CN');
+    appendLog('info', `查询完成，共 ${result.total || tableData.length} 条记录`);
+  } catch (err) {
+    document.getElementById('data-table').innerHTML = '<div class="empty">查询失败：' + escapeHtml(err.message) + '</div>';
+    appendLog('error', '查询失败：' + err.message);
+  }
+}
+
+function renderTable() {
+  if (tableData.length === 0) {
+    document.getElementById('data-table').innerHTML = '<div class="empty">暂无过期工单</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead><tr>
+      <th>#</th><th>工单信息</th><th>资产</th><th>创建时间</th><th>目标完成时间</th><th>优先级</th><th>类型</th><th>创建人</th><th>状态</th>
+    </tr></thead><tbody>`;
+
+  tableData.forEach((row, i) => {
+    const statusBadge = getStatusBadge(row.status_name_cn);
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(row.wo_info || '')}</td>
+      <td>${escapeHtml(row.asset_names || '')}</td>
+      <td>${formatDate(row.wo_creation_time)}</td>
+      <td style="color:#e53e3e; font-weight:600;">${formatDate(row.wo_target_time)}</td>
+      <td>${escapeHtml(row.asset_prioritys || '')}</td>
+      <td>${escapeHtml(row.asset_types || '')}</td>
+      <td>${escapeHtml(row.wo_creator || '')}</td>
+      <td>${statusBadge}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('data-table').innerHTML = html;
+}
+
+function getStatusBadge(status) {
+  const map = {
+    '已创建': 'badge-gray',
+    '等待备件': 'badge-yellow',
+    '等待外委': 'badge-purple',
+    '已安排': 'badge-blue',
+    '已搁置': 'badge-red',
+    '进行中': 'badge-green'
+  };
+  const cls = map[status] || 'badge-gray';
+  const emojiMap = {
+    '已创建': '⚪', '等待备件': '🟡', '等待外委': '🟣',
+    '已安排': '🔵', '已搁置': '🔴', '进行中': '🟢'
+  };
+  const emoji = emojiMap[status] || '⚪';
+  return `<span class="badge ${cls}">${emoji} ${escapeHtml(status || '-')}</span>`;
+}
+
+async function pushToWechat() {
+  if (tableData.length === 0) {
+    showMessage('暂无数据可推送', 'error');
+    return;
+  }
+  if (!confirm(`确定要推送 ${tableData.length} 条过期工单到企业微信吗？`)) return;
+
+  try {
+    appendLog('info', '正在推送到企业微信...');
+    const res = await fetch('/api/overdue-workorder/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: tableData, total: tableData.length })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '推送失败');
+    showMessage('推送成功', 'success');
+    appendLog('info', `推送成功：共 ${result.batch_count || 1} 批，${tableData.length} 条记录`);
+  } catch (err) {
+    showMessage('推送失败：' + err.message, 'error');
+    appendLog('error', '推送失败：' + err.message);
+  }
+}
+
+function toggleSqlEditor() {
+  const wrap = document.getElementById('sql-editor-wrap');
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+}
+
+function applySql() {
+  currentSql = document.getElementById('sql-editor').value.trim();
+  loadData();
+}
+
+function resetSql() {
+  currentSql = defaultSql;
+  document.getElementById('sql-editor').value = defaultSql;
+  loadData();
+}
+
+function appendLog(type, msg) {
+  const area = document.getElementById('log-area');
+  const time = new Date().toLocaleTimeString('zh-CN');
+  const cls = type === 'error' ? 'log-error' : 'log-info';
+  area.innerHTML += `\n<span class="log-time">[${time}]</span> <span class="${cls}">${escapeHtml(msg)}</span>`;
+  area.scrollTop = area.scrollHeight;
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 4000);
+}
+
+function formatDate(str) {
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  return d.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

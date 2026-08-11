@@ -309,6 +309,9 @@ body {
         <a href="/instrument-meter.html" class="nav-sub-item" id="nav-instrument-meter" style="display:none;">
           <span>仪器 / 仪表</span>
         </a>
+        <a href="/overdue-workorder-push.html" class="nav-sub-item" id="nav-overdue-workorder" style="display:none;">
+          <span>设备过期工单推送</span>
+        </a>
       </div>
     </div>
 
@@ -512,10 +515,11 @@ function initSidebarGroups() {
       if (perms.dashboard) document.getElementById('nav-dashboard').style.display = 'flex';
       if (perms.template_admin) document.getElementById('nav-template-admin').style.display = 'flex';
       if (perms.backup_management) document.getElementById('nav-backup-management').style.display = 'flex';
-      // 领值推送分组：当前包含仪器/仪表
+      // 领值推送分组：当前包含仪器/仪表、设备过期工单推送
       const lingzhiGroup = document.getElementById('nav-lingzhi-push-group');
       if (perms.instrument_meter) {
         document.getElementById('nav-instrument-meter').style.display = 'flex';
+        document.getElementById('nav-overdue-workorder').style.display = 'flex';
         lingzhiGroup.style.display = 'block';
       }
       // 供应商资质分组：包含供应商资质、资质种类和供应商，共用 supplier_qualifications 权限

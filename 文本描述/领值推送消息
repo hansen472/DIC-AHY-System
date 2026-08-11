@@ -1,0 +1,207 @@
+新建一个二级目录的HTML页面，取名为”设备过期工单推送“，链接位于nav-sidebar.html ”领值推送“
+页面内容如下：
+以下列的sql 查询mic00001这个数据库，并显示在页面之中。可以根据实际情况修改sql语句。但修改了什么一定要和我说明。
+select 
+CONCAT(wo.wo_id, ' ', wo.wo_name) AS wo_info,
+CONCAT(a.asset_code,' ', a.asset_name) AS asset_names,
+wo.wo_creation_time,
+wo.wo_target_time,
+CONCAT(mp.priority_code,' ', mp.priority_name) AS asset_prioritys,
+CONCAT(mt.type_code,' ', type_name) AS asset_types,
+wo.wo_creator,
+ms.status_name_cn,
+COUNT(*) OVER() AS total_count  -- 这里添加了这一列
+from 
+wo_list wo
+left join  
+asset_list a ON wo_asset_id = a.asset_id      
+left join
+mic_priority  mp  on  wo.wo_priority_id = mp.priority_id
+left join
+mic_type mt on wo.wo_type_id = mt.type_id
+left join
+mic_status ms on wo.wo_status = ms.status_id
+where wo.wo_target_time < NOW()   and wo.wo_status <=5
+
+
+查出的sql结果，使用python代码发送企业微信消息。（具体参考代码如下）
+
+import requests
+
+def main(sql_result: list) -> dict:
+
+    # ==========================================
+    # 1. 初始化变量与数据提取
+    # ==========================================
+    data_list = []
+    total_count = 0
+
+    if sql_result and isinstance(sql_result, list) and len(sql_result) > 0:
+        first_item = sql_result[0]
+
+        if isinstance(first_item, dict):
+            data_list = first_item.get("result", [])
+            total_count = first_item.get(
+                "total_count",
+                len(data_list)
+            )
+
+    # ==========================================
+    # 2. 辅助函数
+    # ==========================================
+    def clean_text(text):
+        if not text:
+            return ""
+
+        return (
+            str(text)
+            .replace("|", " ")
+            .replace("\n", " ")
+            .strip()
+        )
+
+    status_emoji = {
+        "已创建": "⚪",
+        "等待备件": "🟡",
+        "等待外委": "🟣",
+        "已安排": "🔵",
+        "已搁置": "🔴",
+        "进行中": "🟢"
+    }
+
+    # ==========================================
+    # 3. 企业微信Webhook
+    # ==========================================
+    webhook_url = (
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+        "?key=7f6b079d-6edd-42bf-a91f-99f774af6def"
+        
+    )
+
+    # ==========================================
+    # 4. 分批发送
+    # ==========================================
+    batch_size = 15
+
+    responses = []
+
+    if not data_list:
+
+        final_markdown = """
+### 📋 延迟的工单列表
+
+暂无延迟工单
+"""
+
+        data = {
+            "msgtype": "markdown_v2",
+            "markdown_v2": {
+                "content": final_markdown
+            }
+        }
+
+        response = requests.post(
+            webhook_url,
+            json=data,
+            timeout=10
+        )
+
+        responses.append(response.text)
+
+    else:
+
+        total_batches = (
+            len(data_list) + batch_size - 1
+        ) // batch_size
+
+        for i in range(0, len(data_list), batch_size):
+
+            batch_no = i // batch_size + 1
+
+            batch_data = data_list[i:i + batch_size]
+
+            md_lines = []
+
+            md_lines.append("### 📋 延迟的工单列表")
+            md_lines.append(
+                f"#### 共查询到 {total_count} 条延迟工单"
+            )
+
+            md_lines.append(
+                f"#### 第 {batch_no}/{total_batches} 批"
+            )
+
+            md_lines.append(
+                "| 工单 | 资产 | 目标完成时间 | 类型 | 状态 |"
+            )
+            md_lines.append(
+                "| :--- | :--- | :--- | :--- | :--- |"
+            )
+
+            for item in batch_data:
+
+                wo_info = clean_text(
+                    item.get("wo_info")
+                )
+
+                asset_name = clean_text(
+                    item.get("asset_names")
+                )
+
+                target_time = clean_text(
+                    item.get("wo_target_time")
+                )
+
+                asset_type = clean_text(
+                    item.get("asset_types")
+                )
+
+                status_name = clean_text(
+                    item.get("status_name_cn")
+                )
+
+                emoji = status_emoji.get(
+                    status_name,
+                    "⚪"
+                )
+
+                status = f"{emoji} {status_name}"
+
+                md_lines.append(
+                    f"| {wo_info} | "
+                    f"{asset_name} | "
+                    f"{target_time} | "
+                    f"{asset_type} | "
+                    f"{status} |"
+                )
+
+            final_markdown = "\n".join(md_lines)
+
+            data = {
+                "msgtype": "markdown_v2",
+                "markdown_v2": {
+                    "content": final_markdown
+                }
+            }
+
+            response = requests.post(
+                webhook_url,
+                json=data,
+                timeout=10
+            )
+
+            responses.append({
+                "batch": batch_no,
+                "status_code": response.status_code,
+                "response": response.text
+            })
+
+    # ==========================================
+    # 5. 返回执行结果
+    # ==========================================
+    return {
+        "total_count": total_count,
+        "batch_size": batch_size,
+        "send_batches": len(responses),
+        "responses": responses
+    }
