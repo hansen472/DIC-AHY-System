@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS templates (
   sort_order           INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '排序序号',
   is_active            TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '是否启用: 1=启用, 0=禁用',
   current_version_id   INT UNSIGNED NULL COMMENT '当前生效版本ID',
+  css_id               INT UNSIGNED NULL COMMENT '使用的 CSS 样式 ID',
   created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   UNIQUE KEY uk_template_key (template_key),

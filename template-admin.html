@@ -183,8 +183,8 @@ let cssListData = [];
 
 async function init() {
   await loadUser();
-  await loadTemplates();
   await loadCssList();
+  await loadTemplates();
 }
 
 async function loadUser() {
@@ -223,6 +223,7 @@ function renderTemplateList() {
         <th>模板标识</th>
         <th>模板名称</th>
         <th>渲染函数</th>
+        <th>CSS 样式</th>
         <th>当前版本</th>
         <th>修改原因</th>
         <th>创建人</th>
@@ -236,11 +237,19 @@ function renderTemplateList() {
   templatesData.forEach(tpl => {
     const statusClass = tpl.is_active ? 'badge-active' : 'badge-inactive';
     const statusText = tpl.is_active ? '启用' : '禁用';
+    const selectedCssId = tpl.css_id || '';
     html += `
       <tr>
         <td>${tpl.template_key}</td>
         <td>${tpl.name}</td>
         <td>${tpl.render_function_name}</td>
+        <td>
+          <select onchange="changeTemplateCss(${tpl.id}, this.value)" style="padding:4px 6px; font-size:12px; border:1px solid #cbd5e0; border-radius:4px;">
+            ${cssListData.map(c =>
+              `<option value="${c.id}" ${c.id === selectedCssId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+            ).join('')}
+          </select>
+        </td>
         <td>${tpl.version || '-'}</td>
         <td class="reason-text" title="${escapeHtml(tpl.reason || '')}">${tpl.reason || '-'}</td>
         <td>${tpl.created_by || '-'}</td>
@@ -255,6 +264,23 @@ function renderTemplateList() {
 
   html += '</tbody></table>';
   document.getElementById('template-list').innerHTML = html;
+}
+
+async function changeTemplateCss(templateId, cssId) {
+  try {
+    const res = await fetch('/api/templates/' + templateId + '/css', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ css_id: parseInt(cssId, 10) || null })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '更新失败');
+    const cssName = (cssListData.find(c => c.id == cssId) || {}).name || '-';
+    showMessage('已切换 CSS 为：' + cssName, 'success');
+    await loadTemplates();
+  } catch (err) {
+    showMessage('切换失败：' + err.message, 'error');
+  }
 }
 
 async function loadCssList() {

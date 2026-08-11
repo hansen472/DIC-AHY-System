@@ -3400,22 +3400,25 @@ async function fetchMssqlData(querydata) {
 /**
  * 从数据库加载模板资源
  *
- * 1. 读取全局 CSS（template_css 表）
+ * 1. 读取所有 CSS 样式，以 id 为 key 存入 cssMap
  * 2. 读取所有生效的模板版本 JS 代码，拼接成一个可执行脚本
+ * 3. 读取每个模板的 css_id，建立 template_key → css_id 的映射
  *
  * 说明：
+ * - 每个模板通过 css_id 选择自己使用的 CSS，互不干扰
  * - 模板代码从数据库读取后，支持在线更新而无需重启服务
  * - 首次启动前请先执行 sql/template-tables.sql 和 scripts/migrate-templates.js
  */
 async function loadTemplates() {
-  // 1. 加载所有生效的 CSS（多套样式拼接，各自通过 [data-tpl="..."] 选择器隔离）
+  // 1. 加载所有 CSS 样式 → { [id]: css_content }
   const [cssRows] = await pool.execute(
-    'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id ASC'
+    'SELECT id, css_content FROM template_css'
   );
   if (cssRows.length === 0) {
-    throw new Error('数据库中未找到生效的全局 CSS，请先执行模板迁移脚本');
+    throw new Error('数据库中未找到 CSS 样式，请先执行模板迁移脚本');
   }
-  const cssCode = cssRows.map(r => r.css_content).join('\n');
+  const cssMap = {};
+  cssRows.forEach(r => { cssMap[r.id] = r.css_content; });
 
   // 2. 加载所有生效的模板版本 JS 代码
   const [versionRows] = await pool.execute(`
@@ -3431,7 +3434,32 @@ async function loadTemplates() {
   }
 
   const jsCode = versionRows.map(row => row.js_code).join('\n');
-  return { jsCode, cssCode };
+
+  // 3. 加载每个模板的 css_id → { template_key: css_id }
+  const [tplCssRows] = await pool.execute(
+    'SELECT template_key, css_id FROM templates WHERE is_active = 1'
+  );
+  const templateCssMap = {};
+  tplCssRows.forEach(r => { templateCssMap[r.template_key] = r.css_id; });
+
+  return { jsCode, cssMap, templateCssMap };
+}
+
+/**
+ * 根据任务列表中的模板 key，从 cssMap 中解析出对应的 CSS 代码
+ * 同一个 PDF 文件中可能包含多个模板，收集它们使用的所有 CSS（去重）
+ */
+function resolveCssForTasks(tasks, cssMap, templateCssMap) {
+  const seen = new Set();
+  let css = '';
+  tasks.forEach(task => {
+    const cssId = templateCssMap[task.template];
+    if (cssId && !seen.has(cssId) && cssMap[cssId]) {
+      css += cssMap[cssId] + '\n';
+      seen.add(cssId);
+    }
+  });
+  return css;
 }
 
 /**
@@ -3658,7 +3686,7 @@ app.post('/api/print', requirePermission('print'), async (req, res) => {
     }
 
     // 2. 从数据库加载模板
-    const { jsCode, cssCode } = await loadTemplates();
+    const { jsCode, cssMap, templateCssMap } = await loadTemplates();
     const fns = getRenderFunctions(jsCode);
 
     // 3. 按页面方向（纵向/横向）把连续任务分组，保持原始顺序
@@ -3687,6 +3715,7 @@ app.post('/api/print', requirePermission('print'), async (req, res) => {
     // 为每组任务分别生成 PDF（同组同方向）
     const buffers = [];
     for (const group of groups) {
+      const cssCode = resolveCssForTasks(group.tasks, cssMap, templateCssMap);
       const buffer = await generatePDFBuffer(browser, records, group.tasks, fns, group.isLandscape, cssCode);
       buffers.push(buffer);
     }
@@ -3765,13 +3794,17 @@ app.post('/api/print/training-summary', requirePermission('training_records'), a
     );
 
     // 3. 加载模板
-    const { jsCode, cssCode } = await loadTemplates();
+    const { jsCode, cssMap, templateCssMap } = await loadTemplates();
     const fns = getRenderFunctions(jsCode);
     if (!fns.renderUserTrainingSummary) {
       return res.status(500).json({ error: '未找到用户培训记录汇总模板 renderUserTrainingSummary' });
     }
 
-    // 4. 生成 HTML 并转为 PDF
+    // 4. 解析该模板使用的 CSS
+    const cssId = templateCssMap['usertrainingrecord'];
+    const cssCode = (cssId && cssMap[cssId]) || Object.values(cssMap)[0];
+
+    // 5. 生成 HTML 并转为 PDF
     const html = buildTrainingSummaryHTML(user, recordRows, fns, cssCode);
 
     const chromePath = findChrome();
@@ -4384,16 +4417,39 @@ app.get('/api/templates', requirePermission('template_admin'), async (req, res) 
   try {
     const [rows] = await pool.execute(`
       SELECT t.id, t.template_key, t.render_function_name, t.name, t.description,
-             t.sort_order, t.is_active, t.current_version_id,
+             t.sort_order, t.is_active, t.current_version_id, t.css_id,
+             c.name AS css_name,
              v.version, v.reason, v.remarks, v.created_by, v.created_at AS version_created_at
       FROM templates t
       LEFT JOIN template_versions v ON t.current_version_id = v.id
+      LEFT JOIN template_css c ON t.css_id = c.id
       ORDER BY t.sort_order ASC
     `);
     res.json({ success: true, data: rows });
   } catch (err) {
     console.error('查询模板列表失败:', err);
     res.status(500).json({ error: '查询失败' });
+  }
+});
+
+// 设置模板使用的 CSS 样式
+app.put('/api/templates/:id/css', requirePermission('template_admin'), async (req, res) => {
+  const templateId = parseInt(req.params.id, 10);
+  const { css_id } = req.body;
+  if (!templateId) return res.status(400).json({ error: '缺少模板 ID' });
+  if (css_id != null && typeof css_id !== 'number') {
+    return res.status(400).json({ error: 'css_id 必须为数字或 null' });
+  }
+  try {
+    await pool.execute(
+      'UPDATE templates SET css_id = ?, updated_at = NOW() WHERE id = ?',
+      [css_id || null, templateId]
+    );
+    await logOperation(req, '设置模板CSS', 'template', templateId, `css_id: ${css_id || 'null'}`);
+    res.json({ success: true, message: '已更新' });
+  } catch (err) {
+    console.error('设置模板 CSS 失败:', err);
+    res.status(500).json({ error: '更新失败' });
   }
 });
 
@@ -4646,25 +4702,27 @@ app.get('/api/templates/:id/versions/:versionId/preview', requirePermission('tem
 
   try {
     const [versionRows] = await pool.execute(
-      'SELECT v.js_code, t.render_function_name FROM template_versions v JOIN templates t ON v.template_id = t.id WHERE v.id = ? AND v.template_id = ?',
+      'SELECT v.js_code, t.render_function_name, t.css_id FROM template_versions v JOIN templates t ON v.template_id = t.id WHERE v.id = ? AND v.template_id = ?',
       [versionId, templateId]
     );
     if (versionRows.length === 0) {
       return res.status(404).json({ error: '版本不存在' });
     }
 
-    const [cssRows] = await pool.execute(
-      'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id ASC'
-    );
-    if (cssRows.length === 0) {
-      return res.status(404).json({ error: '未找到全局 CSS' });
+    // 加载该模板指定的 CSS
+    const cssId = versionRows[0].css_id;
+    let cssContent = '';
+    if (cssId) {
+      const [cssRows] = await pool.execute(
+        'SELECT css_content FROM template_css WHERE id = ?', [cssId]
+      );
+      if (cssRows.length > 0) cssContent = cssRows[0].css_content;
     }
-    const allCss = cssRows.map(r => r.css_content).join('\n');
 
     const html = renderTemplatePreview(
       versionRows[0].js_code,
       versionRows[0].render_function_name,
-      allCss
+      cssContent
     );
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -4696,7 +4754,7 @@ app.post('/api/templates/:id/preview-code', requirePermission('template_admin'),
 
   try {
     const [templates] = await pool.execute(
-      'SELECT render_function_name FROM templates WHERE id = ?',
+      'SELECT render_function_name, css_id FROM templates WHERE id = ?',
       [templateId]
     );
     if (templates.length === 0) {
@@ -4710,15 +4768,17 @@ app.post('/api/templates/:id/preview-code', requirePermission('template_admin'),
       return res.status(400).json({ error: `JS 代码中未找到渲染函数 ${expectedFunc}` });
     }
 
-    const [cssRows] = await pool.execute(
-      'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id ASC'
-    );
-    if (cssRows.length === 0) {
-      return res.status(404).json({ error: '未找到全局 CSS' });
+    // 加载该模板指定的 CSS
+    const cssId = templates[0].css_id;
+    let cssContent = '';
+    if (cssId) {
+      const [cssRows] = await pool.execute(
+        'SELECT css_content FROM template_css WHERE id = ?', [cssId]
+      );
+      if (cssRows.length > 0) cssContent = cssRows[0].css_content;
     }
-    const allCss = cssRows.map(r => r.css_content).join('\n');
 
-    const html = renderTemplatePreview(js_code, expectedFunc, allCss);
+    const html = renderTemplatePreview(js_code, expectedFunc, cssContent);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {

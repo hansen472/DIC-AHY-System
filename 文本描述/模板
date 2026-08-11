@@ -4,3 +4,4 @@
 新页面的CSS样式存入数据库template_css表中，名称为“实验室报告申请”。
 其它页面内存先暂于print-templates文件夹中的print-template.js文件中，名称为“TS-ZL-CP-001”。
 
+两种CSS样式，不工混在一起使用。在template-admin.html 页面中，设置相应的选择可以为每一个模版选择自己要用的CSS样式，选择了之后，只单独使用该样式。
