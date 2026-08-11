@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实验室报告申请 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --accent: #d97706;
+  --success: #047857;
+  --danger: #dc2626;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container { max-width: 1600px; margin: 0 auto; }
+
+header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  color: #fff;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(30, 64, 175, 0.18);
+}
+
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; }
+header p { font-size: 13px; color: #cbd5e1; margin-top: 6px; }
+
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.search-input {
+  padding: 9px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  width: 220px;
+  outline: none;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+button:hover { transform: translateY(-1px); }
+button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
+}
+
+.btn-back {
+  background: #64748b;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
+}
+
+.card {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+  margin-bottom: 24px;
+}
+
+/* Report tabs */
+.report-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+}
+.report-tab {
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+.report-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 600;
+}
+.report-tab:hover { color: var(--primary); }
+
+/* Search form */
+.search-form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.search-form label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.search-form input {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  width: 160px;
+  outline: none;
+}
+.search-form input:focus { border-color: var(--primary); }
+.btn-sm {
+  padding: 7px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* Table */
+.table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  max-height: calc(100vh - 400px);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 1200px;
+}
+
+th {
+  background: #f1f5f9;
+  font-weight: 600;
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody tr:hover { background: #f8fafc; }
+
+.status-approved {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.status-pending {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.status-draft {
+  color: var(--text-secondary);
+}
+
+.opt-link {
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: none;
+  margin-right: 12px;
+  font-size: 13px;
+}
+.opt-link:hover { text-decoration: underline; }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.pagination button {
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Preview modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+}
+.modal-overlay.active { display: flex; }
+
+.modal-content {
+  background: #fff;
+  border-radius: 12px;
+  width: 80%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 { font-size: 16px; }
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0 4px;
+}
+
+.modal-body {
+  padding: 40px 30px;
+  box-shadow: rgba(0,0,0,0.3) 0px 1px 4px, rgba(0,0,0,0.1) 0px 0px 2px inset;
+}
+
+/* COA Report Styles */
+.coa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+.coa-header-logo img { width: 40%; }
+.coa-header-logo span {
+  font-size: 9px;
+  font-family: arial;
+  display: block;
+}
+.coa-title {
+  text-align: center;
+  margin-top: -10px;
+}
+.coa-title span {
+  font-size: 19px;
+  font-family: arial;
+  display: block;
+}
+.coa-info-table {
+  width: 100%;
+  font-size: 12px;
+  margin: 10px auto 0;
+  font-family: "Microsoft YaHei";
+}
+.coa-info-table td {
+  padding: 4px 0;
+  font-family: arial;
+  vertical-align: top;
+  border: none;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
+.coa-info-table .label-col { width: 18%; text-align: left; }
+.coa-info-table .val-col { width: 30%; text-align: left; }
+.coa-info-table .label-col2 { width: 18%; text-align: left; }
+.coa-info-table .val-col2 { width: 35%; text-align: left; }
+
+.coa-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+.coa-result-table td {
+  font-size: 11px;
+  color: black;
+  font-family: Arial, sans-serif;
+  border: 1px solid black;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+.coa-result-table .section-header {
+  color: #3366ff;
+  font-weight: bold;
+  text-align: left;
+  vertical-align: bottom;
+}
+.coa-result-table .test-name {
+  text-align: left;
+  vertical-align: middle;
+}
+.coa-result-table .center-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.coa-footer {
+  position: relative;
+  padding-bottom: 180px;
+  font-size: 12px;
+  margin-top: 10px;
+}
+.coa-footer-note { margin-top: 12px; }
+.coa-footer-sign {
+  position: absolute;
+  top: 10px;
+  z-index: 999;
+  width: 100%;
+  margin: 10px auto 0;
+  font-size: 14px;
+  font-family: "Microsoft YaHei";
+}
+.coa-footer-sign td {
+  font-size: 12px;
+  padding-top: 5px;
+  border: none;
+}
+
+.back-link {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.back-link:hover { text-decoration: underline; }
+
+@media print {
+  body { padding: 0; background: #fff; }
+  header, .card:not(.preview-card), .pagination, .search-form, .report-tabs { display: none !important; }
+  .modal-overlay { position: static; display: block !important; background: none; }
+  .modal-content { box-shadow: none; max-height: none; width: 100%; }
+  .modal-header { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>实验室报告申请</h1>
+      <p>管理 COA 报告、样品测试报告及微生物限度测试报告</p>
+    </div>
+    <div class="toolbar">
+      <button class="btn-primary" onclick="openCreateModal()">从模板新建</button>
+      <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="report-tabs">
+      <div class="report-tab active" onclick="switchTab(this, 'coa')">COA报告</div>
+      <div class="report-tab" onclick="switchTab(this, 'test')">Test report 样品测试报告</div>
+      <div class="report-tab" onclick="switchTab(this, 'microbial')">Microbial limit test report 微生物限度测试报告</div>
+    </div>
+
+    <div class="search-form">
+      <label>客户</label>
+      <input type="text" id="searchClient" placeholder="">
+      <label>产品批号</label>
+      <input type="text" id="searchBatch" placeholder="">
+      <label>产品编码</label>
+      <input type="text" id="searchCode" placeholder="">
+      <button class="btn-sm btn-accent" onclick="loadData()">查询</button>
+      <button class="btn-sm btn-back" onclick="resetSearch()">重置</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>单据编号</th>
+            <th>客户</th>
+            <th>产品批号</th>
+            <th>产品编码</th>
+            <th>产品名称</th>
+            <th>创建人</th>
+            <th>订单号</th>
+            <th>模板</th>
+            <th>报告书编号</th>
+            <th>创建日期</th>
+            <th>审批时间</th>
+            <th>状态</th>
+            <th>修改人</th>
+            <th>修改时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="dataBody">
+          <tr><td colspan="15" style="text-align:center; padding:40px; color:#999;">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination">
+      <span id="pageInfo">0 - 0 / 0</span>
+      <button disabled>首页</button>
+      <button disabled>上一页</button>
+      <button disabled>下一页</button>
+      <button disabled>末页</button>
+    </div>
+  </div>
+
+  <a class="back-link" href="/nav-sidebar.html">← 返回导航</a>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal-overlay" id="previewModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>预览</h3>
+      <button class="modal-close" onclick="closePreview()">×</button>
+    </div>
+    <div class="modal-body" id="previewBody">
+    </div>
+  </div>
+</div>
+
+<script>
+let allData = [];
+let currentTab = 'coa';
+
+function switchTab(el, tab) {
+  document.querySelectorAll('.report-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentTab = tab;
+  loadData();
+}
+
+function resetSearch() {
+  document.getElementById('searchClient').value = '';
+  document.getElementById('searchBatch').value = '';
+  document.getElementById('searchCode').value = '';
+  loadData();
+}
+
+async function loadData() {
+  const body = document.getElementById('dataBody');
+  body.innerHTML = '<tr><td colspan="15" style="text-align:center; padding:40px; color:#999;">加载中...</td></tr>';
+  try {
+    const params = new URLSearchParams({ tab: currentTab });
+    const client = document.getElementById('searchClient').value.trim();
+    const batch = document.getElementById('searchBatch').value.trim();
+    const code = document.getElementById('searchCode').value.trim();
+    if (client) params.set('client', client);
+    if (batch) params.set('batch', batch);
+    if (code) params.set('code', code);
+
+    const res = await fetch('/api/coa-reports?' + params.toString());
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    allData = result.data || [];
+    renderTable();
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="15" style="text-align:center; padding:40px; color:#dc2626;">加载失败：' + err.message + '</td></tr>';
+  }
+}
+
+function renderTable() {
+  const body = document.getElementById('dataBody');
+  if (allData.length === 0) {
+    body.innerHTML = '<tr><td colspan="15" style="text-align:center; padding:40px; color:#999;">暂无数据</td></tr>';
+    document.getElementById('pageInfo').textContent = '0 - 0 / 0';
+    return;
+  }
+  let html = '';
+  allData.forEach((row, idx) => {
+    const statusClass = row.status === '审批通过' ? 'status-approved' :
+                        row.status === '待审批' ? 'status-pending' : 'status-draft';
+    html += `<tr>
+      <td><a class="opt-link" onclick="previewReport(${idx})">${row.billNumber || ''}</a></td>
+      <td>${row.clientName || ''}</td>
+      <td>${row.batchNo || ''}</td>
+      <td>${row.productCode || ''}</td>
+      <td>${row.productName || ''}</td>
+      <td>${row.createPerson || ''}</td>
+      <td>${row.orderNo || ''}</td>
+      <td>${row.templateCode || ''}</td>
+      <td>${row.reportNo || ''}</td>
+      <td>${row.creationDate || ''}</td>
+      <td>${row.reportApprovedDate || ''}</td>
+      <td><span class="${statusClass}">${row.status || ''}</span></td>
+      <td>${row.updateEmployeeName || ''}</td>
+      <td>${row.updateTime || ''}</td>
+      <td>
+        <a class="opt-link" onclick="reuseReport(${idx})">复用报告</a>
+        <a class="opt-link" onclick="viewApproval(${idx})">审批详情</a>
+      </td>
+    </tr>`;
+  });
+  body.innerHTML = html;
+  document.getElementById('pageInfo').textContent = `1 - ${allData.length} / ${allData.length}`;
+}
+
+function previewReport(idx) {
+  const row = allData[idx];
+  if (!row) return;
+  document.getElementById('previewBody').innerHTML = renderCOAPreview(row);
+  document.getElementById('previewModal').classList.add('active');
+}
+
+function closePreview() {
+  document.getElementById('previewModal').classList.remove('active');
+}
+
+function reuseReport(idx) {
+  alert('复用报告功能开发中...');
+}
+
+function viewApproval(idx) {
+  alert('审批详情功能开发中...');
+}
+
+function openCreateModal() {
+  alert('从模板新建功能开发中...');
+}
+
+function renderCOAPreview(row) {
+  return `
+    <div class="coa-header">
+      <div class="coa-header-logo">
+        <img src="images/logo.png" alt="Logo">
+        <span>Aptar Heng Yu (Weihai) Medical Device Co.,Ltd.</span>
+        <span style="font-family: 'Microsoft YaHei';">阿普塔恒煜（威海）医疗器材有限公司</span>
+      </div>
+      <div></div>
+    </div>
+    <div class="coa-title">
+      <span>CERTIFICATE OF ANALYSIS</span>
+    </div>
+    <table class="coa-info-table">
+      <tr>
+        <td class="label-col"></td>
+        <td class="val-col"></td>
+        <td class="label-col2">Report No.</td>
+        <td class="val-col2">${row.reportNo || ''}</td>
+      </tr>
+      <tr>
+        <td class="label-col">Product Name</td>
+        <td class="val-col">${row.productName || ''}</td>
+        <td class="label-col2">Test No.</td>
+        <td class="val-col2">${row.testNo || ''}</td>
+      </tr>
+      <tr>
+        <td class="label-col">Specification</td>
+        <td class="val-col">${row.specification || ''}</td>
+        <td class="label-col2">Product Code</td>
+        <td class="val-col2">${row.productCode || ''}</td>
+      </tr>
+      <tr>
+        <td class="label-col">Model No</td>
+        <td class="val-col">${row.modelNo || ''}</td>
+        <td class="label-col2">Product Quantity</td>
+        <td class="val-col2">${row.productQuantity || ''}</td>
+      </tr>
+      <tr>
+        <td class="label-col">Batch No.</td>
+        <td class="val-col">${row.batchNo || ''}</td>
+        <td class="label-col2">Sample Quantity</td>
+        <td class="val-col2">${row.sampleQuantity || ''}</td>
+      </tr>
+      <tr>
+        <td class="label-col">Production Date</td>
+        <td class="val-col">${row.productionDate || ''}</td>
+        <td class="label-col2">Test Date</td>
+        <td class="val-col2">${row.testDate || ''}</td>
+      </tr>
+      <tr>
+        <td class="label-col">Test standard</td>
+        <td class="val-col">${row.testStandard || 'TS-ZL-CP-001'}</td>
+        <td class="label-col2">Report Date</td>
+        <td class="val-col2">${row.reportDate || ''}</td>
+      </tr>
+    </table>
+    <br>
+    <div style="text-align:center; color:#999; padding:20px;">报告详情数据将从数据库加载</div>
+    <div class="coa-footer">
+      <div class="coa-footer-note">The given results are the average of individual values after conformity check.</div>
+      <table class="coa-footer-sign">
+        <tr>
+          <td style="width:30%; text-align:left;">STATUS: ${row.conformStatus || 'CONFORM'}</td>
+          <td style="width:35%; text-align:left;"></td>
+          <td style="width:35%; text-align:left;">Digital Signer: ${row.digitalSigner || ''}</td>
+        </tr>
+        <tr>
+          <td style="width:30%; text-align:left;"></td>
+          <td style="width:35%; text-align:left;"></td>
+          <td style="width:35%; text-align:left;">Report Approved Date: ${row.reportApprovedDate || ''}</td>
+        </tr>
+        <tr>
+          <td style="width:30%; text-align:left;"></td>
+          <td style="width:35%; text-align:left;"></td>
+          <td style="width:35%; text-align:left;">DN: CN=${row.digitalSigner || ''}</td>
+        </tr>
+        <tr>
+          <td style="width:30%; text-align:left;">DATE: ${row.reportDate || ''}</td>
+          <td style="width:35%; text-align:left;">Quality Assurance Approval</td>
+          <td style="width:35%; text-align:left;">Email: ${row.signerEmail || ''}</td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
+// Click outside modal to close
+document.getElementById('previewModal').addEventListener('click', function(e) {
+  if (e.target === this) closePreview();
+});
+
+// Initial load
+loadData();
+</script>
+</body>
+</html>

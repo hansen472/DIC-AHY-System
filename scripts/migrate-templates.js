@@ -46,7 +46,8 @@ const TEMPLATE_META = {
   renderTestSampleVulcanizing: { key: 'testsamplevulcanizing', name: '模板 V：试样硫化生产记录 — SOR-SC-089', sort: 22 },
   renderMixingCleanup1: { key: 'mixingcleanup1', name: '模板 W：开炼工序清场记录（1#） — SOR-SC-091', sort: 23 },
   renderMixingCleanup2: { key: 'mixingcleanup2', name: '模板 X：开炼工序清场记录（2#） — SOR-SC-092', sort: 24 },
-  renderWashingPreCleanup: { key: 'washingprecleanup', name: '模板 Y：清洗工序预清洗清场记录 — SOR-SC-093（双页）', sort: 25 }
+  renderWashingPreCleanup: { key: 'washingprecleanup', name: '模板 Y：清洗工序预清洗清场记录 — SOR-SC-093（双页）', sort: 25 },
+  renderTSZLCP001: { key: 'tszlcp001', name: '实验室报告申请 — TS-ZL-CP-001', sort: 26 }
 };
 
 /**

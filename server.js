@@ -91,6 +91,9 @@ app.get('/coa-client-data.html', requirePermissionPage('coa_report'), (req, res)
 app.get('/coa-seal-data.html', requirePermissionPage('coa_report'), (req, res) => {
   res.sendFile(path.join(__dirname, 'coa-seal-data.html'));
 });
+app.get('/coa-report-application.html', requirePermissionPage('coa_report'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'coa-report-application.html'));
+});
 app.get('/logs.html', requirePermissionPage('logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'logs.html'));
 });
@@ -4272,6 +4275,58 @@ app.get('/api/coa-seal-data', requirePermission('coa_report'), async (req, res) 
     res.json({ success: true, count: rows.length, data: rows });
   } catch (err) {
     console.error('[COA] 查询印单数据失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/coa-reports
+ * 从云端 Azure SQL 查询实验室报告申请列表
+ */
+app.get('/api/coa-reports', requirePermission('coa_report'), async (req, res) => {
+  try {
+    const { tab, client, batch, code } = req.query;
+
+    // Map tab to template filter
+    let templateFilter = '';
+    if (tab === 'test') {
+      templateFilter = 'Test report';
+    } else if (tab === 'microbial') {
+      templateFilter = 'Microbial limit test report';
+    } else {
+      templateFilter = 'COA';
+    }
+
+    let sql = `SELECT TOP 200
+      bill_number AS billNumber,
+      client_name AS clientName,
+      batch_no AS batchNo,
+      product_code AS productCode,
+      product_name AS productName,
+      create_person AS createPerson,
+      order_no AS orderNo,
+      template_code AS templateCode,
+      report_no AS reportNo,
+      creation_date AS creationDate,
+      report_approved_date AS reportApprovedDate,
+      status,
+      update_employee_name AS updateEmployeeName,
+      update_time AS updateTime
+    FROM report_application
+    WHERE tenant_id = 3
+      AND template_code LIKE '%${templateFilter}%'`;
+
+    if (client) sql += ` AND client_name LIKE N'%${client}%'`;
+    if (batch) sql += ` AND batch_no LIKE '%${batch}%'`;
+    if (code) sql += ` AND product_code LIKE '%${code}%'`;
+
+    sql += ' ORDER BY creation_date DESC';
+
+    const result = await coaPool.request().query(sql);
+    const rows = result.recordset || [];
+    res.json({ success: true, count: rows.length, data: rows });
+  } catch (err) {
+    console.error('[COA] 查询报告申请列表失败:', err);
     res.status(500).json({ error: '查询失败: ' + err.message });
   }
 });

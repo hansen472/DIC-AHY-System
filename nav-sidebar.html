@@ -427,6 +427,9 @@ body {
         <span class="arrow-icon">▼</span>
       </div>
       <div class="nav-sub-menu sidebar-group-child">
+        <a href="/coa-report-application.html" class="nav-sub-item" id="nav-coa-report-application" style="display:none;">
+          <span>实验室报告申请</span>
+        </a>
         <a href="/coa-product-data.html" class="nav-sub-item" id="nav-coa-product-data" style="display:none;">
           <span>产品数据维护</span>
         </a>
@@ -592,6 +595,7 @@ function initSidebarGroups() {
       // 实验室报告管理分组
       const coaGroup = document.getElementById('nav-coa-group');
       if (perms.coa_report) {
+        document.getElementById('nav-coa-report-application').style.display = 'flex';
         document.getElementById('nav-coa-product-data').style.display = 'flex';
         document.getElementById('nav-coa-client-data').style.display = 'flex';
         document.getElementById('nav-coa-seal-data').style.display = 'flex';

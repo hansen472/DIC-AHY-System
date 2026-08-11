@@ -4695,3 +4695,120 @@ function renderUserTrainingSummary(context, idx) {
     </div>
   `;
 }
+
+/* ========== TS-ZL-CP-001 实验室报告申请 (COA) ========== */
+function renderTSZLCP001(row, idx) {
+  const r = row || {};
+  const s = (v) => v != null && v !== '' ? String(v) : '';
+  const td = (label, val, w1, w2) =>
+    `<td style="width:${w1}; text-align:left;"><span style="font-family:arial;">${label}</span></td>` +
+    `<td style="font-family:arial; width:${w2}; text-align:left; word-break:break-all; overflow-wrap:break-word;">${s(val)}</td>`;
+
+  // Build test result rows from row.tests array
+  let testRows = '';
+  if (Array.isArray(r.tests)) {
+    r.tests.forEach(section => {
+      testRows += `<tr><td colspan="7" style="border:1px solid black; height:16px; text-align:left; vertical-align:bottom; white-space:nowrap;"><span style="font-size:11px; color:#3366ff;"><strong style="font-family:Arial,sans-serif;">${s(section.name)}</strong></span></td></tr>`;
+      (section.items || []).forEach(item => {
+        testRows += `<tr>
+          ${item.rowspan ? `<td rowspan="${item.rowspan}" style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap;"><span style="font-size:11px; font-family:Arial,sans-serif;">&nbsp;</span></td>` : ''}
+          <td style="border:1px solid black; text-align:left; vertical-align:middle; white-space:nowrap;"><span style="font-size:11px; font-family:Arial,sans-serif;">${s(item.property)}</span></td>
+          <td style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap;"><span style="font-size:11px; font-family:Arial,sans-serif;">${s(item.procedure)}</span></td>
+          <td style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap;"><span style="font-size:11px; font-family:Arial,sans-serif;">${s(item.result)}</span></td>
+          <td colspan="${item.specColspan || 2}" style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap;"><span style="font-size:11px; font-family:Arial,sans-serif;">${s(item.specification)}</span></td>
+          <td style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap;"><span style="font-size:11px; font-family:Arial,sans-serif;">${s(item.remarks)}</span></td>
+        </tr>`;
+      });
+    });
+  }
+
+  return `
+    <div class="page-sheet" data-tpl="tszlcp001">
+      <div style="width:100%; height:7%; align-items:center; display:flex; justify-content:space-between;">
+        <div>
+          <img src="images/logo.png" alt="" style="width:40%;">
+          <span style="font-size:9px; font-family:arial; display:block;">Aptar Heng Yu (Weihai) Medical Device Co.,Ltd.</span>
+          <span style="font-size:9px; font-family:'Microsoft YaHei'; display:block;">阿普塔恒煜（威海）医疗器材有限公司</span>
+        </div>
+        <div>
+          <span style="display:block; font-family:arial; font-size:9px;"></span>
+        </div>
+      </div>
+      <div style="width:100%; margin-top:-10px; align-items:flex-start; display:flex; justify-content:center;">
+        <div style="text-align:center;">
+          <span style="font-size:19px; font-family:arial; display:block;">CERTIFICATE OF ANALYSIS</span>
+        </div>
+      </div>
+      <table style="width:100%; font-size:12px; margin:10px auto 0; font-family:'Microsoft YaHei';">
+        <tr valign="top" style="height:20px;">
+          ${td('', '', '18%', '30%')}
+          ${td('Report No.', r.reportNo, '18%', '35%')}
+        </tr>
+        <tr valign="top" style="height:20px;">
+          ${td('Product Name', r.productName, '18%', '30%')}
+          ${td('Test No.', r.testNo, '18%', '35%')}
+        </tr>
+        <tr valign="top" style="height:20px;">
+          ${td('Specification', r.specification, '18%', '30%')}
+          ${td('Product Code', r.productCode, '18%', '35%')}
+        </tr>
+        <tr valign="top" style="height:20px;">
+          ${td('Model No', r.modelNo, '18%', '30%')}
+          ${td('Product Quantity', r.productQuantity, '18%', '35%')}
+        </tr>
+        <tr valign="top" style="height:20px;">
+          ${td('Batch No.', r.batchNo, '18%', '30%')}
+          ${td('Sample Quantity', r.sampleQuantity, '18%', '35%')}
+        </tr>
+        <tr valign="top" style="height:20px;">
+          ${td('Production Date', r.productionDate, '18%', '30%')}
+          ${td('Test Date', r.testDate, '18%', '35%')}
+        </tr>
+        <tr valign="top" style="height:20px;">
+          ${td('Test standard', r.testStandard || 'TS-ZL-CP-001', '18%', '30%')}
+          ${td('Report Date', r.reportDate, '18%', '35%')}
+        </tr>
+      </table>
+      <br>
+      <table cellspacing="0" style="border-collapse:collapse; width:100%;">
+        <tbody>
+          <tr>
+            <td colspan="2" style="border:1px solid black; height:16px; text-align:center; vertical-align:middle; white-space:nowrap; width:190px;"><span style="font-size:11px; font-family:Arial,sans-serif;">PROPERTIES</span></td>
+            <td style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap; width:232px;"><span style="font-size:11px; font-family:Arial,sans-serif;">Procedure</span></td>
+            <td style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap; width:94px;"><span style="font-size:11px; font-family:Arial,sans-serif;">Result</span></td>
+            <td colspan="2" style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap; width:224px;"><span style="font-size:11px; font-family:Arial,sans-serif;">Specifications</span></td>
+            <td style="border:1px solid black; text-align:center; vertical-align:middle; white-space:nowrap; width:123px;"><span style="font-size:11px; font-family:Arial,sans-serif;">Remarks</span></td>
+          </tr>
+          ${testRows}
+        </tbody>
+      </table>
+      <div style="position:relative; padding-bottom:180px; font-size:12px;">
+        <div style="margin-top:12px;">The given results are the average of individual values after conformity check.</div>
+        <table style="position:absolute; top:10px; z-index:999; width:100%; margin:10px auto 0; font-size:14px; font-family:'Microsoft YaHei';">
+          <tbody>
+            <tr style="font-size:12px;">
+              <td style="width:30%; padding-top:15px; text-align:left;"><span>STATUS: ${s(r.conformStatus) || 'CONFORM'}</span></td>
+              <td style="width:35%; padding-top:15px; text-align:left;"></td>
+              <td style="width:35%; padding-top:15px; text-align:left;"><span>Digital Signer: ${s(r.digitalSigner)}</span></td>
+            </tr>
+            <tr style="font-size:12px;">
+              <td style="width:30%; text-align:left;"></td>
+              <td style="width:35%; text-align:left;"></td>
+              <td style="width:35%; text-align:left;"><span>Report Approved Date: ${s(r.reportApprovedDate)}</span></td>
+            </tr>
+            <tr style="font-size:12px;">
+              <td style="width:30%; text-align:left;"></td>
+              <td style="width:35%; text-align:left;"></td>
+              <td style="width:35%; text-align:left;"><span>DN: CN=${s(r.digitalSigner)}</span></td>
+            </tr>
+            <tr style="font-size:12px;">
+              <td style="width:30%; text-align:left;"><span>DATE: ${s(r.reportDate)}</span></td>
+              <td style="width:35%; text-align:left;">Quality Assurance Approval</td>
+              <td style="width:35%; text-align:left;"><span>Email: ${s(r.signerEmail)}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}

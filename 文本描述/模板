@@ -1,0 +1,6 @@
+根据文件AptarRun-恒煜.html， 帮我生成一个新的HTML界面。（生成的网页和未例网页要一比一）
+其中左上角的logo 图片,和现有的模板中使用的相同。
+为新的HTML界面添加一个标题，内容为“实验室报告申请”。 链接位于nav-sidebar的“实验室报告管理”的二级菜单下。
+新页面的CSS样式存入数据库template_css表中，名称为“实验室报告申请”。
+其它页面内存先暂于print-templates文件夹中的print-template.js文件中，名称为“TS-ZL-CP-001”。
+
