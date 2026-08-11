@@ -66,11 +66,11 @@ textarea { min-height: 80px; resize: vertical; }
   <div id="global-message" class="message"></div>
 
   <div class="card">
-    <h2>全局 CSS</h2>
+    <h2>CSS 样式管理</h2>
     <div class="toolbar" style="margin-bottom:12px;">
-      <button class="btn-primary" onclick="openCssEditor()">编辑 CSS</button>
+      <button class="btn-primary" onclick="openNewCssModal()">新建样式</button>
     </div>
-    <div id="css-info">加载中...</div>
+    <div id="css-list">加载中...</div>
   </div>
 
   <div class="card">
@@ -158,27 +158,33 @@ textarea { min-height: 80px; resize: vertical; }
 <div id="css-modal" class="modal-overlay">
   <div class="modal">
     <div class="modal-header">
-      <h3>编辑全局 CSS</h3>
+      <h3 id="css-modal-title">编辑 CSS</h3>
       <button class="btn-secondary" onclick="closeModal('css-modal')">关闭</button>
     </div>
     <div class="modal-body">
+      <input type="hidden" id="css-edit-id">
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>样式名称</label>
+        <input type="text" id="css-edit-name" placeholder="例如：default、实验室报告申请">
+      </div>
+      <label>CSS 内容</label>
       <textarea id="css-editor" class="code-editor"></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeModal('css-modal')">取消</button>
-      <button class="btn-success" onclick="saveCss()">保存 CSS</button>
+      <button class="btn-success" onclick="saveCss()">保存</button>
     </div>
   </div>
 </div>
 
 <script>
 let templatesData = [];
-let cssData = null;
+let cssListData = [];
 
 async function init() {
   await loadUser();
   await loadTemplates();
-  await loadCss();
+  await loadCssList();
 }
 
 async function loadUser() {
@@ -251,42 +257,143 @@ function renderTemplateList() {
   document.getElementById('template-list').innerHTML = html;
 }
 
-async function loadCss() {
+async function loadCssList() {
   try {
-    const res = await fetch('/api/css');
+    const res = await fetch('/api/css/list');
     if (!res.ok) throw new Error('加载失败');
     const result = await res.json();
-    cssData = result.data;
-    document.getElementById('css-info').innerHTML = `
-      <div>样式名称：${cssData.name}</div>
-      <div style="margin-top:6px; color:#718096; font-size:13px;">最后更新：${formatDate(cssData.updated_at)}</div>
-    `;
+    cssListData = result.data || [];
+    renderCssList();
   } catch (err) {
-    document.getElementById('css-info').innerHTML = '<div class="empty">加载失败：' + err.message + '</div>';
+    document.getElementById('css-list').innerHTML = '<div class="empty">加载失败：' + err.message + '</div>';
   }
 }
 
-function openCssEditor() {
-  if (!cssData) return;
-  document.getElementById('css-editor').value = cssData.css_content || '';
+function renderCssList() {
+  if (cssListData.length === 0) {
+    document.getElementById('css-list').innerHTML = '<div class="empty">暂无 CSS 样式</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>样式名称</th>
+        <th>状态</th>
+        <th>更新时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  cssListData.forEach(css => {
+    const statusClass = css.is_active ? 'badge-active' : 'badge-inactive';
+    const statusText = css.is_active ? '启用' : '禁用';
+    const toggleText = css.is_active ? '禁用' : '启用';
+    html += `
+      <tr>
+        <td>${css.id}</td>
+        <td><strong>${escapeHtml(css.name)}</strong></td>
+        <td><span class="badge ${statusClass}">${statusText}</span></td>
+        <td>${formatDate(css.updated_at)}</td>
+        <td>
+          <button class="btn-primary" onclick="openCssEditor(${css.id})" style="padding:4px 10px; font-size:12px;">编辑</button>
+          <button class="btn-secondary" onclick="toggleCssActive(${css.id}, ${css.is_active ? 0 : 1})" style="padding:4px 10px; font-size:12px; margin-left:4px;">${toggleText}</button>
+          <button class="btn-danger" onclick="deleteCss(${css.id}, '${escapeHtml(css.name)}')" style="padding:4px 10px; font-size:12px; margin-left:4px;">删除</button>
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('css-list').innerHTML = html;
+}
+
+function openNewCssModal() {
+  document.getElementById('css-modal-title').textContent = '新建 CSS 样式';
+  document.getElementById('css-edit-id').value = '';
+  document.getElementById('css-edit-name').value = '';
+  document.getElementById('css-edit-name').disabled = false;
+  document.getElementById('css-editor').value = '/* 新样式 - 使用 [data-tpl="xxx"] 选择器隔离作用范围 */\n';
   document.getElementById('css-modal').classList.add('active');
 }
 
-async function saveCss() {
-  const cssContent = document.getElementById('css-editor').value;
+async function openCssEditor(id) {
   try {
-    const res = await fetch('/api/css', {
-      method: 'PUT',
+    const res = await fetch('/api/css/' + id);
+    if (!res.ok) throw new Error('加载失败');
+    const result = await res.json();
+    const css = result.data;
+    document.getElementById('css-modal-title').textContent = '编辑 CSS - ' + css.name;
+    document.getElementById('css-edit-id').value = css.id;
+    document.getElementById('css-edit-name').value = css.name;
+    document.getElementById('css-edit-name').disabled = (css.name === 'default');
+    document.getElementById('css-editor').value = css.css_content || '';
+    document.getElementById('css-modal').classList.add('active');
+  } catch (err) {
+    showMessage('加载失败：' + err.message, 'error');
+  }
+}
+
+async function saveCss() {
+  const id = document.getElementById('css-edit-id').value;
+  const name = document.getElementById('css-edit-name').value.trim();
+  const cssContent = document.getElementById('css-editor').value;
+
+  if (!name) { showMessage('请输入样式名称', 'error'); return; }
+
+  try {
+    let url, method;
+    if (id) {
+      // 编辑已有样式
+      url = '/api/css/' + id;
+      method = 'PUT';
+    } else {
+      // 新建样式
+      url = '/api/css';
+      method = 'POST';
+    }
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ css_content: cssContent })
+      body: JSON.stringify({ css_content: cssContent, name })
     });
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || '保存失败');
-    showMessage('CSS 已更新', 'success');
+    showMessage(id ? 'CSS 已更新' : 'CSS 已创建', 'success');
     closeModal('css-modal');
-    await loadCss();
+    await loadCssList();
   } catch (err) {
     showMessage('保存失败：' + err.message, 'error');
+  }
+}
+
+async function toggleCssActive(id, active) {
+  try {
+    const res = await fetch('/api/css/' + id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: active })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '操作失败');
+    showMessage(active ? '已启用' : '已禁用', 'success');
+    await loadCssList();
+  } catch (err) {
+    showMessage('操作失败：' + err.message, 'error');
+  }
+}
+
+async function deleteCss(id, name) {
+  if (!confirm(`确定要删除样式“${name}”吗？此操作不可撤销。`)) return;
+  try {
+    const res = await fetch('/api/css/' + id, { method: 'DELETE' });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '删除失败');
+    showMessage('样式已删除', 'success');
+    await loadCssList();
+  } catch (err) {
+    showMessage('删除失败：' + err.message, 'error');
   }
 }
 

@@ -3408,14 +3408,14 @@ async function fetchMssqlData(querydata) {
  * - 首次启动前请先执行 sql/template-tables.sql 和 scripts/migrate-templates.js
  */
 async function loadTemplates() {
-  // 1. 加载全局 CSS
+  // 1. 加载所有生效的 CSS（多套样式拼接，各自通过 [data-tpl="..."] 选择器隔离）
   const [cssRows] = await pool.execute(
-    'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+    'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id ASC'
   );
   if (cssRows.length === 0) {
     throw new Error('数据库中未找到生效的全局 CSS，请先执行模板迁移脚本');
   }
-  const cssCode = cssRows[0].css_content;
+  const cssCode = cssRows.map(r => r.css_content).join('\n');
 
   // 2. 加载所有生效的模板版本 JS 代码
   const [versionRows] = await pool.execute(`
@@ -4654,16 +4654,17 @@ app.get('/api/templates/:id/versions/:versionId/preview', requirePermission('tem
     }
 
     const [cssRows] = await pool.execute(
-      'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+      'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id ASC'
     );
     if (cssRows.length === 0) {
       return res.status(404).json({ error: '未找到全局 CSS' });
     }
+    const allCss = cssRows.map(r => r.css_content).join('\n');
 
     const html = renderTemplatePreview(
       versionRows[0].js_code,
       versionRows[0].render_function_name,
-      cssRows[0].css_content
+      allCss
     );
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -4710,13 +4711,14 @@ app.post('/api/templates/:id/preview-code', requirePermission('template_admin'),
     }
 
     const [cssRows] = await pool.execute(
-      'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+      'SELECT css_content FROM template_css WHERE is_active = 1 ORDER BY id ASC'
     );
     if (cssRows.length === 0) {
       return res.status(404).json({ error: '未找到全局 CSS' });
     }
+    const allCss = cssRows.map(r => r.css_content).join('\n');
 
-    const html = renderTemplatePreview(js_code, expectedFunc, cssRows[0].css_content);
+    const html = renderTemplatePreview(js_code, expectedFunc, allCss);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {
@@ -4767,6 +4769,93 @@ app.put('/api/css', requirePermission('template_admin'), async (req, res) => {
   } catch (err) {
     console.error('更新 CSS 失败:', err);
     res.status(500).json({ error: '更新失败' });
+  }
+});
+
+// 查询所有 CSS 样式列表
+app.get('/api/css/list', requirePermission('template_admin'), async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id, name, is_active, updated_at, LEFT(css_content, 200) AS css_preview FROM template_css ORDER BY id ASC'
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error('查询 CSS 列表失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
+// 查询单个 CSS 样式详情
+app.get('/api/css/:id', requirePermission('template_admin'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: '缺少 ID' });
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id, name, css_content, is_active, updated_at FROM template_css WHERE id = ?',
+      [id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'CSS 不存在' });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    console.error('查询 CSS 失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
+// 更新指定 ID 的 CSS 样式
+app.put('/api/css/:id', requirePermission('template_admin'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { css_content, name, is_active } = req.body;
+  if (!id) return res.status(400).json({ error: '缺少 ID' });
+  try {
+    const sets = [];
+    const params = [];
+    if (typeof css_content === 'string') { sets.push('css_content = ?'); params.push(css_content); }
+    if (typeof name === 'string' && name.trim()) { sets.push('name = ?'); params.push(name.trim()); }
+    if (typeof is_active === 'number') { sets.push('is_active = ?'); params.push(is_active ? 1 : 0); }
+    sets.push('updated_at = NOW()');
+    params.push(id);
+    await pool.execute(`UPDATE template_css SET ${sets.join(', ')} WHERE id = ?`, params);
+    await logOperation(req, '更新CSS样式', 'css', id, `更新字段: ${sets.join(', ')}`);
+    res.json({ success: true, message: 'CSS 已更新' });
+  } catch (err) {
+    console.error('更新 CSS 失败:', err);
+    res.status(500).json({ error: '更新失败' });
+  }
+});
+
+// 新建 CSS 样式
+app.post('/api/css', requirePermission('template_admin'), async (req, res) => {
+  const { name, css_content } = req.body;
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: '缺少样式名称' });
+  if (typeof css_content !== 'string') return res.status(400).json({ error: '缺少 CSS 内容' });
+  try {
+    const [result] = await pool.execute(
+      'INSERT INTO template_css (name, css_content, is_active) VALUES (?, ?, 1)',
+      [name.trim(), css_content]
+    );
+    await logOperation(req, '新建CSS样式', 'css', result.insertId, `名称: ${name.trim()}`);
+    res.json({ success: true, id: result.insertId, message: 'CSS 已创建' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: '样式名称已存在' });
+    console.error('创建 CSS 失败:', err);
+    res.status(500).json({ error: '创建失败' });
+  }
+});
+
+// 删除 CSS 样式
+app.delete('/api/css/:id', requirePermission('template_admin'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: '缺少 ID' });
+  try {
+    const [rows] = await pool.execute('SELECT name FROM template_css WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'CSS 不存在' });
+    await pool.execute('DELETE FROM template_css WHERE id = ?', [id]);
+    await logOperation(req, '删除CSS样式', 'css', id, `名称: ${rows[0].name}`);
+    res.json({ success: true, message: 'CSS 已删除' });
+  } catch (err) {
+    console.error('删除 CSS 失败:', err);
+    res.status(500).json({ error: '删除失败' });
   }
 });
 
