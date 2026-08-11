@@ -31,6 +31,14 @@ input[type="checkbox"] { cursor: pointer; width: 16px; height: 16px; }
 .page-config { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf2f7; }
 .page-config label { flex: 1; font-size: 14px; }
 .page-config input[type="number"] { width: 70px; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px; }
+.tab-nav { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e2e8f0; }
+.tab-btn { padding: 7px 16px; border: none; border-radius: 6px 6px 0 0; background: #edf2f7; color: #4a5568; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+.tab-btn:hover { background: #e2e8f0; }
+.tab-btn.active { background: #2b6cb0; color: #fff; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.tab-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.tab-toolbar .btn-secondary { font-size: 13px; padding: 6px 14px; }
 </style>
 </head>
 <body>
@@ -77,134 +85,8 @@ input[type="checkbox"] { cursor: pointer; width: 16px; height: 16px; }
     <h2>3. 打印设置（选择模板与份数）</h2>
     <p style="font-size:13px; color:#718096; margin-bottom:12px;">请选择需要打印的模板类型，并在后方输入框填写具体打印张数。</p>
     <div id="page-config-list">
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="cover"> <strong>模板 A：封皮</strong> — SOR-SC-001</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="cover" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="batchrecord"> <strong>模板 B：配料工序生产记录</strong> — SOR-SC-003</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="batchrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="mixingrecord"> <strong>模板 C：密炼工序生产记录</strong> — SOR-SC-004（横向A4）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="mixingrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="calenderingrecord"> <strong>模板 D：压延工序生产记录</strong> — SOR-SC-005</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="calenderingrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="vulcanizingrecord"> <strong>模板 E：硫化工序生产记录</strong> — SOR-SC-006</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="vulcanizingrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="trimmingrecord"> <strong>模板 F：除边工序生产记录</strong> — SOR-SC-007</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="trimmingrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="cleaningrecord"> <strong>模板 G：清洗工序生产记录</strong> — SOR-SC-008</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="cleaningrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="materialbalance"> <strong>模板 H：橡胶车间物料平衡单</strong> — SOR-SC-013（双页）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="materialbalance" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="labelrecord"> <strong>模板 I：标签打印使用、销毁记录</strong> — SOR-SC-050（横向A4）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="labelrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="outsourcingrecord"> <strong>模板 J：外包工序生产记录</strong> — SOR-SC-053（横向A4）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="outsourcingrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="innerpackingrecord"> <strong>模板 K：内包工序生产记录</strong> — SOR-SC-068</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="innerpackingrecord" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="batchingcleanup"> <strong>模板 L：配料工序清场记录</strong> — SOR-SC-079（双页）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="batchingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="mixingcleanup"> <strong>模板 M：密炼工序清场记录</strong> — SOR-SC-080</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="mixingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="calenderingcleanup"> <strong>模板 N：压延出片工序清场记录</strong> — SOR-SC-081</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="calenderingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="vulcanizingcleanup"> <strong>模板 O：硫化工序清场记录</strong> — SOR-SC-082（双页）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="vulcanizingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="trimmingcleanup"> <strong>模板 P：除边工序清场记录</strong> — SOR-SC-083（双页）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="trimmingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="washingcleanup"> <strong>模板 Q：清洗工序清场记录</strong> — SOR-SC-084（双页）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="washingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="innerpackagingcleanup"> <strong>模板 R：内包工序清场记录</strong> — SOR-SC-085（双页）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="innerpackagingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="outerpackagingcleanup"> <strong>模板 S：外包工序清场记录</strong> — SOR-SC-086</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="outerpackagingcleanup" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="mixingproduction1"> <strong>模板 T：开炼工序生产记录（1#）</strong> — SOR-SC-087（A4横版）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="mixingproduction1" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="mixingproduction2"> <strong>模板 U：开炼工序生产记录（2#）</strong> — SOR-SC-088（A4横版）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="mixingproduction2" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="testsamplevulcanizing"> <strong>模板 V：试样硫化生产记录</strong> — SOR-SC-089</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="testsamplevulcanizing" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="mixingcleanup1"> <strong>模板 W：开炼工序清场记录（1#）</strong> — SOR-SC-091</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="mixingcleanup1" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="mixingcleanup2"> <strong>模板 X：开炼工序清场记录（2#）</strong> — SOR-SC-092</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="mixingcleanup2" value="0" min="0" max="99">
-      </div>
-      <div class="page-config">
-        <label><input type="checkbox" class="tpl-check" data-tpl="washingprecleanup"> <strong>模板 Y：清洗工序预清洗清场记录</strong> — SOR-SC-093（双页）</label>
-        <span style="color:#718096; font-size:13px;">打印张数：</span>
-        <input type="number" class="tpl-copies" data-tpl="washingprecleanup" value="0" min="0" max="99">
-      </div>
-    </div>
-    <div class="toolbar" style="margin-top:16px;">
-      <button class="btn-success" onclick="doPrint()">打印 / 导出 PDF</button>
+      <div class="tab-nav" id="tab-nav"></div>
+      <div id="tab-panels"></div>
     </div>
   </div>
 
@@ -219,6 +101,102 @@ const PDF_API_URL = '/api/print';
 
 let sourceData = [];
 let lastQueryData = ''; // 保存最后一次查询的单据编号，打印时传给后端重新查
+let activeTab = '配料';  // 当前激活的 tab
+
+// ========== 模板分类定义 ==========
+const TAB_CATEGORIES = [
+  { key: '配料', templates: [
+    { tpl: 'batchrecord',     label: '<strong>模板 B：配料工序生产记录</strong> — SOR-SC-003' },
+    { tpl: 'batchingcleanup',  label: '<strong>模板 L：配料工序清场记录</strong> — SOR-SC-079（双页）' }
+  ]},
+  { key: '密炼', templates: [
+    { tpl: 'mixingrecord',    label: '<strong>模板 C：密炼工序生产记录</strong> — SOR-SC-004（横向A4）' },
+    { tpl: 'mixingcleanup',   label: '<strong>模板 M：密炼工序清场记录</strong> — SOR-SC-080' }
+  ]},
+  { key: '开炼', templates: [
+    { tpl: 'mixingproduction1', label: '<strong>模板 T：开炼工序生产记录（1#）</strong> — SOR-SC-087（A4横版）' },
+    { tpl: 'mixingproduction2', label: '<strong>模板 U：开炼工序生产记录（2#）</strong> — SOR-SC-088（A4横版）' },
+    { tpl: 'mixingcleanup1',    label: '<strong>模板 W：开炼工序清场记录（1#）</strong> — SOR-SC-091' },
+    { tpl: 'mixingcleanup2',    label: '<strong>模板 X：开炼工序清场记录（2#）</strong> — SOR-SC-092' }
+  ]},
+  { key: '压延出片', templates: [
+    { tpl: 'calenderingrecord', label: '<strong>模板 D：压延出片工序生产记录</strong> — SOR-SC-005' },
+    { tpl: 'calenderingcleanup', label: '<strong>模板 N：压延出片工序清场记录</strong> — SOR-SC-081' }
+  ]},
+  { key: '硫化', templates: [
+    { tpl: 'testsamplevulcanizing', label: '<strong>模板 V：试样硫化生产记录</strong> — SOR-SC-089' },
+    { tpl: 'vulcanizingrecord',     label: '<strong>模板 E：硫化工序生产记录</strong> — SOR-SC-006' },
+    { tpl: 'vulcanizingcleanup',    label: '<strong>模板 O：硫化工序清场记录</strong> — SOR-SC-082（双页）' }
+  ]},
+  { key: '除边', templates: [
+    { tpl: 'trimmingrecord',  label: '<strong>模板 F：除边工序生产记录</strong> — SOR-SC-007' },
+    { tpl: 'trimmingcleanup',  label: '<strong>模板 P：除边工序清场记录</strong> — SOR-SC-083（双页）' }
+  ]},
+  { key: '清洗', templates: [
+    { tpl: 'cleaningrecord',   label: '<strong>模板 G：清洗工序生产记录</strong> — SOR-SC-008' },
+    { tpl: 'washingprecleanup', label: '<strong>模板 Y：清洗工序预清洗清场记录</strong> — SOR-SC-093（双页）' },
+    { tpl: 'washingcleanup',   label: '<strong>模板 Q：清洗工序清场记录</strong> — SOR-SC-084（双页）' }
+  ]},
+  { key: '内包', templates: [
+    { tpl: 'innerpackingrecord',      label: '<strong>模板 K：内包工序生产记录</strong> — SOR-SC-068' },
+    { tpl: 'innerpackagingcleanup',   label: '<strong>模板 R：内包工序清场记录</strong> — SOR-SC-085（双页）' }
+  ]},
+  { key: '外包', templates: [
+    { tpl: 'outsourcingrecord',       label: '<strong>模板 J：外包工序生产记录</strong> — SOR-SC-053（横向A4）' },
+    { tpl: 'outerpackagingcleanup',   label: '<strong>模板 S：外包工序清场记录</strong> — SOR-SC-086' }
+  ]},
+  { key: '其他', templates: [
+    { tpl: 'cover',           label: '<strong>模板 A：封皮</strong> — SOR-SC-001' },
+    { tpl: 'materialbalance',  label: '<strong>模板 H：橡胶车间物料平衡单</strong> — SOR-SC-013（双页）' },
+    { tpl: 'labelrecord',     label: '<strong>模板 I：标签打印使用、销毁记录</strong> — SOR-SC-050（横向A4）' }
+  ]}
+];
+
+function renderTabs() {
+  const nav = document.getElementById('tab-nav');
+  const panels = document.getElementById('tab-panels');
+  let navHtml = '';
+  let panelsHtml = '';
+
+  TAB_CATEGORIES.forEach((cat, idx) => {
+    const isActive = idx === 0;
+    navHtml += `<button class="tab-btn${isActive ? ' active' : ''}" onclick="switchTab('${cat.key}')">${cat.key}</button>`;
+    panelsHtml += `<div class="tab-content${isActive ? ' active' : ''}" id="tab-${cat.key}" data-tab="${cat.key}">`;
+    panelsHtml += `<div class="tab-toolbar">`;
+    panelsHtml += `<button class="btn-secondary" onclick="selectAllInTab('${cat.key}')">全选</button>`;
+    panelsHtml += `<button class="btn-success" onclick="doPrint('${cat.key}')">打印 / 导出 PDF</button>`;
+    panelsHtml += `</div>`;
+    cat.templates.forEach(t => {
+      panelsHtml += `<div class="page-config">`;
+      panelsHtml += `<label><input type="checkbox" class="tpl-check" data-tpl="${t.tpl}" data-tab="${cat.key}"> ${t.label}</label>`;
+      panelsHtml += `<span style="color:#718096; font-size:13px;">打印张数：</span>`;
+      panelsHtml += `<input type="number" class="tpl-copies" data-tpl="${t.tpl}" value="0" min="0" max="99">`;
+      panelsHtml += `</div>`;
+    });
+    panelsHtml += `</div>`;
+  });
+
+  nav.innerHTML = navHtml;
+  panels.innerHTML = panelsHtml;
+  activeTab = TAB_CATEGORIES[0].key;
+}
+
+function switchTab(key) {
+  activeTab = key;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.textContent === key));
+  document.querySelectorAll('.tab-content').forEach(p => p.classList.toggle('active', p.dataset.tab === key));
+}
+
+function selectAllInTab(key) {
+  const panel = document.getElementById('tab-' + key);
+  if (!panel) return;
+  const checks = panel.querySelectorAll('.tpl-check');
+  const allChecked = Array.from(checks).every(c => c.checked);
+  checks.forEach(c => c.checked = !allChecked);
+}
+
+// 初始化 tabs
+renderTabs();
 
 // 页面加载时获取当前登录用户名
 (async function initUser() {
@@ -320,21 +298,23 @@ function confirmSelection() {
 }
 
 // ========== 后端 PDF 打印（防篡改：只传查询条件和选中批次号，后端重新查真实数据） ==========
-async function doPrint() {
+async function doPrint(tabKey) {
   if (!lastQueryData) { alert('请先查询数据后再打印'); return; }
 
   const checkedBoxes = document.querySelectorAll('.row-check:checked');
   const selectedPici = Array.from(checkedBoxes).map(cb => cb.dataset.pici).filter(Boolean);
 
-  const checkedTpls = Array.from(document.querySelectorAll('.tpl-check:checked')).map(cb => cb.dataset.tpl);
+  // 只收集当前 tab 下的模板
+  const panel = document.getElementById('tab-' + tabKey);
+  const checkedTpls = Array.from(panel.querySelectorAll('.tpl-check:checked')).map(cb => cb.dataset.tpl);
   const copiesMap = {};
-  document.querySelectorAll('.tpl-copies').forEach(inp => { copiesMap[inp.dataset.tpl] = parseInt(inp.value) || 0; });
+  panel.querySelectorAll('.tpl-copies').forEach(inp => { copiesMap[inp.dataset.tpl] = parseInt(inp.value) || 0; });
 
-  if (checkedTpls.length === 0) { alert('请至少勾选一种模板'); return; }
+  if (checkedTpls.length === 0) { alert('请在「' + tabKey + '」标签下至少勾选一种模板'); return; }
   if (selectedPici.length === 0) { alert('请至少勾选一条数据'); return; }
 
   const tasks = checkedTpls.map(tpl => ({ template: tpl, copies: copiesMap[tpl] || 1 }));
-  const btn = document.querySelector('.btn-success[onclick="doPrint()"]');
+  const btn = panel.querySelector('.btn-success');
   const originalText = btn ? btn.textContent : '打印 / 导出 PDF';
   if (btn) { btn.disabled = true; btn.textContent = '正在生成 PDF...'; }
 
