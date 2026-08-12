@@ -4,3 +4,5 @@
 新建一个”推送日志“html 页面。用于查看这些日志信息。
 查看时可以根据“仪器/仪表” 或“设备过期工单推送” 这两个条件进行筛选。
 overdue-workorder-push.html 页面中增加自动推送，每天下午3：30 执行一次
+将overdue-workorder-push.html页面中自动推送的地址，换成下面的link
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd

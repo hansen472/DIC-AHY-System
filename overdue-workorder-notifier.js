@@ -10,7 +10,7 @@
 const axios = require('axios');
 const { micPool } = require('./db-mic-config');
 
-const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd';
 
 const OVERDUE_SQL = `SELECT
   CONCAT(wo.wo_id, ' ', wo.wo_name) AS wo_info,
