@@ -86,6 +86,9 @@ app.get('/instrument-meter.html', requirePermissionPage('instrument_meter'), (re
 app.get('/overdue-workorder-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'overdue-workorder-push.html'));
 });
+app.get('/push-logs.html', requirePermissionPage('instrument_meter'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'push-logs.html'));
+});
 app.get('/coa-product-data.html', requirePermissionPage('coa_report'), (req, res) => {
   res.sendFile(path.join(__dirname, 'coa-product-data.html'));
 });
@@ -4212,10 +4215,94 @@ app.post('/api/overdue-workorder/push', requirePermission('instrument_meter'), a
       results.push({ batch: batchNo, status: resp.status, data: resp.data });
     }
 
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const contentSummary = `延迟工单推送，共 ${total || data.length} 条，${results.length} 批次`;
+    await logPush('overdue_workorder', 'wechat', 'success', contentSummary, data.length, webhookUrl, pusher);
     res.json({ success: true, batch_count: results.length, results });
   } catch (err) {
     console.error('推送企业微信失败:', err);
-    res.status(500).json({ error: '推送失败: ' + (err.response ? JSON.stringify(err.response.data) : err.message) });
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
+    await logPush('overdue_workorder', 'wechat', 'failed', `推送失败，共 ${data.length} 条`, data.length, webhookUrl, pusher, errMsg);
+    res.status(500).json({ error: '推送失败: ' + errMsg });
+  }
+});
+
+// ========== 推送日志 ==========
+
+/**
+ * 写入推送日志
+ * 供 server.js 内部及 instrument-meter-notifier.js 共用
+ * @param {string} source        'instrument_meter' | 'overdue_workorder'
+ * @param {string} pushMethod    'email' | 'wechat'
+ * @param {string} pushStatus    'success' | 'failed'
+ * @param {string} pushContent   推送内容摘要
+ * @param {number} recordCount   推送记录数
+ * @param {string} pushTarget    推送对象（邮箱 / Webhook URL）
+ * @param {string} pusher        推送人（用户名 / 'system'）
+ * @param {string} [errorMessage] 失败原因
+ */
+async function logPush(source, pushMethod, pushStatus, pushContent, recordCount, pushTarget, pusher, errorMessage) {
+  try {
+    await pool.execute(
+      'INSERT INTO push_logs (source, push_method, push_status, push_content, record_count, push_target, pusher, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [source, pushMethod, pushStatus, pushContent || null, recordCount || 0, pushTarget || null, pusher || 'system', errorMessage || null]
+    );
+  } catch (err) {
+    console.error('推送日志记录失败:', err.message);
+  }
+}
+
+// 导出给 instrument-meter-notifier.js 使用
+module.exports.logPush = logPush;
+
+/**
+ * GET /api/push-logs
+ * 查询推送日志列表（支持来源筛选和分页）
+ */
+app.get('/api/push-logs', requirePermission('instrument_meter'), async (req, res) => {
+  try {
+    const { source, page = 1, pageSize = 30 } = req.query;
+    const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
+    const limit = parseInt(pageSize, 10);
+
+    let whereClause = '';
+    const params = [];
+    if (source && (source === 'instrument_meter' || source === 'overdue_workorder')) {
+      whereClause = 'WHERE source = ?';
+      params.push(source);
+    }
+
+    const [countRows] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM push_logs ${whereClause}`, params
+    );
+    const total = countRows[0].total;
+
+    const [dataRows] = await pool.execute(
+      `SELECT id, source, push_time, push_method, push_status, push_content, record_count, push_target, pusher, error_message, created_at
+       FROM push_logs ${whereClause}
+       ORDER BY push_time DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    // 统计数据
+    const [successRows] = await pool.execute(
+      `SELECT COUNT(*) AS cnt FROM push_logs ${whereClause ? whereClause + ' AND push_status = \'success\'' : "WHERE push_status = 'success'"}`, params
+    );
+    const [failedRows] = await pool.execute(
+      `SELECT COUNT(*) AS cnt FROM push_logs ${whereClause ? whereClause + ' AND push_status = \'failed\'' : "WHERE push_status = 'failed'"}`, params
+    );
+
+    res.json({
+      success: true,
+      data: dataRows,
+      total,
+      successCount: successRows[0].cnt,
+      failedCount: failedRows[0].cnt
+    });
+  } catch (err) {
+    console.error('查询推送日志失败:', err.message);
+    res.status(500).json({ error: '查询失败: ' + err.message });
   }
 });
 

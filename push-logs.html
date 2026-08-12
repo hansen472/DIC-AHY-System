@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>推送日志 - 数智中心</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --success: #047857;
+  --danger: #dc2626;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container { max-width: 1600px; margin: 0 auto; }
+
+header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  color: #fff;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(30, 64, 175, 0.18);
+}
+
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; }
+header p { font-size: 13px; color: #cbd5e1; margin-top: 6px; }
+
+.btn-back {
+  padding: 8px 20px;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-back:hover { background: rgba(255,255,255,0.2); }
+
+.card {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter-bar .label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+.filter-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.filter-btn:hover { background: #f9fafb; color: var(--primary); border-color: var(--primary-light); }
+.filter-btn.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); font-weight: 600; }
+
+.refresh-btn {
+  margin-left: auto;
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.refresh-btn:hover { background: #f9fafb; border-color: var(--primary-light); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: #f9fafb; font-weight: 600; color: #374151; white-space: nowrap; }
+tr:hover td { background: #f9fafb; }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+.badge-success { background: #d1fae5; color: #065f46; }
+.badge-danger { background: #fee2e2; color: #991b1b; }
+.badge-blue { background: var(--primary-light); color: #1e40af; }
+.badge-green { background: #d1fae5; color: #065f46; }
+
+.source-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.source-instrument_meter { background: #fef3c7; color: #92400e; }
+.source-overdue_workorder { background: #e0e7ff; color: #3730a3; }
+
+.content-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.error-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); }
+
+.empty { text-align: center; color: var(--text-secondary); padding: 60px 0; font-size: 14px; }
+.loading { text-align: center; color: var(--text-secondary); padding: 60px 0; font-size: 14px; }
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.pagination .info { font-size: 13px; color: var(--text-secondary); }
+
+.pagination .btns { display: flex; gap: 6px; }
+
+.pagination .btns button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.pagination .btns button:hover { background: #f9fafb; border-color: var(--primary-light); }
+.pagination .btns button:disabled { opacity: 0.4; cursor: not-allowed; }
+.pagination .btns button:disabled:hover { background: #fff; border-color: var(--border); }
+
+.stat-bar { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.stat-item { background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; min-width: 120px; }
+.stat-item .label { font-size: 12px; color: var(--text-secondary); }
+.stat-item .value { font-size: 20px; font-weight: 700; color: var(--text); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>推送日志</h1>
+      <p>查看仪器/仪表和设备过期工单推送的历史记录</p>
+    </div>
+    <a href="/nav-sidebar.html" class="btn-back">← 返回导航</a>
+  </header>
+
+  <div class="card">
+    <div class="stat-bar" id="stat-bar">
+      <div class="stat-item"><div class="label">总推送次数</div><div class="value" id="stat-total">-</div></div>
+      <div class="stat-item"><div class="label">成功</div><div class="value" id="stat-success" style="color:#047857;">-</div></div>
+      <div class="stat-item"><div class="label">失败</div><div class="value" id="stat-failed" style="color:#dc2626;">-</div></div>
+    </div>
+    <div class="filter-bar">
+      <span class="label">来源：</span>
+      <button class="filter-btn active" data-source="" onclick="setFilter(this, '')">全部</button>
+      <button class="filter-btn" data-source="instrument_meter" onclick="setFilter(this, 'instrument_meter')">仪器 / 仪表</button>
+      <button class="filter-btn" data-source="overdue_workorder" onclick="setFilter(this, 'overdue_workorder')">设备过期工单推送</button>
+      <button class="refresh-btn" onclick="loadLogs()">刷新</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="log-table"><div class="loading">加载中...</div></div>
+    <div class="pagination" id="pagination" style="display:none;">
+      <div class="info" id="page-info"></div>
+      <div class="btns">
+        <button id="btn-prev" onclick="prevPage()">上一页</button>
+        <button id="btn-next" onclick="nextPage()">下一页</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PAGE_SIZE = 30;
+let currentSource = '';
+let currentPage = 1;
+let totalPages = 1;
+let totalCount = 0;
+
+async function init() {
+  await loadLogs();
+}
+
+function setFilter(btn, source) {
+  currentSource = source;
+  currentPage = 1;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadLogs();
+}
+
+async function loadLogs() {
+  const container = document.getElementById('log-table');
+  container.innerHTML = '<div class="loading">加载中...</div>';
+
+  try {
+    const params = new URLSearchParams({ page: currentPage, pageSize: PAGE_SIZE });
+    if (currentSource) params.set('source', currentSource);
+
+    const res = await fetch('/api/push-logs?' + params.toString());
+    if (!res.ok) throw new Error('请求失败');
+    const result = await res.json();
+
+    const logs = result.data || [];
+    totalCount = result.total || 0;
+    totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+    // 统计
+    document.getElementById('stat-total').textContent = totalCount;
+    document.getElementById('stat-success').textContent = result.successCount ?? '-';
+    document.getElementById('stat-failed').textContent = result.failedCount ?? '-';
+
+    if (logs.length === 0) {
+      container.innerHTML = '<div class="empty">暂无推送记录</div>';
+      document.getElementById('pagination').style.display = 'none';
+      return;
+    }
+
+    renderTable(logs);
+    updatePagination();
+  } catch (err) {
+    container.innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderTable(logs) {
+  const sourceLabels = {
+    'instrument_meter': '仪器 / 仪表',
+    'overdue_workorder': '设备过期工单'
+  };
+  const methodLabels = {
+    'email': '邮件',
+    'wechat': '企业微信'
+  };
+
+  let html = `<table>
+    <thead><tr>
+      <th>#</th>
+      <th>来源</th>
+      <th>推送时间</th>
+      <th>推送方式</th>
+      <th>推送状态</th>
+      <th>推送内容</th>
+      <th>记录数</th>
+      <th>推送对象</th>
+      <th>推送人</th>
+      <th>错误信息</th>
+    </tr></thead><tbody>`;
+
+  logs.forEach((row, i) => {
+    const idx = (currentPage - 1) * PAGE_SIZE + i + 1;
+    const sourceCls = 'source-' + (row.source || '');
+    const sourceLabel = sourceLabels[row.source] || row.source || '-';
+    const methodLabel = methodLabels[row.push_method] || row.push_method || '-';
+    const statusCls = row.push_status === 'success' ? 'badge-success' : 'badge-danger';
+    const statusLabel = row.push_status === 'success' ? '成功' : '失败';
+    const content = row.push_content || '-';
+    const target = row.push_target || '-';
+    const pusher = row.pusher === 'system' ? '系统自动' : (row.pusher || '-');
+    const error = row.error_message || '';
+
+    html += `<tr>
+      <td>${idx}</td>
+      <td><span class="source-tag ${sourceCls}">${sourceLabel}</span></td>
+      <td>${formatDateTime(row.push_time)}</td>
+      <td>${methodLabel}</td>
+      <td><span class="badge ${statusCls}">${statusLabel}</span></td>
+      <td class="content-cell" title="${escapeHtml(content)}">${escapeHtml(content)}</td>
+      <td>${row.record_count || 0}</td>
+      <td class="content-cell" title="${escapeHtml(target)}">${escapeHtml(target)}</td>
+      <td>${escapeHtml(pusher)}</td>
+      <td class="error-cell" title="${escapeHtml(error)}">${error ? escapeHtml(error) : '-'}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('log-table').innerHTML = html;
+}
+
+function updatePagination() {
+  const el = document.getElementById('pagination');
+  el.style.display = 'flex';
+  document.getElementById('page-info').textContent = `共 ${totalCount} 条记录，第 ${currentPage} / ${totalPages} 页`;
+  document.getElementById('btn-prev').disabled = currentPage <= 1;
+  document.getElementById('btn-next').disabled = currentPage >= totalPages;
+}
+
+function prevPage() {
+  if (currentPage > 1) { currentPage--; loadLogs(); }
+}
+
+function nextPage() {
+  if (currentPage < totalPages) { currentPage++; loadLogs(); }
+}
+
+function formatDateTime(str) {
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  return d.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

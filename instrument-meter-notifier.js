@@ -223,8 +223,18 @@ async function checkAndNotify() {
     await sendEmail(subject, html);
     console.log(`[instrument-meter-notifier] 邮件已发送，共 ${expiring.length} 条到期记录 ` +
       `[30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length}]`);
+
+    // 写入推送日志（懒加载避免循环依赖）
+    const { logPush } = require('./server');
+    const summary = `仪器/仪表到期周报，共 ${expiring.length} 条（30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length}）`;
+    await logPush('instrument_meter', 'email', 'success', summary, expiring.length, SMTP_TO, 'system');
   } catch (err) {
     console.error('[instrument-meter-notifier] 检测/邮件发送失败:', err.message);
+    // 写入失败日志
+    try {
+      const { logPush } = require('./server');
+      await logPush('instrument_meter', 'email', 'failed', '仪器/仪表到期周报发送失败', 0, SMTP_TO, 'system', err.message);
+    } catch (_) { /* 日志写入失败不影响主流程 */ }
   }
 }
 
