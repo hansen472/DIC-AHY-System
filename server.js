@@ -31,6 +31,7 @@ const { runBackup, listBackups, startDailyBackup } = require('./backup-service')
 const { queryInstruments } = require('./instrument-meter-service');
 const { startWeeklyCheck } = require('./instrument-meter-notifier');
 const { startWeeklyPush } = require('./weekly-overdue-workorder-notifier');
+const { startDailyPush: startDailyOverduePush } = require('./daily-overdue-workorder-notifier');
 const { micPool } = require('./db-mic-config');
 const { setupOcrRoutes } = require('./ocr-routes');
 const nodemailer = require('nodemailer');
@@ -86,6 +87,9 @@ app.get('/instrument-meter.html', requirePermissionPage('instrument_meter'), (re
 });
 app.get('/weekly-overdue-workorder-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'weekly-overdue-workorder-push.html'));
+});
+app.get('/daily-overdue-workorder-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'daily-overdue-workorder-push.html'));
 });
 app.get('/push-logs.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'push-logs.html'));
@@ -4229,12 +4233,103 @@ app.post('/api/overdue-workorder/push', requirePermission('instrument_meter'), a
   }
 });
 
+// ========== 每日未完成工单推送（MIC 数据库 → 企业微信） ==========
+
+const DAILY_OVERDUE_WORKORDER_DEFAULT_SQL = `SELECT
+  CONCAT(wo.wo_id, ' ', wo.wo_name) AS wo_info,
+  CONCAT(a.asset_code, ' ', a.asset_name) AS asset_names,
+  wo.wo_schedule_time,
+  ms.status_name_cn
+FROM wo_list wo
+LEFT JOIN asset_list a ON wo.wo_asset_id = a.asset_id
+LEFT JOIN mic_status ms ON wo.wo_status = ms.status_id
+WHERE DATE(wo.wo_creation_time) = CURDATE()
+  AND wo.wo_type_id = 3
+  AND wo.wo_finish_time IS NULL`;
+
+// 获取每日未完成工单默认 SQL
+app.get('/api/daily-overdue-workorder/sql', requirePermission('instrument_meter'), (req, res) => {
+  res.json({ success: true, sql: DAILY_OVERDUE_WORKORDER_DEFAULT_SQL });
+});
+
+// 查询每日未完成工单
+app.post('/api/daily-overdue-workorder', requirePermission('instrument_meter'), async (req, res) => {
+  const sql = (req.body && req.body.sql) || DAILY_OVERDUE_WORKORDER_DEFAULT_SQL;
+  try {
+    const [rows] = await micPool.execute(sql);
+    res.json({ success: true, total: rows.length, data: rows });
+  } catch (err) {
+    console.error('查询每日未完成工单失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+// 每日未完成工单推送到企业微信
+app.post('/api/daily-overdue-workorder/push', requirePermission('instrument_meter'), async (req, res) => {
+  const { data, total } = req.body;
+  if (!Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: '无数据可推送' });
+  }
+
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+  const statusEmoji = {
+    '已创建': '⚪', '等待备件': '🟡', '等待外委': '🟣',
+    '已安排': '🔵', '已搁置': '🔴', '进行中': '🟢'
+  };
+
+  const clean = (v) => v ? String(v).replace(/\|/g, ' ').replace(/\n/g, ' ').trim() : '';
+  const batchSize = 15;
+  const totalBatches = Math.ceil(data.length / batchSize);
+  const results = [];
+
+  try {
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batchNo = Math.floor(i / batchSize) + 1;
+      const batch = data.slice(i, i + batchSize);
+
+      const lines = [
+        '### 📋 未完成日巡检工单列表',
+        `#### 共查询到 ${total || data.length} 条未完成日工单`,
+        `#### 第 ${batchNo}/${totalBatches} 批`,
+        '| 工单 | 资产 | 安排时间 | 类型 | 状态 |',
+        '| :--- | :--- | :--- | :--- | :--- |'
+      ];
+
+      batch.forEach(item => {
+        const woInfo = clean(item.wo_info);
+        const assetName = clean(item.asset_names);
+        const scheduleTime = clean(item.wo_schedule_time);
+        const statusName = clean(item.status_name_cn);
+        const emoji = statusEmoji[statusName] || '⚪';
+        lines.push(`| ${woInfo} | ${assetName} | ${scheduleTime} | 日巡检工单 | ${emoji} ${statusName} |`);
+      });
+
+      const markdown = lines.join('\n');
+      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+
+      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+      results.push({ batch: batchNo, status: resp.status, data: resp.data });
+    }
+
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const contentSummary = `未完成日巡检工单推送，共 ${total || data.length} 条，${results.length} 批次`;
+    await logPush('daily_workorder', 'wechat', 'success', contentSummary, data.length, webhookUrl, pusher);
+    res.json({ success: true, batch_count: results.length, results });
+  } catch (err) {
+    console.error('推送每日未完成工单失败:', err);
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
+    await logPush('daily_workorder', 'wechat', 'failed', `推送失败，共 ${data.length} 条`, data.length, webhookUrl, pusher, errMsg);
+    res.status(500).json({ error: '推送失败: ' + errMsg });
+  }
+});
+
 // ========== 推送日志 ==========
 
 /**
  * 写入推送日志
- * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js 共用
- * @param {string} source        'instrument_meter' | 'overdue_workorder'
+ * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js 共用
+ * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder'
  * @param {string} pushMethod    'email' | 'wechat'
  * @param {string} pushStatus    'success' | 'failed'
  * @param {string} pushContent   推送内容摘要
@@ -4254,7 +4349,7 @@ async function logPush(source, pushMethod, pushStatus, pushContent, recordCount,
   }
 }
 
-// 导出给 instrument-meter-notifier.js / weekly-overdue-workorder-notifier.js 使用
+// 导出给 instrument-meter-notifier.js / weekly-overdue-workorder-notifier.js / daily-overdue-workorder-notifier.js 使用
 module.exports.logPush = logPush;
 
 /**
@@ -4269,7 +4364,7 @@ app.get('/api/push-logs', requirePermission('instrument_meter'), async (req, res
 
     let whereClause = '';
     const params = [];
-    if (source && (source === 'instrument_meter' || source === 'overdue_workorder')) {
+    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder')) {
       whereClause = 'WHERE source = ?';
       params.push(source);
     }
@@ -5226,6 +5321,9 @@ app.listen(PORT, async () => {
 
   // 启动设备过期工单自动推送任务（每周一 08:00）
   startWeeklyPush();
+
+  // 启动每日未完成工单自动推送任务（每天 15:30）
+  startDailyOverduePush();
 
   // 启动数据库每日凌晨 2 点自动备份任务
   startDailyBackup();

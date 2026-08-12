@@ -8,3 +8,113 @@ overdue-workorder-push.html 页面中增加自动推送，每天下午3：30 执
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
 overdue-workorder-push.html 自动推送，更改为每周一上行8：00 执行一次
 将overdue-workorder-push.html 改为weekly-overdue-workorder-push.html,相应的js文件也同样改名
+
+
+新建一个daily-overdue-workorder-push.html页面，用于每日下午3：30推送
+daily-overdue-workorder-push.html页面设计参考weekly-overdue-workorder-push.html
+下面为daily-overdue-workorder-push.html页面需要的SQL查询语句
+select 
+    CONCAT(wo.wo_id, ' ', wo.wo_name) AS wo_info,
+    CONCAT(a.asset_code,' ', a.asset_name) AS asset_names,
+    wo_schedule_time,
+    ms.status_name_cn
+from 
+    wo_list wo
+left join asset_list a 
+    on wo.wo_asset_id = a.asset_id      
+left join mic_status ms 
+    on wo.wo_status = ms.status_id
+where 
+    date(wo.wo_creation_time) = curdate() 
+    and wo.wo_type_id = 3 
+    and wo.wo_finish_time is null
+
+再查询出来的结果参照下面代码来处理（注意:以15个为一个批次，分批推送）
+import requests  # 导入网络请求库
+def main(sql_result: list) -> dict:
+    # ==========================================
+    # 1. 初始化变量与数据提取
+    # ==========================================
+    data_list = []
+    total_count = 0
+
+    # 安全提取数据，防止空数据报错
+    if sql_result and isinstance(sql_result, list) and len(sql_result) > 0:
+        first_item = sql_result[0]
+        if isinstance(first_item, dict):
+            data_list = first_item.get('result', [])
+            total_count = first_item.get('total_count', len(data_list))
+
+    # ==========================================
+    # 2. 辅助函数
+    # ==========================================
+    def clean_text(text):
+        if not text:
+            return ""
+        return str(text).replace('|', ' ').replace('\n', ' ').strip()
+    status_emoji = {
+    "已创建": "⚪",
+    "等待备件": "🟡",
+    "等待外委": "🟣",
+    "已安排": "🔵",
+    "已搁置": "🔴",
+    "进行中": "🟢"   
+}
+    
+    # ==========================================
+    # 3. 生成 Markdown 内容
+    # ==========================================
+    md_lines = []
+    md_lines.append("### 📋 未完成日巡检工单列表  ")
+    # md_lines.append("")
+    md_lines.append(f"#### 共查询到 {total_count} 条未完成日工单")
+    md_lines.append("| 工单 | 资产 | 安排时间 | 类型 | 状态 |")
+    md_lines.append("| :--- | :--- | :--- | :--- | :--- |")
+
+    if not data_list:
+        # 如果没有数据，只显示表头和提示
+          return {
+            "content": "当前没有查询到未完成的日巡检工单，无需推送消息"
+        }
+    else:
+        # 循环生成行
+        for item in data_list:
+            # 根据你的实际字段名取值，这里假设字段名为 wo_info, asset_names 等
+            # 如果字段名不对，请根据实际输入调整
+            wo_info = clean_text(item.get('wo_info'))
+            asset_name = clean_text(item.get('asset_names'))
+            target_time = clean_text(item.get('wo_schedule_time'))
+            asset_type = "日巡检工单"
+            emoji = status_emoji.get(clean_text(item.get('status_name_cn')), "⚪") # 如果找不到状态，默认给个白圈
+            #status = clean_text(item.get('status_name_cn'))
+            status = f"{emoji} {clean_text(item.get('status_name_cn'))}"
+
+            row = f"| {wo_info} | {asset_name} | {target_time} | {asset_type} | {status} |"
+            md_lines.append(row)
+
+    md_lines.append("")
+    
+
+    # 拼接最终文本
+    final_markdown = "\n".join(md_lines)
+
+    # 1. 定义 Webhook URL (注意：移除了末尾多余的单引号)
+    webhook_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def"
+
+    # 2. 定义要发送的数据 (JSON 格式)
+    data = {
+        "msgtype": "markdown_v2",
+        "markdown_v2": {
+             "content": final_markdown
+        }
+    }
+
+    # 3. 发送 POST 请求
+    # json=data 会自动将字典转换为 JSON 字符串并设置正确的 Content-Type
+    response = requests.post(webhook_url, json=data)
+    # ==========================================
+    # 4. 返回字典（关键修改）
+    # ==========================================
+    return {
+        "content": final_markdown
+    }
