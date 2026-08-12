@@ -1,10 +1,10 @@
 /**
  * 设备过期工单自动推送（企业微信）
  *
- * 每天下午 15:30 自动查询 MIC 数据库中已延迟的工单，
+ * 每周一早上 8:00 自动查询 MIC 数据库中已延迟的工单，
  * 通过企业微信 Webhook 推送汇总通知。
  *
- * 推送时间：每天 15:30
+ * 推送时间：每周一 08:00
  */
 
 const axios = require('axios');
@@ -37,20 +37,26 @@ const STATUS_EMOJI = {
 const BATCH_SIZE = 15;
 
 // 定时器引用，用于避免重复调度
-let dailyTimer = null;
+let weeklyTimer = null;
 
 /**
- * 计算距离下一个 15:30 的毫秒数
+ * 计算距离下一个周一 08:00 的毫秒数
  */
-function getNextDay1530() {
+function getNextMonday0800() {
   const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15, 30, 0, 0);
+  const dayOfWeek = now.getDay(); // 0=周日, 1=周一, 2=周二 ...
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0);
 
-  if (now >= target) {
-    // 已过今天 15:30，等到明天
-    target.setDate(target.getDate() + 1);
+  let daysUntilMon;
+  if (dayOfWeek === 1) {
+    // 今天是周一：若已过 8:00 则等到下周一
+    daysUntilMon = (now >= target) ? 7 : 0;
+  } else {
+    daysUntilMon = (1 - dayOfWeek + 7) % 7;
+    if (daysUntilMon === 0) daysUntilMon = 7;
   }
 
+  target.setDate(target.getDate() + daysUntilMon);
   return target.getTime() - now.getTime();
 }
 
@@ -112,24 +118,24 @@ async function checkAndPush() {
   try { logPush = require('./server').logPush; } catch (_) { /* server 尚未就绪 */ }
 
   try {
-    console.log('[overdue-workorder-notifier] 开始检测延迟工单...');
+    console.log('[weekly-overdue-workorder-notifier] 开始检测延迟工单...');
     const data = await queryOverdueWorkorders();
     const total = data.length > 0 ? (data[0].total_count || data.length) : 0;
 
     if (data.length === 0) {
-      console.log('[overdue-workorder-notifier] 无延迟工单记录，跳过推送');
+      console.log('[weekly-overdue-workorder-notifier] 无延迟工单记录，跳过推送');
       return;
     }
 
     await pushToWechat(data, total);
-    console.log(`[overdue-workorder-notifier] 推送完成，共 ${total} 条延迟工单`);
+    console.log(`[weekly-overdue-workorder-notifier] 推送完成，共 ${total} 条延迟工单`);
 
     if (logPush) {
       const summary = `自动推送：延迟工单 ${total} 条`;
       await logPush('overdue_workorder', 'wechat', 'success', summary, data.length, WEBHOOK_URL, 'system');
     }
   } catch (err) {
-    console.error('[overdue-workorder-notifier] 检测/推送失败:', err.message);
+    console.error('[weekly-overdue-workorder-notifier] 检测/推送失败:', err.message);
     if (logPush) {
       const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
       await logPush('overdue_workorder', 'wechat', 'failed', '自动推送失败', 0, WEBHOOK_URL, 'system', errMsg).catch(() => {});
@@ -138,21 +144,21 @@ async function checkAndPush() {
 }
 
 /**
- * 启动每天 15:30 定时任务
+ * 启动每周一 08:00 定时任务
  *
- * 先通过 setTimeout 等待到下一个 15:30，
- * 执行一次后通过 setInterval 每 24 小时重复执行。
+ * 先通过 setTimeout 等待到下一个周一 08:00，
+ * 执行一次后通过 setInterval 每 7 天重复执行。
  */
-function startDailyPush() {
-  const delay = getNextDay1530();
+function startWeeklyPush() {
+  const delay = getNextMonday0800();
   const nextRun = new Date(Date.now() + delay);
-  console.log(`[overdue-workorder-notifier] 定时任务将于 ${nextRun.toLocaleString('zh-CN')}（每天 15:30）首次执行`);
+  console.log(`[weekly-overdue-workorder-notifier] 定时任务将于 ${nextRun.toLocaleString('zh-CN')}（每周一 08:00）首次执行`);
 
-  dailyTimer = setTimeout(() => {
+  weeklyTimer = setTimeout(() => {
     checkAndPush();
-    // 之后每 24 小时执行一次（24 × 60 × 60 × 1000 ms）
-    setInterval(checkAndPush, 24 * 60 * 60 * 1000);
+    // 之后每 7 天执行一次（7 × 24 × 60 × 60 × 1000 ms）
+    setInterval(checkAndPush, 7 * 24 * 60 * 60 * 1000);
   }, delay);
 }
 
-module.exports = { startDailyPush, checkAndPush };
+module.exports = { startWeeklyPush, checkAndPush };

@@ -6,3 +6,5 @@
 overdue-workorder-push.html 页面中增加自动推送，每天下午3：30 执行一次
 将overdue-workorder-push.html页面中自动推送的地址，换成下面的link
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
+overdue-workorder-push.html 自动推送，更改为每周一上行8：00 执行一次
+将overdue-workorder-push.html 改为weekly-overdue-workorder-push.html,相应的js文件也同样改名
