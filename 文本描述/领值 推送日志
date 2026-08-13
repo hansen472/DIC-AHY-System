@@ -122,3 +122,5 @@ def main(sql_result: list) -> dict:
     将nav-sidebar.html 中的”设备过期工单推送“菜单，改为”周工单提醒推送“菜单
     将nav-sidebar.html 中的”每日工单推送“菜单，改为”日工单提醒推送“菜单
     在push-logs.html 页面中， 更新 选择按钮的名字
+将daily-overdue-workorder-push.html页面中的自动推送地址，换成下面的link
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
