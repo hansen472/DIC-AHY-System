@@ -118,3 +118,7 @@ def main(sql_result: list) -> dict:
     return {
         "content": final_markdown
     }
+
+    将nav-sidebar.html 中的”设备过期工单推送“菜单，改为”周工单提醒推送“菜单
+    将nav-sidebar.html 中的”每日工单推送“菜单，改为”日工单提醒推送“菜单
+    在push-logs.html 页面中， 更新 选择按钮的名字

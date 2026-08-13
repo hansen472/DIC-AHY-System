@@ -169,7 +169,7 @@ tr:hover td { background: #f9fafb; }
   <header>
     <div>
       <h1>推送日志</h1>
-      <p>查看仪器/仪表和设备过期工单推送的历史记录</p>
+      <p>查看仪器/仪表、周工单提醒推送和日工单提醒推送的历史记录</p>
     </div>
     <a href="/nav-sidebar.html" class="btn-back">← 返回导航</a>
   </header>
@@ -184,8 +184,8 @@ tr:hover td { background: #f9fafb; }
       <span class="label">来源：</span>
       <button class="filter-btn active" data-source="" onclick="setFilter(this, '')">全部</button>
       <button class="filter-btn" data-source="instrument_meter" onclick="setFilter(this, 'instrument_meter')">仪器 / 仪表</button>
-      <button class="filter-btn" data-source="overdue_workorder" onclick="setFilter(this, 'overdue_workorder')">设备过期工单推送</button>
-      <button class="filter-btn" data-source="daily_workorder" onclick="setFilter(this, 'daily_workorder')">每日工单推送</button>
+      <button class="filter-btn" data-source="overdue_workorder" onclick="setFilter(this, 'overdue_workorder')">周工单提醒推送</button>
+      <button class="filter-btn" data-source="daily_workorder" onclick="setFilter(this, 'daily_workorder')">日工单提醒推送</button>
       <button class="refresh-btn" onclick="loadLogs()">刷新</button>
     </div>
   </div>
@@ -258,8 +258,8 @@ async function loadLogs() {
 function renderTable(logs) {
   const sourceLabels = {
     'instrument_meter': '仪器 / 仪表',
-    'overdue_workorder': '设备过期工单',
-    'daily_workorder': '每日工单'
+    'overdue_workorder': '周工单提醒',
+    'daily_workorder': '日工单提醒'
   };
   const methodLabels = {
     'email': '邮件',
