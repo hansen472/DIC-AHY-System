@@ -554,8 +554,21 @@ async function compareSelected(templateId) {
   }
 }
 
-function previewVersion(templateId, versionId) {
-  window.open(`/api/templates/${templateId}/versions/${versionId}/preview`, '_blank');
+async function previewVersion(templateId, versionId) {
+  try {
+    const res = await fetch(`/api/templates/${templateId}/versions/${versionId}/preview`);
+    if (!res.ok) {
+      const result = await res.json().catch(() => ({}));
+      throw new Error(result.error || '预览失败');
+    }
+    const html = await res.text();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    alert('查看失败：' + err.message);
+  }
 }
 
 async function previewCurrentCode() {
@@ -563,7 +576,7 @@ async function previewCurrentCode() {
   const jsCode = document.getElementById('version-code').value;
 
   if (!jsCode.trim()) {
-    showMessage('请先输入 JS 代码', 'error');
+    alert('请先输入 JS 代码');
     return;
   }
 
@@ -585,7 +598,7 @@ async function previewCurrentCode() {
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (err) {
-    showMessage('查看失败：' + err.message, 'error');
+    alert('查看失败：' + err.message);
   }
 }
 
