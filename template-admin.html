@@ -597,8 +597,8 @@ async function saveVersion() {
   const jsCode = document.getElementById('version-code').value;
   const activate = document.getElementById('version-activate').checked;
 
-  if (!version) { showMessage('请输入版本号', 'error'); return; }
-  if (!jsCode.trim()) { showMessage('请输入 JS 代码', 'error'); return; }
+  if (!version) { alert('请输入版本号'); return; }
+  if (!jsCode.trim()) { alert('请输入 JS 代码'); return; }
 
   try {
     const res = await fetch('/api/templates/' + templateId + '/versions', {
@@ -612,7 +612,7 @@ async function saveVersion() {
     closeModal('version-modal');
     await loadTemplates();
   } catch (err) {
-    showMessage('保存失败：' + err.message, 'error');
+    alert('保存失败：' + err.message);
   }
 }
 
