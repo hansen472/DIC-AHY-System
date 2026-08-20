@@ -38,3 +38,4 @@ WHERE w.wo_status = 0
   AND p.mp_code LIKE 'QC-MP%'
 ORDER BY w.wo_schedule_time;
 
+每天早上8点10分执行上述SQL查询，并将结果以企业微信可识别的形式推送出去。
