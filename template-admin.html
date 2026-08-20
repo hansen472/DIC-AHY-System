@@ -90,7 +90,7 @@ textarea { min-height: 80px; resize: vertical; }
       <input type="hidden" id="version-template-id">
       <div class="form-row">
         <div class="form-group">
-          <label>版本号 <span class="meta-text">（建议按 1.1.0、1.2.0 递增）</span></label>
+          <label>版本号 <span class="meta-text">（当前：<span id="current-version-display">-</span>，建议按 1.1.0、1.2.0 递增）</span></label>
           <input type="text" id="version-number" placeholder="例如：1.1.0">
         </div>
         <div class="form-group">
@@ -427,6 +427,7 @@ async function openUpgradeModal(templateId) {
   const tpl = templatesData.find(t => t.id === templateId);
   document.getElementById('version-template-id').value = templateId;
   document.getElementById('version-modal-title').textContent = '升级版本 - ' + (tpl ? tpl.name : '');
+  document.getElementById('current-version-display').textContent = (tpl && tpl.version) ? tpl.version : '无';
   document.getElementById('version-number').value = '';
   document.getElementById('version-reason').value = '';
   document.getElementById('version-remarks').value = '';
