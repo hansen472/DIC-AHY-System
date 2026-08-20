@@ -91,6 +91,9 @@ app.get('/weekly-overdue-workorder-push.html', requirePermissionPage('instrument
 app.get('/daily-overdue-workorder-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'daily-overdue-workorder-push.html'));
 });
+app.get('/qc-maintenance-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'qc-maintenance-push.html'));
+});
 app.get('/push-logs.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'push-logs.html'));
 });
@@ -4247,6 +4250,27 @@ WHERE DATE(wo.wo_creation_time) = CURDATE()
   AND wo.wo_type_id = 3
   AND wo.wo_finish_time IS NULL`;
 
+const QC_MAINTENANCE_DEFAULT_SQL = `SELECT
+    p.mp_code AS 'PM编码',
+    CONCAT(IFNULL(a.asset_code, ''), ' - ', IFNULL(a.asset_name, '')) AS '设备',
+    p.mp_name AS 'PM名称',
+    COALESCE(e.employee_name, p.mp_responsible_id) AS '负责人',
+    CASE p.mp_status
+        WHEN 0 THEN '闲置'
+        WHEN 1 THEN '活跃'
+        WHEN 2 THEN '已搁置'
+        ELSE CONCAT('未知状态(', p.mp_status, ')')
+    END AS '状态',
+    w.wo_schedule_time AS '计划执行时间'
+FROM eng_maintenance_plan p
+INNER JOIN wo_list w ON p.mp_id = w.mp_id
+INNER JOIN asset_list a ON p.mp_asset_id = a.asset_id
+LEFT JOIN admin_employee e ON p.mp_responsible_id = e.user_id
+WHERE w.wo_status = 0
+  AND w.mp_id IS NOT NULL
+  AND p.mp_code LIKE 'QC-MP%'
+ORDER BY w.wo_schedule_time`;
+
 // 获取每日未完成工单默认 SQL
 app.get('/api/daily-overdue-workorder/sql', requirePermission('instrument_meter'), (req, res) => {
   res.json({ success: true, sql: DAILY_OVERDUE_WORKORDER_DEFAULT_SQL });
@@ -4324,12 +4348,90 @@ app.post('/api/daily-overdue-workorder/push', requirePermission('instrument_mete
   }
 });
 
+// ========== QC 维护计划推送 ==========
+
+// 获取 QC 维护计划默认 SQL
+app.get('/api/qc-maintenance/sql', requirePermission('instrument_meter'), (req, res) => {
+  res.json({ success: true, sql: QC_MAINTENANCE_DEFAULT_SQL });
+});
+
+// 查询 QC 维护计划工单
+app.post('/api/qc-maintenance', requirePermission('instrument_meter'), async (req, res) => {
+  const sql = (req.body && req.body.sql) || QC_MAINTENANCE_DEFAULT_SQL;
+  try {
+    const [rows] = await micPool.execute(sql);
+    res.json({ success: true, total: rows.length, data: rows });
+  } catch (err) {
+    console.error('QC维护计划查询失败:', err.message);
+    res.status(500).json({ error: 'SQL 查询失败: ' + err.message });
+  }
+});
+
+// QC 维护计划工单推送到企业微信
+app.post('/api/qc-maintenance/push', requirePermission('instrument_meter'), async (req, res) => {
+  const { data, total } = req.body;
+  if (!Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: '无数据可推送' });
+  }
+
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+  const statusEmoji = { '闲置': '⚪', '活跃': '🟢', '已搁置': '🔴' };
+
+  const clean = (v) => v ? String(v).replace(/\|/g, ' ').replace(/\n/g, ' ').trim() : '';
+  const batchSize = 15;
+  const totalBatches = Math.ceil(data.length / batchSize);
+  const results = [];
+
+  try {
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batchNo = Math.floor(i / batchSize) + 1;
+      const batch = data.slice(i, i + batchSize);
+
+      const lines = [
+        '### 🔧 QC维护计划待执行工单列表',
+        `#### 共查询到 ${total || data.length} 条待执行工单`,
+        `#### 第 ${batchNo}/${totalBatches} 批`,
+        '| PM编码 | 设备 | PM名称 | 负责人 | 状态 | 计划执行时间 |',
+        '| :--- | :--- | :--- | :--- | :--- | :--- |'
+      ];
+
+      batch.forEach(item => {
+        const mpCode = clean(item['PM编码']);
+        const asset = clean(item['设备']);
+        const mpName = clean(item['PM名称']);
+        const responsible = clean(item['负责人']);
+        const status = clean(item['状态']);
+        const scheduleTime = clean(item['计划执行时间']);
+        const emoji = statusEmoji[status] || '⚪';
+        lines.push(`| ${mpCode} | ${asset} | ${mpName} | ${responsible} | ${emoji} ${status} | ${scheduleTime} |`);
+      });
+
+      const markdown = lines.join('\n');
+      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+
+      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+      results.push({ batch: batchNo, status: resp.status, data: resp.data });
+    }
+
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const contentSummary = `QC维护计划推送，共 ${total || data.length} 条，${results.length} 批次`;
+    await logPush('qc_maintenance', 'wechat', 'success', contentSummary, data.length, webhookUrl, pusher);
+    res.json({ success: true, batch_count: results.length, results });
+  } catch (err) {
+    console.error('推送QC维护计划失败:', err);
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
+    await logPush('qc_maintenance', 'wechat', 'failed', `推送失败，共 ${data.length} 条`, data.length, webhookUrl, pusher, errMsg);
+    res.status(500).json({ error: '推送失败: ' + errMsg });
+  }
+});
+
 // ========== 推送日志 ==========
 
 /**
  * 写入推送日志
  * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js 共用
- * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder'
+ * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance'
  * @param {string} pushMethod    'email' | 'wechat'
  * @param {string} pushStatus    'success' | 'failed'
  * @param {string} pushContent   推送内容摘要
@@ -4364,7 +4466,7 @@ app.get('/api/push-logs', requirePermission('instrument_meter'), async (req, res
 
     let whereClause = '';
     const params = [];
-    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder')) {
+    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder' || source === 'qc_maintenance')) {
       whereClause = 'WHERE source = ?';
       params.push(source);
     }

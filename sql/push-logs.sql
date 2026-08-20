@@ -8,7 +8,7 @@ USE pdf_print_db;
 
 CREATE TABLE IF NOT EXISTS push_logs (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-  source        ENUM('instrument_meter','overdue_workorder','daily_workorder') NOT NULL COMMENT '来源模块',
+  source        ENUM('instrument_meter','overdue_workorder','daily_workorder','qc_maintenance') NOT NULL COMMENT '来源模块',
   push_time     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '推送时间',
   push_method   VARCHAR(20) NOT NULL COMMENT '推送方式: email / wechat',
   push_status   ENUM('success','failed') NOT NULL COMMENT '推送状态',

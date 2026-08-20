@@ -1,0 +1,40 @@
+背景：
+领值 系统下发了定时维护计划，根据不同的间隔周期，于当日的早上8点生成任务单。
+现在的需地求是每天早上8点10分，对系统的wo_list 表格中的任务单进行扫描。只查看任务状态是0（新建状态）的工单。
+如果该任务的mp_id 的值不为空即代表是由维护任务下发的任务工单。
+根据mp_id 的值去eng_maintenance_plan 中查找到相应的维护任务，如果该任务的 mp_code 是以
+QC-MP开头的，则将该维护计划的具体情况推送出去。
+
+在nav-sidebar.html 页面中的 “领值推送”目录下再增加一个“QC维护计划推送”。
+参考其它推送的样式，相应信息也在“推送日志”中增加相应内容。
+在数据库mic00001 中执行以下查询语句。将查询出的结果以企业微信可识别的形式，推送出来。推送地址：（https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def）
+
+
+SELECT
+    p.mp_code AS 'PM编码',
+    CONCAT(
+        IFNULL(a.asset_code, ''),
+        ' - ',
+        IFNULL(a.asset_name, '')
+    ) AS '设备',
+    p.mp_name AS 'PM名称',
+    COALESCE(e.employee_name, p.mp_responsible_id) AS '负责人',
+    CASE p.mp_status
+        WHEN 0 THEN '闲置'
+        WHEN 1 THEN '活跃'
+        WHEN 2 THEN '已搁置'
+        ELSE CONCAT('未知状态(', p.mp_status, ')')
+    END AS '状态',
+    w.wo_schedule_time AS '计划执行时间'
+FROM eng_maintenance_plan p
+INNER JOIN wo_list w
+    ON p.mp_id = w.mp_id
+INNER JOIN asset_list a
+    ON p.mp_asset_id = a.asset_id
+LEFT JOIN admin_employee e
+    ON p.mp_responsible_id = e.user_id
+WHERE w.wo_status = 0
+  AND w.mp_id IS NOT NULL
+  AND p.mp_code LIKE 'QC-MP%'
+ORDER BY w.wo_schedule_time;
+
