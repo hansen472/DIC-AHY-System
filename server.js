@@ -3007,7 +3007,7 @@ function hashPassword(pwd) {
  * 规则：
  *   1. 长度 >= 6
  *   2. 必须同时包含字母和数字
- *   3. 连续字母或连续数字不超过 3 个
+ *   3. 字母/数字顺序连续不超过 3 个（如 abcd、dcba、1234、4321 不允许）
  *   4. 不能包含用户名（原值、全大写、全小写、反转）
  * @param {string} password - 待校验密码
  * @param {string} username - 用户名（用于规则 4）
@@ -3023,12 +3023,37 @@ function validatePassword(password, username) {
     return '密码必须同时包含字母和数字';
   }
 
-  // 连续字母或连续数字不能超过 3 个
-  if (/[a-zA-Z]{4,}/.test(password)) {
-    return '密码中连续字母不能超过 3 个';
-  }
-  if (/[0-9]{4,}/.test(password)) {
-    return '密码中连续数字不能超过 3 个';
+  // 连续字母或连续数字不能超过 3 个（如 abcd、dcba、1234、4321 不允许）
+  const hasConsecutiveSequence = (str, max) => {
+    const lower = str.toLowerCase();
+    let asc = 1, desc = 1;
+    for (let i = 1; i < lower.length; i++) {
+      const prev = lower.charCodeAt(i - 1);
+      const curr = lower.charCodeAt(i);
+      // 只检查同类字符（字母对字母、数字对数字）
+      const prevIsLetter = prev >= 97 && prev <= 122;
+      const currIsLetter = curr >= 97 && curr <= 122;
+      const prevIsDigit = prev >= 48 && prev <= 57;
+      const currIsDigit = curr >= 48 && curr <= 57;
+
+      if (prevIsLetter && currIsLetter) {
+        if (curr - prev === 1) { asc++; desc = 1; }
+        else if (prev - curr === 1) { desc++; asc = 1; }
+        else { asc = 1; desc = 1; }
+      } else if (prevIsDigit && currIsDigit) {
+        if (curr - prev === 1) { asc++; desc = 1; }
+        else if (prev - curr === 1) { desc++; asc = 1; }
+        else { asc = 1; desc = 1; }
+      } else {
+        asc = 1; desc = 1;
+      }
+      if (asc > max || desc > max) return true;
+    }
+    return false;
+  };
+
+  if (hasConsecutiveSequence(password, 3)) {
+    return '密码中连续字母或数字不能超过 3 个（如 abcd、1234）';
   }
 
   // 不能包含用户名或其变体

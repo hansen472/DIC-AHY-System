@@ -310,8 +310,20 @@ async function doLogin() {
 function validatePassword(password, username) {
   if (!password || password.length < 6) return '密码长度不能少于 6 位';
   if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) return '密码必须同时包含字母和数字';
-  if (/[a-zA-Z]{4,}/.test(password)) return '密码中连续字母不能超过 3 个';
-  if (/[0-9]{4,}/.test(password)) return '密码中连续数字不能超过 3 个';
+  // 检查连续字母/数字序列（如 abcd、dcba、1234、4321）
+  const lower = password.toLowerCase();
+  let asc = 1, desc = 1;
+  for (let i = 1; i < lower.length; i++) {
+    const prev = lower.charCodeAt(i - 1), curr = lower.charCodeAt(i);
+    const pL = prev >= 97 && prev <= 122, cL = curr >= 97 && curr <= 122;
+    const pD = prev >= 48 && prev <= 57, cD = curr >= 48 && curr <= 57;
+    if ((pL && cL) || (pD && cD)) {
+      if (curr - prev === 1) { asc++; desc = 1; }
+      else if (prev - curr === 1) { desc++; asc = 1; }
+      else { asc = 1; desc = 1; }
+    } else { asc = 1; desc = 1; }
+    if (asc > 3 || desc > 3) return '密码中连续字母或数字不能超过 3 个（如 abcd、1234）';
+  }
   if (username && username.trim()) {
     const un = username.trim();
     const variants = [un, un.toLowerCase(), un.toUpperCase(), un.split('').reverse().join('')]
