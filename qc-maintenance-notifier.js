@@ -10,7 +10,7 @@
 const axios = require('axios');
 const { micPool } = require('./db-mic-config');
 
-const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=53a94f71-37c6-4505-95fe-754ff0b2209c';
 
 const QC_MAINTENANCE_SQL = `SELECT
     p.mp_code AS 'PM编码',

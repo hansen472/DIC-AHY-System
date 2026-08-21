@@ -4375,7 +4375,7 @@ app.post('/api/qc-maintenance/push', requirePermission('instrument_meter'), asyn
     return res.status(400).json({ error: '无数据可推送' });
   }
 
-  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=53a94f71-37c6-4505-95fe-754ff0b2209c';
   const statusEmoji = { '闲置': '⚪', '活跃': '🟢', '已搁置': '🔴' };
 
   const clean = (v) => v ? String(v).replace(/\|/g, ' ').replace(/\n/g, ' ').trim() : '';

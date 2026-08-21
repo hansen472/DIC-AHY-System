@@ -39,3 +39,6 @@ WHERE w.wo_status = 0
 ORDER BY w.wo_schedule_time;
 
 每天早上8点10分执行上述SQL查询，并将结果以企业微信可识别的形式推送出去。
+
+qc-maintenance-push.html更换正式的推送地址为：
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=53a94f71-37c6-4505-95fe-754ff0b2209c
