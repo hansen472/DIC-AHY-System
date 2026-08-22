@@ -117,6 +117,50 @@ button:hover { transform: translateY(-1px); }
   box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
 }
 
+.btn-baseline {
+  background: #059669;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+}
+
+.btn-danger-sm {
+  background: #ef4444;
+  color: #fff;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.baseline-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.baseline-bar label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.baseline-bar select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  min-width: 200px;
+}
+
+.baseline-bar select:focus {
+  border-color: var(--primary);
+}
+
 .btn-back {
   background: #64748b;
   color: #fff;
@@ -271,10 +315,22 @@ footer-actions {
         <input type="date" id="expire-date">
       </div>
       <button class="btn-query" onclick="loadData()">查询</button>
+      <button class="btn-baseline" onclick="saveBaseline()">新建基准日</button>
       <button class="btn-export" onclick="exportData()">导出</button>
       <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
     </div>
   </header>
+
+  <div class="card" style="margin-bottom:16px; padding:16px 24px;">
+    <div class="baseline-bar">
+      <label>基准日：</label>
+      <select id="baseline-select" onchange="loadBaselineData()">
+        <option value="">— 选择基准日 —</option>
+      </select>
+      <button class="btn-danger-sm" onclick="deleteBaseline()" id="btn-delete-baseline" disabled>删除</button>
+      <span id="baseline-info" style="font-size:12px; color:var(--text-secondary);"></span>
+    </div>
+  </div>
 
   <div class="card">
     <div class="summary">共查询到 <strong id="record-count">0</strong> 条记录</div>
@@ -308,12 +364,15 @@ const COLUMNS = [
 
 let currentRows = [];
 let sortState = { key: '下次检验日期', asc: true };
+let baselinesList = [];
+let currentBaselineDate = '';
 
 function init() {
   const input = document.getElementById('expire-date');
   const d = new Date();
   d.setDate(d.getDate() + 30);
   input.value = formatDateInput(d);
+  loadBaselines();
   loadData();
 }
 
@@ -454,6 +513,117 @@ function exportData() {
   const sortKey = encodeURIComponent(sortState.key);
   const sortAsc = sortState.asc ? '1' : '0';
   window.location.href = `/api/instrument-meter/export?expireDate=${encodeURIComponent(expireDate)}&sortKey=${sortKey}&sortAsc=${sortAsc}`;
+}
+
+// ========== 基准日功能 ==========
+
+async function loadBaselines() {
+  try {
+    const res = await fetch('/api/instrument-meter/baselines');
+    if (!res.ok) return;
+    const result = await res.json();
+    baselinesList = result.data || [];
+    const select = document.getElementById('baseline-select');
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">— 选择基准日 —</option>';
+    baselinesList.forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item.baseline_date;
+      opt.textContent = `${item.baseline_date}（${item.count} 条）`;
+      select.appendChild(opt);
+    });
+    if (currentVal) select.value = currentVal;
+    document.getElementById('btn-delete-baseline').disabled = !select.value;
+  } catch (err) {
+    console.error('加载基准日列表失败:', err.message);
+  }
+}
+
+async function saveBaseline() {
+  const expireDate = document.getElementById('expire-date').value;
+  if (!expireDate) {
+    showToast('请先选择到期日期并查询', 'error');
+    return;
+  }
+  if (currentRows.length === 0) {
+    showToast('当前无数据可保存，请先点击“查询”', 'error');
+    return;
+  }
+  const assetCodes = currentRows
+    .map(r => r['仪器/仪表编码'])
+    .filter(c => c !== null && c !== undefined && String(c).trim() !== '');
+  if (assetCodes.length === 0) {
+    showToast('当前数据中无有效的仪器/仪表编码', 'error');
+    return;
+  }
+  if (!confirm(`确定要保存基准日 ${expireDate}（共 ${assetCodes.length} 条仪器/仪表编码）吗？\n如果该日期已存在基准日，将被覆盖。`)) return;
+
+  try {
+    const res = await fetch('/api/instrument-meter/baseline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baselineDate: expireDate, assetCodes })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '保存失败');
+    showToast(result.message || '基准日保存成功', 'success');
+    await loadBaselines();
+    document.getElementById('baseline-select').value = expireDate;
+    document.getElementById('btn-delete-baseline').disabled = false;
+  } catch (err) {
+    showToast('保存失败：' + err.message, 'error');
+  }
+}
+
+async function loadBaselineData() {
+  const select = document.getElementById('baseline-select');
+  const date = select.value;
+  const infoSpan = document.getElementById('baseline-info');
+  document.getElementById('btn-delete-baseline').disabled = !date;
+
+  if (!date) {
+    infoSpan.textContent = '';
+    return;
+  }
+
+  const container = document.getElementById('result-area');
+  container.innerHTML = '<div class="loading">正在加载基准日数据...</div>';
+  infoSpan.textContent = '加载中...';
+
+  try {
+    const res = await fetch(`/api/instrument-meter/baseline/${encodeURIComponent(date)}`);
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '查询失败');
+    currentRows = result.data || [];
+    document.getElementById('record-count').textContent = result.count || 0;
+    sortState = { key: '下次检验日期', asc: true };
+    renderTable();
+    infoSpan.textContent = `基准日 ${date}，已保存 ${result.savedCodes || 0} 条编码，查询到 ${result.count || 0} 条当前数据`;
+  } catch (err) {
+    container.innerHTML = `<div class="empty">加载失败：${escapeHtml(err.message)}</div>`;
+    showToast('加载基准日数据失败：' + err.message, 'error');
+    infoSpan.textContent = '加载失败';
+  }
+}
+
+async function deleteBaseline() {
+  const select = document.getElementById('baseline-select');
+  const date = select.value;
+  if (!date) return;
+  if (!confirm(`确定要删除基准日 ${date} 吗？`)) return;
+
+  try {
+    const res = await fetch(`/api/instrument-meter/baseline/${encodeURIComponent(date)}`, { method: 'DELETE' });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '删除失败');
+    showToast(`基准日 ${date} 已删除`, 'success');
+    select.value = '';
+    document.getElementById('btn-delete-baseline').disabled = true;
+    document.getElementById('baseline-info').textContent = '';
+    await loadBaselines();
+  } catch (err) {
+    showToast('删除失败：' + err.message, 'error');
+  }
 }
 
 init();

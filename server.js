@@ -28,7 +28,7 @@ const { coaPool, testCoaConnection } = require('./db-coa-config');
 const { startDailyCheck } = require('./email-notifier');
 const { setupWorkflowRoutes } = require('./workflow-routes');
 const { runBackup, listBackups, startDailyBackup } = require('./backup-service');
-const { queryInstruments } = require('./instrument-meter-service');
+const { queryInstruments, queryByAssetCodes } = require('./instrument-meter-service');
 const { startWeeklyCheck } = require('./instrument-meter-notifier');
 const { startWeeklyPush } = require('./weekly-overdue-workorder-notifier');
 const { startDailyPush: startDailyOverduePush } = require('./daily-overdue-workorder-notifier');
@@ -4161,6 +4161,107 @@ app.get('/api/instrument-meter/export', requirePermission('instrument_meter'), a
   } catch (err) {
     console.error('导出仪器/仪表数据失败:', err);
     res.status(500).json({ error: '导出失败: ' + err.message });
+  }
+});
+
+// ========== 仪器/仪表基准日 ==========
+
+/**
+ * GET /api/instrument-meter/baselines
+ * 查询所有已保存的基准日列表
+ */
+app.get('/api/instrument-meter/baselines', requirePermission('instrument_meter'), async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT DISTINCT baseline_date, COUNT(*) AS count FROM instrument_meter_baselines GROUP BY baseline_date ORDER BY baseline_date DESC'
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error('查询基准日列表失败:', err.message);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+/**
+ * POST /api/instrument-meter/baseline
+ * 保存当前查询结果为基准日
+ * body: { baselineDate: 'YYYY-MM-DD', assetCodes: ['code1', 'code2', ...] }
+ */
+app.post('/api/instrument-meter/baseline', requirePermission('instrument_meter'), async (req, res) => {
+  const { baselineDate, assetCodes } = req.body;
+  if (!baselineDate || !/^\d{4}-\d{2}-\d{2}$/.test(baselineDate)) {
+    return res.status(400).json({ error: '缺少或无效的基准日日期，格式应为 YYYY-MM-DD' });
+  }
+  if (!Array.isArray(assetCodes) || assetCodes.length === 0) {
+    return res.status(400).json({ error: '无仪器/仪表编码可保存，请先查询数据' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    // 先删除同一基准日的旧数据，再重新插入
+    await conn.execute('DELETE FROM instrument_meter_baselines WHERE baseline_date = ?', [baselineDate]);
+    const insertSql = 'INSERT INTO instrument_meter_baselines (baseline_date, asset_code) VALUES ' +
+      assetCodes.map(() => '(?, ?)').join(',');
+    const params = assetCodes.flatMap(code => [baselineDate, code]);
+    await conn.execute(insertSql, params);
+    await conn.commit();
+    res.json({ success: true, message: `基准日 ${baselineDate} 已保存，共 ${assetCodes.length} 条仪器/仪表编码`, count: assetCodes.length });
+  } catch (err) {
+    await conn.rollback();
+    console.error('保存基准日失败:', err.message);
+    res.status(500).json({ error: '保存失败: ' + err.message });
+  } finally {
+    conn.release();
+  }
+});
+
+/**
+ * GET /api/instrument-meter/baseline/:date
+ * 根据基准日查询对应的仪器/仪表数据
+ */
+app.get('/api/instrument-meter/baseline/:date', requirePermission('instrument_meter'), async (req, res) => {
+  const date = req.params.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: '无效的基准日日期' });
+  }
+  try {
+    // 先从本地库查出该基准日保存的编码列表
+    const [codeRows] = await pool.execute(
+      'SELECT asset_code FROM instrument_meter_baselines WHERE baseline_date = ?',
+      [date]
+    );
+    if (codeRows.length === 0) {
+      return res.json({ success: true, count: 0, data: [], baselineDate: date });
+    }
+    const codes = codeRows.map(r => r.asset_code);
+    // 再到 MIC 库查询这些编码的当前详细信息
+    const rows = await queryByAssetCodes(codes);
+    res.json({ success: true, count: rows.length, data: rows, baselineDate: date, savedCodes: codes.length });
+  } catch (err) {
+    console.error('查询基准日数据失败:', err.message);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+/**
+ * DELETE /api/instrument-meter/baseline/:date
+ * 删除指定基准日
+ */
+app.delete('/api/instrument-meter/baseline/:date', requirePermission('instrument_meter'), async (req, res) => {
+  const date = req.params.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: '无效的基准日日期' });
+  }
+  try {
+    const [result] = await pool.execute(
+      'DELETE FROM instrument_meter_baselines WHERE baseline_date = ?',
+      [date]
+    );
+    res.json({ success: true, deleted: result.affectedRows });
+  } catch (err) {
+    console.error('删除基准日失败:', err.message);
+    res.status(500).json({ error: '删除失败: ' + err.message });
   }
 });
 
