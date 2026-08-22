@@ -42,3 +42,7 @@ ORDER BY w.wo_schedule_time;
 
 qc-maintenance-push.html更换正式的推送地址为：
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=53a94f71-37c6-4505-95fe-754ff0b2209c
+
+
+qc-maintenance-push.html页面中推送内容，将字段的顺序进行调整，第一列显示 “PM名称”，第二列显示 “负责人”，第三列显示 “计划执行时间”，第四列显示 “PM编码”，第五列显示 “设备”，第六列显示 “状态”。
+。

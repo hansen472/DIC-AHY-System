@@ -218,19 +218,19 @@ function renderTable() {
 
   let html = `<table>
     <thead><tr>
-      <th>#</th><th>PM编码</th><th>设备</th><th>PM名称</th><th>负责人</th><th>状态</th><th>计划执行时间</th>
+      <th>#</th><th>PM名称</th><th>负责人</th><th>计划执行时间</th><th>PM编码</th><th>设备</th><th>状态</th>
     </tr></thead><tbody>`;
 
   tableData.forEach((row, i) => {
     const statusBadge = getStatusBadge(row.状态);
     html += `<tr>
       <td>${i + 1}</td>
-      <td>${escapeHtml(row['PM编码'] || '')}</td>
-      <td>${escapeHtml(row['设备'] || '')}</td>
       <td>${escapeHtml(row['PM名称'] || '')}</td>
       <td>${escapeHtml(row['负责人'] || '')}</td>
-      <td>${statusBadge}</td>
       <td>${escapeHtml(row['计划执行时间'] || '-')}</td>
+      <td>${escapeHtml(row['PM编码'] || '')}</td>
+      <td>${escapeHtml(row['设备'] || '')}</td>
+      <td>${statusBadge}</td>
     </tr>`;
   });
 

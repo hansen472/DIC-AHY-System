@@ -86,7 +86,7 @@ async function pushToWechat(data, total) {
       '### 🔧 QC维护计划待执行工单列表（自动推送）',
       `#### 共查询到 ${total} 条待执行工单`,
       `#### 第 ${batchNo}/${totalBatches} 批`,
-      '| PM编码 | 设备 | PM名称 | 负责人 | 状态 | 计划执行时间 |',
+      '| PM名称 | 负责人 | 计划执行时间 | PM编码 | 设备 | 状态 |',
       '| :--- | :--- | :--- | :--- | :--- | :--- |'
     ];
 
@@ -98,7 +98,7 @@ async function pushToWechat(data, total) {
       const status = clean(item['状态']);
       const scheduleTime = clean(item['计划执行时间']);
       const emoji = STATUS_EMOJI[status] || '⚪';
-      lines.push(`| ${mpCode} | ${asset} | ${mpName} | ${responsible} | ${emoji} ${status} | ${scheduleTime} |`);
+      lines.push(`| ${mpName} | ${responsible} | ${scheduleTime} | ${mpCode} | ${asset} | ${emoji} ${status} |`);
     });
 
     const markdown = lines.join('\n');
