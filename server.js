@@ -624,7 +624,7 @@ app.get('/api/users', requireAdmin, async (req, res) => {
 app.get('/api/users/simple-list', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT username, chinese_name, department
+      `SELECT username, chinese_name, department, status
        FROM users
        WHERE username != 'admin'
        ORDER BY username ASC`
@@ -632,6 +632,19 @@ app.get('/api/users/simple-list', requireAuth, async (req, res) => {
     res.json({ success: true, users: rows });
   } catch (err) {
     console.error('获取用户简易列表失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
+// API：获取部门简易列表（所有已登录用户可用，用于下拉选择）
+app.get('/api/departments/simple-list', requireAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, department_name FROM departments ORDER BY department_name ASC`
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error('获取部门简易列表失败:', err.message);
     res.status(500).json({ error: '查询失败' });
   }
 });

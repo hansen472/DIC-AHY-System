@@ -95,6 +95,28 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 }
 .form-group textarea { resize: vertical; min-height: 120px; }
 
+/* 可搜索下拉框（combobox） */
+.combobox { position: relative; }
+.combobox .cb-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 100;
+  display: none;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+.combobox.open .cb-dropdown { display: block; }
+.cb-item { padding: 9px 12px; font-size: 14px; cursor: pointer; }
+.cb-item:hover { background: #f1f5f9; }
+.cb-item.selected { background: var(--primary-light); color: var(--primary); font-weight: 500; }
+.cb-empty { padding: 12px; font-size: 13px; color: var(--text-secondary); text-align: center; }
+
 .btn-submit {
   background: var(--primary);
   color: #fff;
@@ -152,9 +174,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
       <div class="form-grid">
         <div class="form-group">
           <label>偏差发现部门 <span style="color:#dc2626;">*</span></label>
-          <select id="dev-department">
-            <option value="">— 请选择部门 —</option>
-          </select>
+          <div class="combobox" id="cb-department">
+            <input type="text" class="cb-input" placeholder="请选择或输入过滤部门" autocomplete="off">
+            <input type="hidden" class="cb-value" id="dev-department">
+            <div class="cb-dropdown"></div>
+          </div>
         </div>
         <div class="form-group">
           <label>发现时间 <span style="color:#dc2626;">*</span></label>
@@ -162,9 +186,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         </div>
         <div class="form-group">
           <label>发现人 <span style="color:#dc2626;">*</span></label>
-          <select id="dev-reporter">
-            <option value="">— 请选择发现人 —</option>
-          </select>
+          <div class="combobox" id="cb-reporter">
+            <input type="text" class="cb-input" placeholder="请选择或输入过滤发现人" autocomplete="off">
+            <input type="hidden" class="cb-value" id="dev-reporter">
+            <div class="cb-dropdown"></div>
+          </div>
         </div>
         <div class="form-group">
           <label>涉及主体 <span style="color:#dc2626;">*</span></label>
@@ -203,42 +229,145 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 <script>
 let usersList = [];
+const comboboxes = {};
+
+/**
+ * 创建可搜索下拉框：显示全部选项，且可输入关键字过滤
+ * @param {string} containerId combobox 容器 id
+ * @param {Array<{value: string, label: string}>} options 全部选项
+ */
+function createCombobox(containerId, options) {
+  const container = document.getElementById(containerId);
+  const input = container.querySelector('.cb-input');
+  const hidden = container.querySelector('.cb-value');
+  const dropdown = container.querySelector('.cb-dropdown');
+  let filtered = options;
+
+  function renderList() {
+    dropdown.innerHTML = '';
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'cb-empty';
+      empty.textContent = '无匹配项';
+      dropdown.appendChild(empty);
+      return;
+    }
+    filtered.forEach(opt => {
+      const item = document.createElement('div');
+      item.className = 'cb-item' + (hidden.value === opt.value ? ' selected' : '');
+      item.textContent = opt.label;
+      item.addEventListener('mousedown', e => {
+        e.preventDefault(); // 阻止输入框先失焦导致点击失效
+        select(opt);
+      });
+      dropdown.appendChild(item);
+    });
+  }
+
+  function select(opt) {
+    hidden.value = opt.value;
+    input.value = opt.label;
+    container.classList.remove('open');
+  }
+
+  function filterOptions(keyword) {
+    const kw = (keyword || '').trim().toLowerCase();
+    if (!kw) {
+      filtered = options;
+    } else {
+      filtered = options.filter(opt =>
+        opt.label.toLowerCase().includes(kw) || String(opt.value).toLowerCase().includes(kw)
+      );
+    }
+  }
+
+  function open() {
+    filterOptions(''); // 展开时显示全部选项
+    container.classList.add('open');
+    renderList();
+  }
+
+  input.addEventListener('focus', () => { open(); input.select(); });
+  input.addEventListener('click', open);
+  input.addEventListener('input', () => {
+    filterOptions(input.value); // 输入时按内容过滤
+    container.classList.add('open');
+    renderList();
+  });
+  input.addEventListener('blur', () => {
+    // 失焦时：输入内容与某选项完全一致则选中；否则恢复已选项或清空
+    const exact = options.find(opt => opt.label === input.value.trim());
+    if (exact) {
+      select(exact);
+    } else if (hidden.value) {
+      const selected = options.find(opt => opt.value === hidden.value);
+      input.value = selected ? selected.label : '';
+    } else {
+      input.value = '';
+    }
+    container.classList.remove('open');
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      container.classList.remove('open');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (container.classList.contains('open') && filtered.length > 0) select(filtered[0]);
+    }
+  });
+
+  return {
+    getValue: () => hidden.value,
+    clear: () => { hidden.value = ''; input.value = ''; }
+  };
+}
+
+// 点击下拉框外部时关闭
+document.addEventListener('click', e => {
+  document.querySelectorAll('.combobox.open').forEach(cb => {
+    if (!cb.contains(e.target)) cb.classList.remove('open');
+  });
+});
 
 async function init() {
-  await loadUsers();
+  await loadOptions();
   initDevTime();
 }
 
-async function loadUsers() {
+async function loadOptions() {
   try {
-    const res = await fetch('/api/users/simple-list');
-    if (res.ok) {
-      const result = await res.json();
-      usersList = result.users || [];
+    const [deptRes, userRes] = await Promise.all([
+      fetch('/api/departments/simple-list'),
+      fetch('/api/users/simple-list')
+    ]);
 
-      // 发现人下拉：所有普通用户
-      const reporterSelect = document.getElementById('dev-reporter');
-      reporterSelect.innerHTML = '<option value="">— 请选择发现人 —</option>';
-      usersList.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u.username;
-        opt.textContent = u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username;
-        reporterSelect.appendChild(opt);
-      });
-
-      // 偏差发现部门下拉：从用户档案中提取不重复的部门名称
-      const departmentSelect = document.getElementById('dev-department');
-      departmentSelect.innerHTML = '<option value="">— 请选择部门 —</option>';
-      const departments = [...new Set(usersList.map(u => (u.department || '').trim()).filter(d => d))].sort();
-      departments.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d;
-        opt.textContent = d;
-        departmentSelect.appendChild(opt);
-      });
+    // 发现人：所有启用状态的普通用户
+    if (userRes.ok) {
+      const result = await userRes.json();
+      usersList = (result.users || []).filter(u => u.status === undefined || u.status === 1);
+      const reporters = usersList.map(u => ({
+        value: u.username,
+        label: u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username
+      }));
+      comboboxes.reporter = createCombobox('cb-reporter', reporters);
     }
+
+    // 偏差发现部门：优先取部门管理表中的全部部门；失败时从用户档案提取
+    let departments = [];
+    if (deptRes.ok) {
+      const deptResult = await deptRes.json();
+      if (deptResult.success) {
+        departments = (deptResult.data || []).map(d => ({ value: d.department_name, label: d.department_name }));
+      }
+    }
+    if (departments.length === 0) {
+      departments = [...new Set(usersList.map(u => (u.department || '').trim()).filter(Boolean))]
+        .sort()
+        .map(d => ({ value: d, label: d }));
+    }
+    comboboxes.department = createCombobox('cb-department', departments);
   } catch (e) {
-    console.error('加载用户列表失败:', e);
+    console.error('加载下拉数据失败:', e);
   }
 }
 
@@ -251,8 +380,8 @@ function initDevTime() {
 }
 
 function resetForm() {
-  document.getElementById('dev-department').value = '';
-  document.getElementById('dev-reporter').value = '';
+  if (comboboxes.department) comboboxes.department.clear();
+  if (comboboxes.reporter) comboboxes.reporter.clear();
   document.getElementById('dev-subject').value = '';
   document.getElementById('dev-model').value = '';
   document.getElementById('dev-spec').value = '';
