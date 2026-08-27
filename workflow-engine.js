@@ -865,6 +865,43 @@ class WorkflowEngine {
     });
   }
 
+  // 查询指定用户发起的流程实例（含当前待审批节点名称），用于“我提交的审批”
+  async getMyInstances(username, { limit = 100 } = {}) {
+    const [rows] = await pool.execute(
+      `SELECT i.*, d.module_key, d.name AS definition_name, d.version
+       FROM workflow_instances i
+       JOIN workflow_definitions d ON i.definition_id = d.id
+       WHERE i.created_by = ?
+       ORDER BY i.updated_at DESC
+       LIMIT ?`,
+      [username, limit]
+    );
+    const instances = rows.map(r => {
+      r.payload = parseJson(r.payload_json, {});
+      r.current_node_ids = parseJson(r.current_node_ids, []);
+      return r;
+    });
+    if (instances.length === 0) return instances;
+
+    // 批量查询这些实例的待办任务，汇总当前节点名称
+    const ids = instances.map(i => i.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const [taskRows] = await pool.execute(
+      `SELECT instance_id, node_name FROM workflow_tasks
+       WHERE status = 'pending' AND instance_id IN (${placeholders})`,
+      ids
+    );
+    const nodeMap = {};
+    taskRows.forEach(t => {
+      if (!nodeMap[t.instance_id]) nodeMap[t.instance_id] = [];
+      if (t.node_name && !nodeMap[t.instance_id].includes(t.node_name)) {
+        nodeMap[t.instance_id].push(t.node_name);
+      }
+    });
+    instances.forEach(i => { i.current_node_names = nodeMap[i.id] || []; });
+    return instances;
+  }
+
   async getInstanceHistory(instanceId) {
     const [rows] = await pool.execute(
       `SELECT h.*, t.assignee_username as original_assignee

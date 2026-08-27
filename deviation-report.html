@@ -418,8 +418,28 @@ function submitForm() {
     description: description
   };
 
-  console.log('偏差上报数据:', formData);
-  showToast('偏差上报提交功能待接入后端存储', 'success');
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+
+  fetch('/api/deviation-reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData)
+  })
+    .then(async res => {
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || '提交失败');
+      showToast('偏差上报已提交审批，可在"待办审批 - 我提交的审批"中查看进度', 'success');
+      resetForm();
+    })
+    .catch(err => {
+      showToast('提交失败：' + err.message, 'error');
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '提交';
+    });
 }
 
 function showToast(text, type) {

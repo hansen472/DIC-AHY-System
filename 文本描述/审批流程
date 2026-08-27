@@ -1,0 +1,70 @@
+一、现有审批功能分析
+1. 整体架构：通用审批流引擎
+系统已有一套与业务解耦的通用审批流引擎，由 4 部分组成:
+组件
+文件
+职责
+引擎核心
+workflow-engine.js
+流程解析、任务创建/完成、路由、条件计算、超时扫描
+API 路由
+workflow-routes.js
+流程定义 CRUD、启动实例、审批/驳回/转办、我的待办
+数据库
+sql/workflow-engine.sql
+5 张表(见下)
+管理页面
+workflow-designer / workflow-definitions / workflow-tasks .html
+可视化设计器、流程定义管理、待办审批
+2. 数据库 5 张表
+• workflow_definitions — 流程模板，绑定 module_key(业务模块标识)，支持版本号、触发条件表达式、优先级
+• workflow_instances — 运行实例，business_key 格式为 module_key:记录ID(如 supplier_qualifications:123),含业务数据快照 payload_json
+• workflow_tasks — 当前待办任务
+• workflow_task_history — 审批动作审计归档
+• workflow_instance_vars — 流程变量(供条件分支用)
+3. 核心能力
+• 节点类型:start / approval(审批)/ condition(条件分支)/ end
+• 会签模式:all(全部同意)/ any(或签,一人通过即可)/ ratio(按比例通过)
+• 审批人配置：固定用户名、用户选择器，以及特殊虚拟角色 [部门经理](运行时自动解析为发起人的直接上级——正好用上了我们之前给 users 表加的 direct_manager_username 外键)
+• 条件分支：白名单表达式求值，如 payload.category == 'production'、vars.amount > 1000
+• 超时提醒：每 5 分钟扫描逾期任务并发邮件
+• 模块钩子:workflowEngine.registerModule(moduleKey, { onProcessFinish, onTaskReject }) — 流程结束/驳回时事件驱动回调业务模块，无需轮询
+4. 现状(关键发现)
+• 目前只有 supplier_qualifications 一个模块注册了钩子(仅记录日志，见 server.js:3510),而且尚无任何业务表单真正调用过“启动流程”——引擎是完备的，但还没有实际业务接入
+• 设计器的模块下拉框(workflow-designer.html:136)目前只有 supplier_qualifications 和 training_records 两个选项
+• 偏差上报现状:deviation-report.html 的 submitForm() 只做了前端校验和 console.log,提示“待接入后端存储”——没有数据库表、没有 API、更没有流程触发
+￼
+二、将“偏差上报”接入审批流的方案
+需要做 5 件事:
+Step 1:创建业务表 sql/deviation-reports.sql
+存储表单数据 + 一个 status 字段(draft / pending_approval / approved / rejected)用于回写审批结果。字段与现有表单一一对应:department、dev_time、reporter、subject、model、spec、batch、quantity、description。
+Step 2:server.js 后端 API + 流程对接
+1. POST /api/deviation-reports — 保存记录 → 调用 workflowEngine.startInstance({ module_key: 'deviation_reports', business_key: 'deviation_reports:' + id, payload: 表单快照, created_by: 当前用户 }) → 状态置为 pending_approval
+2. GET /api/deviation-reports — 我的上报列表(含审批状态)
+3. workflowEngine.registerModule('deviation_reports', { ... }) — onProcessFinish 时把 status 回写为 approved,onTaskReject 时回写为 rejected
+Step 3:设计器增加模块选项
+workflow-designer.html 的 def-module 下拉框加 <option value="deviation_reports">偏差上报</option>,这样管理员才能为它设计流程。
+Step 4:前端对接
+• deviation-report.html 的 submitForm() 改为 POST 到 /api/deviation-reports,提交后提示“已提交审批”
+• (建议)页面下方加“我的上报记录”列表，展示每条记录的审批状态
+Step 5:管理员配置流程(使用层面)
+在流程设计器中为“偏差上报”画流程(如:开始 → 部门经理审批 → QA 审批 → 结束)，配置审批人和会签模式，然后启用。之后每次提交偏差上报就会自动走这个流程，审批人在“我的待办”(workflow-tasks.html)中处理。
+￼
+一个补充说明：目前审批待办页面只显示 business_key 字符串，不展示表单内容详情。审批人要看到偏差的具体内容，有两种方式：①把关键信息拼进 payload 并在待办弹窗中展示(需要小幅扩展 workflow-tasks.html);②通过 business_key 跳转到业务详情页。这个可以在实施时决定。是否需要我按上述 Step 1–4 开始实施？
+
+
+
+
+将“偏差上报”接入审批流的方案
+需要做 5 件事:
+Step 1:创建业务表 sql/deviation-reports.sql
+存储表单数据 + 一个 status 字段(draft / pending_approval / approved / rejected)用于回写审批结果。字段与现有表单一一对应:department、dev_time、reporter、subject、model、spec、batch、quantity、description。
+Step 2:server.js 后端 API + 流程对接
+1. POST /api/deviation-reports — 保存记录 → 调用 workflowEngine.startInstance({ module_key: 'deviation_reports', business_key: 'deviation_reports:' + id, payload: 表单快照, created_by: 当前用户 }) → 状态置为 pending_approval
+2. GET /api/deviation-reports — 我的上报列表(含审批状态)
+3. workflowEngine.registerModule('deviation_reports', { ... }) — onProcessFinish 时把 status 回写为 approved,onTaskReject 时回写为 rejected
+Step 3:设计器增加模块选项
+workflow-designer.html 的 def-module 下拉框加 <option value="deviation_reports">偏差上报</option>,这样管理员才能为它设计流程。
+Step 4:前端对接
+• deviation-report.html 的 submitForm() 改为 POST 到 /api/deviation-reports,提交后提示“已提交审批”
+• 在workflow-tasks.html中添加“我提交的审批”列表，展示每条记录的审批状态。

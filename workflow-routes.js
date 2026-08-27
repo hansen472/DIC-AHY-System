@@ -136,6 +136,17 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
     }
   });
 
+  // 注意：必须放在 /:id 参数路由之前，否则 my 会被当成 id
+  app.get('/api/workflow-instances/my', requireAuth, async (req, res) => {
+    try {
+      const rows = await engine.getMyInstances(getUsername(req));
+      res.json({ success: true, data: rows });
+    } catch (err) {
+      console.error('查询我发起的流程失败:', err);
+      res.status(500).json({ error: '查询失败' });
+    }
+  });
+
   app.get('/api/workflow-instances/:id', requireAuth, async (req, res) => {
     try {
       const instance = await engine.getInstance(null, parseInt(req.params.id, 10));

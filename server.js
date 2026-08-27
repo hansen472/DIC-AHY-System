@@ -3552,6 +3552,132 @@ workflowEngine.registerModule('supplier_qualifications', {
   }
 });
 
+// 注册偏差上报模块钩子：流程结束时回写审批状态
+workflowEngine.registerModule('deviation_reports', {
+  onProcessFinish: async ({ instance, result }) => {
+    try {
+      const reportId = parseBusinessId(instance.business_key);
+      if (!reportId) return;
+      // recalled 表示流程被发起人撤回，记录退回草稿状态待重新提交
+      const status = result === 'recalled' ? 'draft' : 'approved';
+      await pool.execute(
+        'UPDATE deviation_reports SET status = ? WHERE id = ?',
+        [status, reportId]
+      );
+    } catch (e) {
+      console.error('回写偏差上报审批结果失败:', e.message);
+    }
+  },
+  onTaskReject: async ({ instance }) => {
+    try {
+      const reportId = parseBusinessId(instance.business_key);
+      if (!reportId) return;
+      await pool.execute(
+        'UPDATE deviation_reports SET status = ? WHERE id = ?',
+        ['rejected', reportId]
+      );
+    } catch (e) {
+      console.error('回写偏差上报驳回状态失败:', e.message);
+    }
+  }
+});
+
+// 从 business_key（如 deviation_reports:12）解析业务记录ID
+function parseBusinessId(businessKey) {
+  if (!businessKey) return null;
+  const parts = String(businessKey).split(':');
+  const id = parseInt(parts[parts.length - 1], 10);
+  return isNaN(id) ? null : id;
+}
+
+// ==================== 偏差上报 API（接入审批流） ====================
+
+// 提交偏差上报：保存记录并启动审批流
+app.post('/api/deviation-reports', requireAuth, async (req, res) => {
+  try {
+    const { department, dev_time, reporter, reporter_name, subject, model, spec, batch, quantity, description } = req.body;
+
+    if (!department || !dev_time || !reporter || !subject || !description) {
+      return res.status(400).json({ error: '缺少必填字段（偏差发现部门/发现时间/发现人/涉及主体/偏差描述）' });
+    }
+
+    // 必须先有启用的审批流定义，避免产生不进流程的孤儿记录
+    const activeDef = await workflowEngine.getActiveDefinition('deviation_reports');
+    if (!activeDef) {
+      return res.status(400).json({ error: '偏差上报审批流未配置或未启用，请联系管理员在流程设计器中配置' });
+    }
+
+    const payload = {
+      department: String(department).trim(),
+      dev_time: dev_time,
+      reporter: reporter,
+      reporter_name: reporter_name ? String(reporter_name).trim() : null,
+      subject: String(subject).trim(),
+      model: model ? String(model).trim() : null,
+      spec: spec ? String(spec).trim() : null,
+      batch: batch ? String(batch).trim() : null,
+      quantity: quantity ? String(quantity).trim() : null,
+      description: String(description).trim()
+    };
+
+    const [insertResult] = await pool.execute(
+      `INSERT INTO deviation_reports
+       (department, dev_time, reporter, reporter_name, subject, \`model\`, spec, batch, quantity, description, status, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?)`,
+      [
+        payload.department,
+        payload.dev_time,
+        payload.reporter,
+        payload.reporter_name,
+        payload.subject,
+        payload.model,
+        payload.spec,
+        payload.batch,
+        payload.quantity,
+        payload.description,
+        getUsernameFromReq(req)
+      ]
+    );
+
+    const reportId = insertResult.insertId;
+
+    try {
+      await workflowEngine.startInstance({
+        module_key: 'deviation_reports',
+        business_key: `deviation_reports:${reportId}`,
+        payload: { id: reportId, ...payload },
+        created_by: getUsernameFromReq(req)
+      });
+    } catch (wfErr) {
+      // 启动流程失败时删除业务记录，避免产生未进入审批流的数据
+      await pool.execute('DELETE FROM deviation_reports WHERE id = ?', [reportId]);
+      throw wfErr;
+    }
+
+    res.json({ success: true, id: reportId, message: '偏差上报已提交审批' });
+  } catch (err) {
+    console.error('提交偏差上报失败:', err);
+    res.status(500).json({ error: err.message || '提交失败' });
+  }
+});
+
+// 我的偏差上报列表（含审批状态）
+app.get('/api/deviation-reports', requireAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, department, dev_time, reporter, reporter_name, subject, \`model\`, spec, batch, quantity, description, status, created_by, created_at
+       FROM deviation_reports
+       WHERE created_by = ?
+       ORDER BY id DESC`,
+      [getUsernameFromReq(req)]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error('查询偏差上报列表失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
 // 启动审批超时扫描（每 5 分钟）
 workflowEngine.startTimeoutCheck(5 * 60 * 1000);
 

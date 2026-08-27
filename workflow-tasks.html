@@ -121,6 +121,7 @@ tr:hover td { background: #f7fafc; }
 
   <div class="tabs-container">
     <button class="tab-btn active" data-tab="my" onclick="switchTab('my')">我的待办</button>
+    <button class="tab-btn" data-tab="submitted" onclick="switchTab('submitted')">我提交的审批</button>
     <button class="tab-btn" id="tab-all" data-tab="all" onclick="switchTab('all')" style="display:none;">全部待办</button>
     <button class="tab-btn btn-secondary" onclick="loadTasks()" style="margin-left:auto;">刷新</button>
   </div>
@@ -216,6 +217,7 @@ let currentUser = '';
 let canViewAll = false;
 let canTransfer = false;
 let tasksData = [];
+let submittedData = [];
 let activeTaskId = null;
 
 async function init() {
@@ -264,13 +266,33 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  document.getElementById('list-title').textContent = tab === 'my' ? '我的待办任务' : '全部待办任务';
+  const titles = { my: '我的待办任务', submitted: '我提交的审批', all: '全部待办任务' };
+  document.getElementById('list-title').textContent = titles[tab] || '任务列表';
   loadTasks();
 }
 
 async function loadTasks() {
   document.getElementById('task-list').innerHTML = '加载中...';
   try {
+    // 我提交的审批：展示当前用户发起的流程实例及审批状态
+    if (currentTab === 'submitted') {
+      const res = await fetch('/api/workflow-instances/my');
+      if (!res.ok) {
+        let msg = '加载失败';
+        try {
+          const errData = await res.json();
+          msg = errData.error || errData.message || ('HTTP ' + res.status);
+        } catch (e) {
+          msg = 'HTTP ' + res.status;
+        }
+        throw new Error(msg);
+      }
+      const result = await res.json();
+      submittedData = result.data || [];
+      renderSubmittedList();
+      return;
+    }
+
     const url = currentTab === 'my' ? '/api/workflow-tasks/my' : '/api/workflow-tasks/all-pending';
     const res = await fetch(url);
     if (!res.ok) {
@@ -353,6 +375,72 @@ function renderTaskList() {
 
   html += '</tbody></table>';
   document.getElementById('task-list').innerHTML = html;
+}
+
+function renderSubmittedList() {
+  if (submittedData.length === 0) {
+    document.getElementById('task-list').innerHTML = '<div class="empty">暂无提交的审批</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th>实例ID</th>
+        <th>流程</th>
+        <th>业务摘要</th>
+        <th>当前节点</th>
+        <th>状态</th>
+        <th class="date-col">发起时间</th>
+        <th class="action-col">操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  submittedData.forEach(ins => {
+    const summary = formatInstanceSummary(ins);
+    const nodeNames = (ins.current_node_names || []).join('、');
+    html += `
+      <tr>
+        <td>${ins.id}</td>
+        <td class="td-wrap" title="${escapeHtml(ins.definition_name)}">${escapeHtml(ins.definition_name)}</td>
+        <td class="td-wrap" title="${escapeHtml(summary)}">${escapeHtml(summary)}</td>
+        <td class="td-wrap" title="${escapeHtml(nodeNames)}">${nodeNames ? escapeHtml(nodeNames) : '-'}</td>
+        <td>${formatInstanceStatus(ins.status)}</td>
+        <td class="date-col">${formatDateTime(ins.created_at)}</td>
+        <td class="action-col">
+          <button class="btn-primary" onclick="openHistoryModal(${ins.id})">历史</button>
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('task-list').innerHTML = html;
+}
+
+function formatInstanceStatus(status) {
+  const map = {
+    running: '审批中',
+    completed: '已通过',
+    rejected: '已驳回',
+    recalled: '已撤回'
+  };
+  const clsMap = {
+    running: 'status-pending',
+    completed: 'status-completed',
+    rejected: 'status-rejected',
+    recalled: 'status-cancelled'
+  };
+  const text = map[status] || status;
+  return `<span class="status-badge ${clsMap[status] || 'status-pending'}">${escapeHtml(text)}</span>`;
+}
+
+function formatInstanceSummary(ins) {
+  const p = ins.payload || {};
+  // 业务表单快照：优先展示 部门 · 涉及主体（如偏差上报）
+  if (p.department && p.subject) return p.department + ' · ' + p.subject;
+  if (p.subject) return p.subject;
+  return ins.business_key || '';
 }
 
 async function openApproveModal(taskId) {
