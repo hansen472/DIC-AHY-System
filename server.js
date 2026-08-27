@@ -140,6 +140,9 @@ app.get('/permission-admin.html', requireAdminPage, (req, res) => {
 app.get('/user-management.html', requireAdminPage, (req, res) => {
   res.sendFile(path.join(__dirname, 'user-management.html'));
 });
+app.get('/company-management.html', requireAdminPage, (req, res) => {
+  res.sendFile(path.join(__dirname, 'company-management.html'));
+});
 app.get('/operation-logs.html', requirePermissionPage('operation_logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'operation-logs.html'));
 });
@@ -397,6 +400,97 @@ app.get('/api/my-permissions', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('查询我的权限失败:', err);
     res.status(500).json({ error: '查询权限失败' });
+  }
+});
+
+// ========== 公司管理（组织管理） ==========
+
+// API：查询公司列表（仅管理员，支持按公司名称搜索）
+app.get('/api/companies', requireAdmin, async (req, res) => {
+  const { keyword } = req.query;
+  try {
+    let sql = 'SELECT id, company_name, company_address, cost_center, created_at, updated_at FROM companies';
+    const params = [];
+    if (keyword && String(keyword).trim()) {
+      sql += ' WHERE company_name LIKE ?';
+      params.push(`%${String(keyword).trim()}%`);
+    }
+    sql += ' ORDER BY id ASC';
+    const [rows] = await pool.execute(sql, params);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({ error: '公司管理功能未初始化，请先执行数据库迁移脚本 sql/companies.sql' });
+    }
+    console.error('查询公司列表失败:', err.message);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
+// API：新增公司（仅管理员）
+app.post('/api/companies', requireAdmin, async (req, res) => {
+  const { company_name, company_address, cost_center } = req.body;
+  if (!company_name || typeof company_name !== 'string' || !company_name.trim()) {
+    return res.status(400).json({ error: '请输入公司名称' });
+  }
+  try {
+    const [result] = await pool.execute(
+      'INSERT INTO companies (company_name, company_address, cost_center) VALUES (?, ?, ?)',
+      [company_name.trim(), (company_address || '').trim(), (cost_center || '').trim()]
+    );
+    res.json({ success: true, message: '公司已添加', id: result.insertId });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: '该公司名称已存在' });
+    }
+    console.error('新增公司失败:', err.message);
+    res.status(500).json({ error: '新增失败' });
+  }
+});
+
+// API：修改公司（仅管理员）
+app.put('/api/companies/:id', requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) {
+    return res.status(400).json({ error: '无效的公司ID' });
+  }
+  const { company_name, company_address, cost_center } = req.body;
+  if (!company_name || typeof company_name !== 'string' || !company_name.trim()) {
+    return res.status(400).json({ error: '请输入公司名称' });
+  }
+  try {
+    const [result] = await pool.execute(
+      'UPDATE companies SET company_name = ?, company_address = ?, cost_center = ? WHERE id = ?',
+      [company_name.trim(), (company_address || '').trim(), (cost_center || '').trim(), id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '公司不存在' });
+    }
+    res.json({ success: true, message: '公司信息已更新' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: '该公司名称已存在' });
+    }
+    console.error('修改公司失败:', err.message);
+    res.status(500).json({ error: '修改失败' });
+  }
+});
+
+// API：删除公司（仅管理员）
+app.delete('/api/companies/:id', requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) {
+    return res.status(400).json({ error: '无效的公司ID' });
+  }
+  try {
+    const [result] = await pool.execute('DELETE FROM companies WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '公司不存在' });
+    }
+    res.json({ success: true, message: '公司已删除' });
+  } catch (err) {
+    console.error('删除公司失败:', err.message);
+    res.status(500).json({ error: '删除失败' });
   }
 });
 

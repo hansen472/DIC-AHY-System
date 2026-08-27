@@ -400,6 +400,9 @@ body {
         <a href="/user-management.html" class="nav-sub-item" id="nav-user-management" style="display:none;">
           <span>用户管理</span>
         </a>
+        <a href="/company-management.html" class="nav-sub-item" id="nav-company-management" style="display:none;">
+          <span>公司管理</span>
+        </a>
       </div>
     </div>
 
@@ -602,10 +605,11 @@ document.getElementById('nav-qc-maintenance').style.display = 'flex';
         permissionGroup.style.display = 'block';
       }
 
-      // 组织管理分组：包含用户管理，仅对管理员可见
+      // 组织管理分组：包含用户管理和公司管理，仅对管理员可见
       const organizationGroup = document.getElementById('nav-organization-group');
       if (isAdmin) {
         document.getElementById('nav-user-management').style.display = 'flex';
+        document.getElementById('nav-company-management').style.display = 'flex';
         organizationGroup.style.display = 'block';
       }
 
