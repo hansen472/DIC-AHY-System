@@ -68,3 +68,5 @@ workflow-designer.html 的 def-module 下拉框加 <option value="deviation_repo
 Step 4:前端对接
 • deviation-report.html 的 submitForm() 改为 POST 到 /api/deviation-reports,提交后提示“已提交审批”
 • 在workflow-tasks.html中添加“我提交的审批”列表，展示每条记录的审批状态。
+
+现在我提交了一个偏差报告，待审批人审批。可为什么我在“全部待办”中看到了这个任务，并且可以进行审批。这是我发起的审批，我只能在”我提交的审批“中看到这个任务。不应该在”全部待办“中看到这个任务。

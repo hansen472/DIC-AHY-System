@@ -252,7 +252,8 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-tasks/all-pending', requirePermission('workflow_view_task'), async (req, res) => {
     try {
-      const tasks = await engine.getAllPendingTasks();
+      // 排除当前用户自己发起的流程任务，自己提交的审批在"我提交的审批"中查看
+      const tasks = await engine.getAllPendingTasks({ excludeCreatedBy: getUsername(req) });
       res.json({ success: true, data: tasks });
     } catch (err) {
       console.error('查询全部待办任务失败:', err);

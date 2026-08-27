@@ -599,6 +599,10 @@ class WorkflowEngine {
       console.log(`[WorkflowEngine] completeTask 读取任务 #${taskId} status=${task.status} instance_status=${task.instance_status}`);
       if (task.status !== 'pending') throw new Error('任务已处理');
       if (task.instance_status !== 'running') throw new Error('流程实例已结束');
+      // 只有该任务的审批人本人可以处理，防止越权审批他人任务
+      if (completed_by && task.assignee_username !== completed_by) {
+        throw new Error('无权处理该任务：您不是该任务的审批人');
+      }
 
       const instanceId = task.instance_id;
       const definition = await this.getDefinition(task.definition_id);
@@ -931,15 +935,20 @@ class WorkflowEngine {
     });
   }
 
-  async getAllPendingTasks() {
-    const [rows] = await pool.execute(
-      `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, d.module_key, d.name as definition_name
-       FROM workflow_tasks t
-       JOIN workflow_instances i ON t.instance_id = i.id
-       JOIN workflow_definitions d ON i.definition_id = d.id
-       WHERE t.status = 'pending'
-       ORDER BY t.created_at DESC`
-    );
+  async getAllPendingTasks({ excludeCreatedBy } = {}) {
+    let sql = `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, i.created_by as instance_created_by, d.module_key, d.name as definition_name
+               FROM workflow_tasks t
+               JOIN workflow_instances i ON t.instance_id = i.id
+               JOIN workflow_definitions d ON i.definition_id = d.id
+               WHERE t.status = 'pending'`;
+    const params = [];
+    // 排除当前用户自己发起的流程任务：自己提交的审批只在"我提交的审批"中展示
+    if (excludeCreatedBy) {
+      sql += ' AND i.created_by != ?';
+      params.push(excludeCreatedBy);
+    }
+    sql += ' ORDER BY t.created_at DESC';
+    const [rows] = await pool.execute(sql, params);
     console.log(`[WorkflowEngine] getAllPendingTasks count=${rows.length} ids=${rows.map(r => r.id).join(',')}`);
     return rows.map(r => {
       r.payload = parseJson(r.payload_json, {});

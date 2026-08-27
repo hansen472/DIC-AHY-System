@@ -365,7 +365,7 @@ function renderTaskList() {
         <td class="date-col">${dueTime}</td>
         <td class="action-col">
           ${t.status === 'pending' ? `
-            <button class="btn-success" onclick="openApproveModal(${t.id})">审批</button>
+            ${isMine ? `<button class="btn-success" onclick="openApproveModal(${t.id})">审批</button>` : ''}
             ${(isMine || canTransfer) ? `<button class="btn-warning" onclick="openTransferModal(${t.id})">转交</button>` : ''}
           ` : ''}
           <button class="btn-primary" onclick="openHistoryModal(${t.instance_id})">历史</button>
