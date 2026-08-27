@@ -502,9 +502,11 @@ app.get('/api/departments', requireAdmin, async (req, res) => {
   const { keyword } = req.query;
   try {
     let sql = `SELECT d.id, d.department_name, d.department_address, d.cost_center, d.department_manager,
+                      d.manager_username, u.chinese_name AS manager_chinese_name,
                       d.company_id, c.company_name, d.created_at, d.updated_at
                FROM departments d
-               LEFT JOIN companies c ON d.company_id = c.id`;
+               LEFT JOIN companies c ON d.company_id = c.id
+               LEFT JOIN users u ON d.manager_username = u.username`;
     const params = [];
     if (keyword && String(keyword).trim()) {
       sql += ' WHERE d.department_name LIKE ?';
@@ -524,14 +526,14 @@ app.get('/api/departments', requireAdmin, async (req, res) => {
 
 // API：新增部门（仅管理员）
 app.post('/api/departments', requireAdmin, async (req, res) => {
-  const { department_name, department_address, cost_center, department_manager, company_id } = req.body;
+  const { department_name, department_address, cost_center, department_manager, manager_username, company_id } = req.body;
   if (!department_name || typeof department_name !== 'string' || !department_name.trim()) {
     return res.status(400).json({ error: '请输入部门名称' });
   }
   try {
     const [result] = await pool.execute(
-      'INSERT INTO departments (department_name, department_address, cost_center, department_manager, company_id) VALUES (?, ?, ?, ?, ?)',
-      [department_name.trim(), (department_address || '').trim(), (cost_center || '').trim(), (department_manager || '').trim(), company_id ? parseInt(company_id, 10) : null]
+      'INSERT INTO departments (department_name, department_address, cost_center, department_manager, manager_username, company_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [department_name.trim(), (department_address || '').trim(), (cost_center || '').trim(), (department_manager || '').trim(), manager_username || null, company_id ? parseInt(company_id, 10) : null]
     );
     res.json({ success: true, message: '部门已添加', id: result.insertId });
   } catch (err) {
@@ -549,14 +551,14 @@ app.put('/api/departments/:id', requireAdmin, async (req, res) => {
   if (!id) {
     return res.status(400).json({ error: '无效的部门ID' });
   }
-  const { department_name, department_address, cost_center, department_manager, company_id } = req.body;
+  const { department_name, department_address, cost_center, department_manager, manager_username, company_id } = req.body;
   if (!department_name || typeof department_name !== 'string' || !department_name.trim()) {
     return res.status(400).json({ error: '请输入部门名称' });
   }
   try {
     const [result] = await pool.execute(
-      'UPDATE departments SET department_name = ?, department_address = ?, cost_center = ?, department_manager = ?, company_id = ? WHERE id = ?',
-      [department_name.trim(), (department_address || '').trim(), (cost_center || '').trim(), (department_manager || '').trim(), company_id ? parseInt(company_id, 10) : null, id]
+      'UPDATE departments SET department_name = ?, department_address = ?, cost_center = ?, department_manager = ?, manager_username = ?, company_id = ? WHERE id = ?',
+      [department_name.trim(), (department_address || '').trim(), (cost_center || '').trim(), (department_manager || '').trim(), manager_username || null, company_id ? parseInt(company_id, 10) : null, id]
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: '部门不存在' });

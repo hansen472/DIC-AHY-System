@@ -167,7 +167,9 @@ tr:hover td { background: #f9fafb; }
     </div>
     <div class="form-group">
       <label>部门负责人</label>
-      <input type="text" id="dept-manager" placeholder="例如：张三" maxlength="100">
+      <select id="dept-manager-username">
+        <option value="">— 请选择负责人 —</option>
+      </select>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeModal()">取消</button>
@@ -179,10 +181,29 @@ tr:hover td { background: #f9fafb; }
 <script>
 let departments = [];
 let companiesList = [];
+let usersList = [];
 
 async function init() {
-  await loadCompaniesList();
+  await Promise.all([loadCompaniesList(), loadUsersList()]);
   await loadDepartments();
+}
+
+async function loadUsersList() {
+  try {
+    const res = await fetch('/api/users');
+    if (res.ok) {
+      const result = await res.json();
+      usersList = (result.data || []).filter(u => u.username !== 'admin' && u.status === 1);
+      const select = document.getElementById('dept-manager-username');
+      select.innerHTML = '<option value="">— 请选择负责人 —</option>';
+      usersList.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = (u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username);
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {}
 }
 
 async function loadCompaniesList() {
@@ -245,7 +266,7 @@ function renderTable() {
       <td>${escapeHtml(d.company_name || '-')}</td>
       <td>${escapeHtml(d.department_address || '-')}</td>
       <td>${escapeHtml(d.cost_center || '-')}</td>
-      <td>${escapeHtml(d.department_manager || '-')}</td>
+      <td>${escapeHtml(d.manager_chinese_name || d.manager_username || '-')}</td>
       <td>
         <button class="btn-edit" onclick="openEditModal(${d.id})">编辑</button>
         <button class="btn-delete" onclick="deleteDepartment(${d.id}, '${escapeHtml(d.department_name)}')">删除</button>
@@ -264,7 +285,7 @@ function openAddModal() {
   document.getElementById('dept-company-id').value = '';
   document.getElementById('dept-address').value = '';
   document.getElementById('dept-cost-center').value = '';
-  document.getElementById('dept-manager').value = '';
+  document.getElementById('dept-manager-username').value = '';
   document.getElementById('dept-modal').classList.add('active');
 }
 
@@ -277,7 +298,7 @@ function openEditModal(id) {
   document.getElementById('dept-company-id').value = d.company_id || '';
   document.getElementById('dept-address').value = d.department_address || '';
   document.getElementById('dept-cost-center').value = d.cost_center || '';
-  document.getElementById('dept-manager').value = d.department_manager || '';
+  document.getElementById('dept-manager-username').value = d.manager_username || '';
   document.getElementById('dept-modal').classList.add('active');
 }
 
@@ -291,19 +312,24 @@ async function saveDepartment() {
   const companyId = document.getElementById('dept-company-id').value;
   const deptAddress = document.getElementById('dept-address').value.trim();
   const costCenter = document.getElementById('dept-cost-center').value.trim();
-  const deptManager = document.getElementById('dept-manager').value.trim();
+  const managerUsername = document.getElementById('dept-manager-username').value;
 
   if (!deptName) {
     showMessage('请输入部门名称', 'error');
     return;
   }
 
+  // Look up display name for department_manager text column
+  const selectedUser = usersList.find(u => u.username === managerUsername);
+  const departmentManager = selectedUser ? (selectedUser.chinese_name || selectedUser.username) : '';
+
   const body = {
     department_name: deptName,
     company_id: companyId || null,
     department_address: deptAddress,
     cost_center: costCenter,
-    department_manager: deptManager
+    department_manager: departmentManager,
+    manager_username: managerUsername || null
   };
 
   try {
