@@ -104,6 +104,20 @@ tr:hover td { background: #f7fafc; }
 .history-item .meta { font-size: 12px; color: #718096; margin-bottom: 6px; }
 .history-item .action { font-weight: 600; color: #2c3e50; }
 .history-item .comment { margin-top: 6px; color: #4a5568; font-size: 13px; }
+
+/* 业务详情弹窗（双击待办条目查看） */
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+.detail-item.full { grid-column: 1 / -1; }
+.detail-label { font-size: 12px; color: #718096; margin-bottom: 4px; font-weight: 500; }
+.detail-value {
+  font-size: 14px; color: #2d3748; background: #f7fafc;
+  padding: 8px 10px; border-radius: 6px; border: 1px solid #edf2f7;
+  word-break: break-word; white-space: pre-wrap; min-height: 38px;
+}
+.detail-context {
+  font-size: 13px; color: #2b6cb0; background: #ebf8ff; border: 1px solid #bee3f8;
+  border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; line-height: 1.6;
+}
 </style>
 </head>
 <body>
@@ -207,6 +221,22 @@ tr:hover td { background: #f7fafc; }
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeModal('history-modal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 业务详情弹窗（双击待办条目查看） -->
+<div id="detail-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="detail-modal-title">详情</h3>
+      <button class="btn-secondary" onclick="closeModal('detail-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div id="detail-content"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('detail-modal')">关闭</button>
     </div>
   </div>
 </div>
@@ -354,7 +384,7 @@ function renderTaskList() {
     const createdAt = formatDateTime(t.created_at);
     const isMine = t.assignee_username === currentUser;
     html += `
-      <tr>
+      <tr ondblclick="onRowDblClick(${t.id}, event)" title="双击查看详情">
         <td>${t.id}</td>
         <td class="td-wrap" title="${escapeHtml(t.definition_name)}">${escapeHtml(t.definition_name)}</td>
         <td class="td-wrap" title="${escapeHtml(t.node_name)}">${escapeHtml(t.node_name)}</td>
@@ -441,6 +471,79 @@ function formatInstanceSummary(ins) {
   if (p.department && p.subject) return p.department + ' · ' + p.subject;
   if (p.subject) return p.subject;
   return ins.business_key || '';
+}
+
+// 双击待办条目：弹窗查看业务数据详情（忽略对行内按钮的双击）
+function onRowDblClick(taskId, event) {
+  if (event && event.target && event.target.closest && event.target.closest('button')) return;
+  openDetailModal(taskId);
+}
+
+function openDetailModal(taskId) {
+  const task = tasksData.find(t => t.id === taskId);
+  if (!task) return;
+  const payload = task.payload || {};
+
+  const context = `流程：${task.definition_name || '-'} ｜ 节点：${task.node_name || '-'} ｜ 业务标识：${task.business_key || '-'}`;
+  let bodyHtml = `<div class="detail-context">${escapeHtml(context)}</div>`;
+
+  if (task.module_key === 'deviation_reports' || (p_isDeviationPayload(payload))) {
+    document.getElementById('detail-modal-title').textContent = '偏差报告详情';
+    bodyHtml += renderDeviationDetail(payload);
+  } else {
+    document.getElementById('detail-modal-title').textContent = '业务数据详情';
+    bodyHtml += renderGenericDetail(payload);
+  }
+
+  document.getElementById('detail-content').innerHTML = bodyHtml;
+  document.getElementById('detail-modal').classList.add('active');
+}
+
+// 判断负载是否为偏差上报表单（未识别模块时按字段特征兜底识别）
+function p_isDeviationPayload(p) {
+  return p.department !== undefined && p.subject !== undefined && p.description !== undefined;
+}
+
+// 偏差报告全部字段详情
+function renderDeviationDetail(p) {
+  const fields = [
+    ['偏差发现部门', p.department],
+    ['发现时间', p.dev_time],
+    ['发现人', p.reporter_name ? p.reporter_name + ' (' + p.reporter + ')' : p.reporter],
+    ['涉及主体', p.subject],
+    ['涉及型号', p.model],
+    ['涉及的规格', p.spec],
+    ['涉及的批号/编号', p.batch],
+    ['涉及的数量', p.quantity],
+    ['详细的偏差描述', p.description, true]
+  ];
+  let html = '<div class="detail-grid">';
+  fields.forEach(([label, value, full]) => {
+    html += `
+      <div class="detail-item${full ? ' full' : ''}">
+        <div class="detail-label">${label}</div>
+        <div class="detail-value">${escapeHtml(value || '-')}</div>
+      </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+// 其他业务模块的通用键值详情
+function renderGenericDetail(p) {
+  const entries = Object.entries(p || {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
+  if (entries.length === 0) return '<div class="empty">暂无业务数据</div>';
+  let html = '<div class="detail-grid">';
+  entries.forEach(([key, value]) => {
+    const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    html += `
+      <div class="detail-item${text.length > 60 ? ' full' : ''}">
+        <div class="detail-label">${escapeHtml(key)}</div>
+        <div class="detail-value">${escapeHtml(text)}</div>
+      </div>`;
+  });
+  html += '</div>';
+  return html;
 }
 
 async function openApproveModal(taskId) {
