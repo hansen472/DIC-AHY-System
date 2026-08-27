@@ -124,7 +124,9 @@ tr { cursor: pointer; }
           </div>
           <div class="form-group">
             <label>直接上级</label>
-            <input type="text" id="edit-direct-manager" placeholder="请输入直接上级" maxlength="50">
+            <select id="edit-direct-manager-username">
+              <option value="">— 请选择直接上级 —</option>
+            </select>
           </div>
           <div class="form-group">
             <label>Email</label>
@@ -177,10 +179,11 @@ tr { cursor: pointer; }
 let usersData = [];
 let companiesList = [];
 let departmentsList = [];
+let managerOptions = [];
 let isEditMode = false;
 
 async function init() {
-  await Promise.all([loadCompaniesList(), loadDepartmentsList()]);
+  await Promise.all([loadCompaniesList(), loadDepartmentsList(), loadManagerOptions()]);
   await loadUser();
   await loadUsers();
 }
@@ -216,6 +219,24 @@ async function loadDepartmentsList() {
         opt.value = d.id;
         const label = d.company_name ? d.department_name + ' (' + d.company_name + ')' : d.department_name;
         opt.textContent = label;
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {}
+}
+
+async function loadManagerOptions() {
+  try {
+    const res = await fetch('/api/users');
+    if (res.ok) {
+      const result = await res.json();
+      managerOptions = (result.data || []).filter(u => u.username !== 'admin' && u.status === 1);
+      const select = document.getElementById('edit-direct-manager-username');
+      select.innerHTML = '<option value="">— 请选择直接上级 —</option>';
+      managerOptions.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username;
         select.appendChild(opt);
       });
     }
@@ -325,7 +346,7 @@ function renderUserList() {
         <td>${escapeHtml(u.company_name)}</td>
         <td>${escapeHtml(u.dept_name || u.department)}</td>
         <td>${escapeHtml(u.position)}</td>
-        <td>${escapeHtml(u.direct_manager)}</td>
+        <td>${escapeHtml(u.direct_manager_name || u.direct_manager)}</td>
         <td>${escapeHtml(u.email)}</td>
         <td>${formatDate(u.hire_date)}</td>
         <td><span class="badge ${statusClass}">${statusText}</span></td>
@@ -347,6 +368,7 @@ function openAddModal() {
   document.getElementById('edit-status').value = '1';
   document.getElementById('edit-company-id').value = '';
   document.getElementById('edit-department-id').value = '';
+  document.getElementById('edit-direct-manager-username').value = '';
 
   document.getElementById('edit-username-input').disabled = false;
   document.getElementById('password-section').style.display = 'block';
@@ -376,7 +398,7 @@ async function openEditModal(username) {
     document.getElementById('edit-company-id').value = u.company_id || '';
     document.getElementById('edit-department-id').value = u.department_id || '';
     document.getElementById('edit-position').value = u.position || '';
-    document.getElementById('edit-direct-manager').value = u.direct_manager || '';
+    document.getElementById('edit-direct-manager-username').value = u.direct_manager_username || '';
     document.getElementById('edit-email').value = u.email || '';
     document.getElementById('edit-hire-date').value = formatDateInput(u.hire_date);
     document.getElementById('edit-status').value = String(u.status);
@@ -514,7 +536,9 @@ async function saveUser() {
   const selectedDept = departmentsList.find(d => d.id == departmentId);
   const department = selectedDept ? selectedDept.department_name : '';
   const position = document.getElementById('edit-position').value.trim();
-  const directManager = document.getElementById('edit-direct-manager').value.trim();
+  const directManagerUsername = document.getElementById('edit-direct-manager-username').value;
+  const selectedManager = managerOptions.find(u => u.username === directManagerUsername);
+  const directManager = selectedManager ? (selectedManager.chinese_name || selectedManager.username) : '';
   const email = document.getElementById('edit-email').value.trim();
   const hireDate = document.getElementById('edit-hire-date').value;
   const status = parseInt(document.getElementById('edit-status').value, 10);
@@ -546,6 +570,7 @@ async function saveUser() {
           department: department,
           department_id: departmentId || null,
           direct_manager: directManager,
+          direct_manager_username: directManagerUsername || null,
           email: email,
           position: position,
           hire_date: hireDate
@@ -606,6 +631,7 @@ async function saveUser() {
           department: department,
           department_id: departmentId || null,
           direct_manager: directManager,
+          direct_manager_username: directManagerUsername || null,
           email: email,
           position: position,
           hire_date: hireDate
