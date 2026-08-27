@@ -71,15 +71,6 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // 显式路由：防止 html 文件被静态服务直接暴露
-app.get('/index.html', requirePermissionPage('print'), (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-app.get('/select-print-record.html', requirePermissionPage('print'), (req, res) => {
-  res.sendFile(path.join(__dirname, 'select-print-record.html'));
-});
-app.get('/entry-print-record.html', requirePermissionPage('print'), (req, res) => {
-  res.sendFile(path.join(__dirname, 'entry-print-record.html'));
-});
 app.get('/backup-management.html', requirePermissionPage('backup_management'), (req, res) => {
   res.sendFile(path.join(__dirname, 'backup-management.html'));
 });
