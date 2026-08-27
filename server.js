@@ -3678,7 +3678,7 @@ app.get('/api/deviation-reports', requireAuth, async (req, res) => {
   }
 });
 
-// 重新提交偏差上报：仅"已驳回/已通过"的记录可操作，修改内容后发起新一轮审批
+// 重新提交偏差上报：仅"已驳回"的记录可操作，修改内容后发起新一轮审批
 app.post('/api/deviation-reports/:id/resubmit', requireAuth, async (req, res) => {
   try {
     const reportId = parseInt(req.params.id, 10);
@@ -3701,9 +3701,9 @@ app.post('/api/deviation-reports/:id/resubmit', requireAuth, async (req, res) =>
       return res.status(403).json({ error: '只能重新提交自己上报的偏差报告' });
     }
 
-    // 仅"已驳回"和"已通过"的记录可以重新提交
-    if (rows[0].status !== 'rejected' && rows[0].status !== 'approved') {
-      return res.status(400).json({ error: '仅"已驳回"或"已通过"的偏差报告可以重新提交' });
+    // 仅"已驳回"的记录可以重新提交
+    if (rows[0].status !== 'rejected') {
+      return res.status(400).json({ error: '仅"已驳回"的偏差报告可以重新提交' });
     }
 
     const activeDef = await workflowEngine.getActiveDefinition('deviation_reports');
