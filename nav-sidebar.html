@@ -243,11 +243,6 @@ body {
     <p>功能导航</p>
   </div>
   <div class="nav-menu sidebar-scroll">
-    <a href="/index.html" class="nav-item" id="nav-print" style="display:none;">
-      <span class="icon">🖨️</span>
-      <span>生产记录打印</span>
-    </a>
-
     <div class="nav-group sidebar-group" id="nav-production-records-group" style="display:none;">
       <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
         <div class="title-left">
@@ -257,8 +252,8 @@ body {
         <span class="arrow-icon">▼</span>
       </div>
       <div class="nav-sub-menu sidebar-group-child">
-        <a href="/select-print-record.html" class="nav-sub-item" id="nav-select-print-record" style="display:none;">
-          <span>选择打印记录</span>
+        <a href="/index.html" class="nav-sub-item" id="nav-print" style="display:none;">
+          <span>生产记录打印</span>
         </a>
       </div>
     </div>
@@ -534,9 +529,9 @@ function initSidebarGroups() {
       const perms = permData.success ? permData.permissions : {};
 
       // 根据权限显示功能入口
-      if (perms.print)     document.getElementById('nav-print').style.display = 'flex';
+      // 生产记录分组：包含生产记录打印，共用 print 权限
       if (perms.print) {
-        document.getElementById('nav-select-print-record').style.display = 'flex';
+        document.getElementById('nav-print').style.display = 'flex';
         document.getElementById('nav-production-records-group').style.display = 'block';
       }
       if (perms.dashboard) document.getElementById('nav-dashboard').style.display = 'flex';
