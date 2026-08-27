@@ -107,6 +107,12 @@ tr { cursor: pointer; }
             <input type="text" id="edit-chinese-name" placeholder="请输入中文名" maxlength="50">
           </div>
           <div class="form-group">
+            <label>公司名称</label>
+            <select id="edit-company-id">
+              <option value="">— 请选择公司 —</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>部门</label>
             <input type="text" id="edit-department" placeholder="请输入部门" maxlength="100">
           </div>
@@ -167,11 +173,31 @@ tr { cursor: pointer; }
 
 <script>
 let usersData = [];
+let companiesList = [];
 let isEditMode = false;
 
 async function init() {
+  await loadCompaniesList();
   await loadUser();
   await loadUsers();
+}
+
+async function loadCompaniesList() {
+  try {
+    const res = await fetch('/api/companies');
+    if (res.ok) {
+      const result = await res.json();
+      companiesList = result.data || [];
+      const select = document.getElementById('edit-company-id');
+      select.innerHTML = '<option value="">— 请选择公司 —</option>';
+      companiesList.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.company_name;
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {}
 }
 
 async function loadUser() {
@@ -212,6 +238,7 @@ function renderUserList() {
       <tr>
         <th>用户名</th>
         <th>中文名</th>
+        <th>公司名称</th>
         <th>部门</th>
         <th>岗位</th>
         <th>直接上级</th>
@@ -273,6 +300,7 @@ function renderUserList() {
       <tr ondblclick="openEditModal('${escapeHtml(u.username)}')">
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.chinese_name)}</td>
+        <td>${escapeHtml(u.company_name)}</td>
         <td>${escapeHtml(u.department)}</td>
         <td>${escapeHtml(u.position)}</td>
         <td>${escapeHtml(u.direct_manager)}</td>
@@ -295,6 +323,7 @@ function openAddModal() {
   document.getElementById('user-form').reset();
   document.getElementById('edit-username').value = '';
   document.getElementById('edit-status').value = '1';
+  document.getElementById('edit-company-id').value = '';
 
   document.getElementById('edit-username-input').disabled = false;
   document.getElementById('password-section').style.display = 'block';
@@ -321,6 +350,7 @@ async function openEditModal(username) {
     document.getElementById('edit-username').value = u.username;
     document.getElementById('edit-username-input').value = u.username;
     document.getElementById('edit-chinese-name').value = u.chinese_name || '';
+    document.getElementById('edit-company-id').value = u.company_id || '';
     document.getElementById('edit-department').value = u.department || '';
     document.getElementById('edit-position').value = u.position || '';
     document.getElementById('edit-direct-manager').value = u.direct_manager || '';
@@ -455,6 +485,7 @@ function validatePassword(password, username) {
 async function saveUser() {
   const username = document.getElementById('edit-username-input').value.trim();
   const chineseName = document.getElementById('edit-chinese-name').value.trim();
+  const companyId = document.getElementById('edit-company-id').value;
   const department = document.getElementById('edit-department').value.trim();
   const position = document.getElementById('edit-position').value.trim();
   const directManager = document.getElementById('edit-direct-manager').value.trim();
@@ -485,6 +516,7 @@ async function saveUser() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chinese_name: chineseName,
+          company_id: companyId || null,
           department: department,
           direct_manager: directManager,
           email: email,
@@ -543,6 +575,7 @@ async function saveUser() {
           username: username,
           password: password,
           chinese_name: chineseName,
+          company_id: companyId || null,
           department: department,
           direct_manager: directManager,
           email: email,

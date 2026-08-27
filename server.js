@@ -143,6 +143,9 @@ app.get('/user-management.html', requireAdminPage, (req, res) => {
 app.get('/company-management.html', requireAdminPage, (req, res) => {
   res.sendFile(path.join(__dirname, 'company-management.html'));
 });
+app.get('/department-management.html', requireAdminPage, (req, res) => {
+  res.sendFile(path.join(__dirname, 'department-management.html'));
+});
 app.get('/operation-logs.html', requirePermissionPage('operation_logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'operation-logs.html'));
 });
@@ -494,13 +497,108 @@ app.delete('/api/companies/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// API：列出所有部门（仅管理员）
+app.get('/api/departments', requireAdmin, async (req, res) => {
+  const { keyword } = req.query;
+  try {
+    let sql = `SELECT d.id, d.department_name, d.department_address, d.cost_center, d.department_manager,
+                      d.company_id, c.company_name, d.created_at, d.updated_at
+               FROM departments d
+               LEFT JOIN companies c ON d.company_id = c.id`;
+    const params = [];
+    if (keyword && String(keyword).trim()) {
+      sql += ' WHERE d.department_name LIKE ?';
+      params.push(`%${String(keyword).trim()}%`);
+    }
+    sql += ' ORDER BY d.id ASC';
+    const [rows] = await pool.execute(sql, params);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({ error: '部门管理功能未初始化，请先执行数据库迁移脚本 sql/departments.sql' });
+    }
+    console.error('查询部门列表失败:', err.message);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
+// API：新增部门（仅管理员）
+app.post('/api/departments', requireAdmin, async (req, res) => {
+  const { department_name, department_address, cost_center, department_manager, company_id } = req.body;
+  if (!department_name || typeof department_name !== 'string' || !department_name.trim()) {
+    return res.status(400).json({ error: '请输入部门名称' });
+  }
+  try {
+    const [result] = await pool.execute(
+      'INSERT INTO departments (department_name, department_address, cost_center, department_manager, company_id) VALUES (?, ?, ?, ?, ?)',
+      [department_name.trim(), (department_address || '').trim(), (cost_center || '').trim(), (department_manager || '').trim(), company_id ? parseInt(company_id, 10) : null]
+    );
+    res.json({ success: true, message: '部门已添加', id: result.insertId });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: '该部门名称已存在' });
+    }
+    console.error('新增部门失败:', err.message);
+    res.status(500).json({ error: '新增失败' });
+  }
+});
+
+// API：修改部门（仅管理员）
+app.put('/api/departments/:id', requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) {
+    return res.status(400).json({ error: '无效的部门ID' });
+  }
+  const { department_name, department_address, cost_center, department_manager, company_id } = req.body;
+  if (!department_name || typeof department_name !== 'string' || !department_name.trim()) {
+    return res.status(400).json({ error: '请输入部门名称' });
+  }
+  try {
+    const [result] = await pool.execute(
+      'UPDATE departments SET department_name = ?, department_address = ?, cost_center = ?, department_manager = ?, company_id = ? WHERE id = ?',
+      [department_name.trim(), (department_address || '').trim(), (cost_center || '').trim(), (department_manager || '').trim(), company_id ? parseInt(company_id, 10) : null, id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '部门不存在' });
+    }
+    res.json({ success: true, message: '部门信息已更新' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: '该部门名称已存在' });
+    }
+    console.error('修改部门失败:', err.message);
+    res.status(500).json({ error: '修改失败' });
+  }
+});
+
+// API：删除部门（仅管理员）
+app.delete('/api/departments/:id', requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) {
+    return res.status(400).json({ error: '无效的部门ID' });
+  }
+  try {
+    const [result] = await pool.execute('DELETE FROM departments WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '部门不存在' });
+    }
+    res.json({ success: true, message: '部门已删除' });
+  } catch (err) {
+    console.error('删除部门失败:', err.message);
+    res.status(500).json({ error: '删除失败' });
+  }
+});
+
 // API：列出所有用户（仅管理员）
 app.get('/api/users', requireAdmin, async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT id, username, status, last_login, locked_until, password_changed_at,
-              chinese_name, department, direct_manager, email, position, hire_date
-       FROM users ORDER BY id ASC`
+      `SELECT u.id, u.username, u.status, u.last_login, u.locked_until, u.password_changed_at,
+              u.chinese_name, u.department, u.direct_manager, u.email, u.position, u.hire_date,
+              u.company_id, c.company_name
+       FROM users u
+       LEFT JOIN companies c ON u.company_id = c.id
+       ORDER BY u.id ASC`
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -531,7 +629,7 @@ app.get('/api/users/simple-list', requireAuth, async (req, res) => {
 
 // API：新增用户（仅管理员）
 app.post('/api/users', requireAdmin, async (req, res) => {
-  const { username, password, chinese_name, department, direct_manager, email, position, hire_date } = req.body;
+  const { username, password, chinese_name, department, direct_manager, email, position, hire_date, company_id } = req.body;
 
   if (!username || typeof username !== 'string') {
     return res.status(400).json({ error: '缺少用户名' });
@@ -560,8 +658,8 @@ app.post('/api/users', requireAdmin, async (req, res) => {
   try {
     const [result] = await pool.execute(
       `INSERT INTO users
-       (username, password_hash, status, password_changed_at, chinese_name, department, direct_manager, email, position, hire_date)
-       VALUES (?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?)`,
+       (username, password_hash, status, password_changed_at, chinese_name, department, direct_manager, email, position, hire_date, company_id)
+       VALUES (?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, ?)`,
       [
         trimmedUsername,
         hashPassword(password),
@@ -570,7 +668,8 @@ app.post('/api/users', requireAdmin, async (req, res) => {
         direct_manager ? String(direct_manager).trim() : null,
         trimmedEmail || null,
         position ? String(position).trim() : null,
-        hire_date || null
+        hire_date || null,
+        company_id ? parseInt(company_id, 10) : null
       ]
     );
 
@@ -843,9 +942,12 @@ app.get('/api/users/:username', requireAdmin, async (req, res) => {
   const username = req.params.username;
   try {
     const [rows] = await pool.execute(
-      `SELECT id, username, status, last_login, locked_until, password_changed_at,
-              chinese_name, department, direct_manager, email, position, hire_date
-       FROM users WHERE username = ?`,
+      `SELECT u.id, u.username, u.status, u.last_login, u.locked_until, u.password_changed_at,
+              u.chinese_name, u.department, u.direct_manager, u.email, u.position, u.hire_date,
+              u.company_id, c.company_name
+       FROM users u
+       LEFT JOIN companies c ON u.company_id = c.id
+       WHERE u.username = ?`,
       [username]
     );
     if (rows.length === 0) {
@@ -861,7 +963,7 @@ app.get('/api/users/:username', requireAdmin, async (req, res) => {
 // API：更新用户档案（仅管理员）
 app.put('/api/users/:username', requireAdmin, async (req, res) => {
   const username = req.params.username;
-  const { chinese_name, department, direct_manager, email, position, hire_date } = req.body;
+  const { chinese_name, department, direct_manager, email, position, hire_date, company_id } = req.body;
 
   const trimmedEmail = email ? String(email).trim() : '';
   if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
@@ -876,7 +978,8 @@ app.put('/api/users/:username', requireAdmin, async (req, res) => {
          direct_manager = ?,
          email = ?,
          position = ?,
-         hire_date = ?
+         hire_date = ?,
+         company_id = ?
        WHERE username = ?`,
       [
         chinese_name ? String(chinese_name).trim() : null,
@@ -885,6 +988,7 @@ app.put('/api/users/:username', requireAdmin, async (req, res) => {
         trimmedEmail || null,
         position ? String(position).trim() : null,
         hire_date || null,
+        company_id ? parseInt(company_id, 10) : null,
         username
       ]
     );

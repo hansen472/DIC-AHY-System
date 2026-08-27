@@ -403,6 +403,9 @@ body {
         <a href="/company-management.html" class="nav-sub-item" id="nav-company-management" style="display:none;">
           <span>公司管理</span>
         </a>
+        <a href="/department-management.html" class="nav-sub-item" id="nav-department-management" style="display:none;">
+          <span>部门管理</span>
+        </a>
       </div>
     </div>
 
@@ -605,11 +608,12 @@ document.getElementById('nav-qc-maintenance').style.display = 'flex';
         permissionGroup.style.display = 'block';
       }
 
-      // 组织管理分组：包含用户管理和公司管理，仅对管理员可见
+      // 组织管理分组：包含用户管理、公司管理和部门管理，仅对管理员可见
       const organizationGroup = document.getElementById('nav-organization-group');
       if (isAdmin) {
         document.getElementById('nav-user-management').style.display = 'flex';
         document.getElementById('nav-company-management').style.display = 'flex';
+        document.getElementById('nav-department-management').style.display = 'flex';
         organizationGroup.style.display = 'block';
       }
 

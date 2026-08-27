@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>部门管理 - 数智中心</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --success: #047857;
+  --danger: #dc2626;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container { max-width: 1400px; margin: 0 auto; }
+
+header {
+  background: linear-gradient(to right, #A9D6F5 0%, #005EAA 100%);
+  color: #0B4F8F;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(0, 94, 170, 0.18);
+}
+
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; }
+header p { font-size: 13px; color: #33619C; margin-top: 6px; }
+
+.btn-back {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: #64748b;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-back:hover { background: rgba(255,255,255,0.2); }
+
+.card {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.toolbar input {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  flex: 1;
+  min-width: 200px;
+}
+.toolbar input:focus { border-color: var(--primary); }
+
+button { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-edit { background: var(--primary-light); color: var(--primary); padding: 4px 12px; font-size: 12px; }
+.btn-delete { background: #fee2e2; color: var(--danger); padding: 4px 12px; font-size: 12px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: #f9fafb; font-weight: 600; color: #374151; white-space: nowrap; }
+tr:hover td { background: #f9fafb; }
+
+.empty { text-align: center; color: var(--text-secondary); padding: 40px 0; }
+
+.message { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; display: none; }
+.message.success { background: #d1fae5; color: #065f46; display: block; }
+.message.error { background: #fee2e2; color: #991b1b; display: block; }
+
+/* 弹窗 */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 12px; padding: 28px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal h3 { font-size: 18px; margin-bottom: 20px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #374151; }
+.form-group input, .form-group select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.form-group input:focus, .form-group select:focus { border-color: var(--primary); }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>部门管理</h1>
+      <p>维护部门信息：部门名称、部门地址、部门成本中心、部门负责人、所属公司</p>
+    </div>
+    <a href="/nav-sidebar.html" class="btn-back">← 返回导航</a>
+  </header>
+
+  <div id="global-message" class="message"></div>
+
+  <div class="card">
+    <div class="toolbar">
+      <input type="text" id="search-input" placeholder="按部门名称搜索..." oninput="loadDepartments()">
+      <button class="btn-primary" onclick="openAddModal()">+ 新增部门</button>
+      <button class="btn-secondary" onclick="loadDepartments()">刷新</button>
+    </div>
+    <div id="table-area">加载中...</div>
+  </div>
+</div>
+
+<!-- 新增/编辑弹窗 -->
+<div id="dept-modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">新增部门</h3>
+    <input type="hidden" id="dept-id">
+    <div class="form-group">
+      <label>部门名称 *</label>
+      <input type="text" id="dept-name" placeholder="例如：质量部" maxlength="200">
+    </div>
+    <div class="form-group">
+      <label>所属公司</label>
+      <select id="dept-company-id">
+        <option value="">— 请选择公司 —</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>部门地址</label>
+      <input type="text" id="dept-address" placeholder="例如：A栋3楼" maxlength="500">
+    </div>
+    <div class="form-group">
+      <label>部门成本中心</label>
+      <input type="text" id="dept-cost-center" placeholder="例如：CC-2001" maxlength="100">
+    </div>
+    <div class="form-group">
+      <label>部门负责人</label>
+      <input type="text" id="dept-manager" placeholder="例如：张三" maxlength="100">
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal()">取消</button>
+      <button class="btn-primary" onclick="saveDepartment()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let departments = [];
+let companiesList = [];
+
+async function init() {
+  await loadCompaniesList();
+  await loadDepartments();
+}
+
+async function loadCompaniesList() {
+  try {
+    const res = await fetch('/api/companies');
+    if (res.ok) {
+      const result = await res.json();
+      companiesList = result.data || [];
+      const select = document.getElementById('dept-company-id');
+      select.innerHTML = '<option value="">— 请选择公司 —</option>';
+      companiesList.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.company_name;
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {}
+}
+
+async function loadDepartments() {
+  const keyword = document.getElementById('search-input').value.trim();
+  const container = document.getElementById('table-area');
+  container.innerHTML = '加载中...';
+
+  try {
+    const url = keyword ? `/api/departments?keyword=${encodeURIComponent(keyword)}` : '/api/departments';
+    const res = await fetch(url);
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '加载失败');
+    departments = result.data || [];
+    renderTable();
+  } catch (err) {
+    container.innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderTable() {
+  const container = document.getElementById('table-area');
+  if (departments.length === 0) {
+    container.innerHTML = '<div class="empty">暂无部门信息，点击"新增部门"添加</div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead><tr>
+      <th style="width:50px;">#</th>
+      <th>部门名称</th>
+      <th>所属公司</th>
+      <th>部门地址</th>
+      <th>部门成本中心</th>
+      <th>部门负责人</th>
+      <th style="width:140px;">操作</th>
+    </tr></thead><tbody>`;
+
+  departments.forEach((d, i) => {
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(d.department_name || '')}</td>
+      <td>${escapeHtml(d.company_name || '-')}</td>
+      <td>${escapeHtml(d.department_address || '-')}</td>
+      <td>${escapeHtml(d.cost_center || '-')}</td>
+      <td>${escapeHtml(d.department_manager || '-')}</td>
+      <td>
+        <button class="btn-edit" onclick="openEditModal(${d.id})">编辑</button>
+        <button class="btn-delete" onclick="deleteDepartment(${d.id}, '${escapeHtml(d.department_name)}')">删除</button>
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function openAddModal() {
+  document.getElementById('modal-title').textContent = '新增部门';
+  document.getElementById('dept-id').value = '';
+  document.getElementById('dept-name').value = '';
+  document.getElementById('dept-company-id').value = '';
+  document.getElementById('dept-address').value = '';
+  document.getElementById('dept-cost-center').value = '';
+  document.getElementById('dept-manager').value = '';
+  document.getElementById('dept-modal').classList.add('active');
+}
+
+function openEditModal(id) {
+  const d = departments.find(x => x.id === id);
+  if (!d) return;
+  document.getElementById('modal-title').textContent = '编辑部门';
+  document.getElementById('dept-id').value = d.id;
+  document.getElementById('dept-name').value = d.department_name || '';
+  document.getElementById('dept-company-id').value = d.company_id || '';
+  document.getElementById('dept-address').value = d.department_address || '';
+  document.getElementById('dept-cost-center').value = d.cost_center || '';
+  document.getElementById('dept-manager').value = d.department_manager || '';
+  document.getElementById('dept-modal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('dept-modal').classList.remove('active');
+}
+
+async function saveDepartment() {
+  const id = document.getElementById('dept-id').value;
+  const deptName = document.getElementById('dept-name').value.trim();
+  const companyId = document.getElementById('dept-company-id').value;
+  const deptAddress = document.getElementById('dept-address').value.trim();
+  const costCenter = document.getElementById('dept-cost-center').value.trim();
+  const deptManager = document.getElementById('dept-manager').value.trim();
+
+  if (!deptName) {
+    showMessage('请输入部门名称', 'error');
+    return;
+  }
+
+  const body = {
+    department_name: deptName,
+    company_id: companyId || null,
+    department_address: deptAddress,
+    cost_center: costCenter,
+    department_manager: deptManager
+  };
+
+  try {
+    const res = await fetch(id ? `/api/departments/${id}` : '/api/departments', {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '保存失败');
+    showMessage(id ? '部门信息已更新' : '部门已添加', 'success');
+    closeModal();
+    await loadDepartments();
+  } catch (err) {
+    showMessage('保存失败：' + err.message, 'error');
+  }
+}
+
+async function deleteDepartment(id, name) {
+  if (!confirm(`确定要删除部门"${name}"吗？`)) return;
+
+  try {
+    const res = await fetch(`/api/departments/${id}`, { method: 'DELETE' });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '删除失败');
+    showMessage('部门已删除', 'success');
+    await loadDepartments();
+  } catch (err) {
+    showMessage('删除失败：' + err.message, 'error');
+  }
+}
+
+function showMessage(text, type) {
+  const el = document.getElementById('global-message');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  setTimeout(() => { el.className = 'message'; }, 4000);
+}
+
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+init();
+</script>
+</body>
+</html>
