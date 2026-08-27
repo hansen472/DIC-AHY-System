@@ -118,6 +118,11 @@ tr:hover td { background: #f7fafc; }
   font-size: 13px; color: #2b6cb0; background: #ebf8ff; border: 1px solid #bee3f8;
   border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; line-height: 1.6;
 }
+
+/* 重新提交表单弹窗 */
+.modal.modal-wide { max-width: 780px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.form-grid .full { grid-column: 1 / -1; }
 </style>
 </head>
 <body>
@@ -237,6 +242,61 @@ tr:hover td { background: #f7fafc; }
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeModal('detail-modal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 重新提交偏差报告弹窗 -->
+<div id="resubmit-modal" class="modal-overlay">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3>重新提交偏差报告</h3>
+      <button class="btn-secondary" onclick="closeModal('resubmit-modal')">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-context" id="resubmit-context"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>偏差发现部门 <span style="color:#e53e3e;">*</span></label>
+          <select id="rs-department"></select>
+        </div>
+        <div class="form-group">
+          <label>发现时间 <span style="color:#e53e3e;">*</span></label>
+          <input type="datetime-local" id="rs-dev-time">
+        </div>
+        <div class="form-group">
+          <label>发现人 <span style="color:#e53e3e;">*</span></label>
+          <select id="rs-reporter"></select>
+        </div>
+        <div class="form-group">
+          <label>涉及主体 <span style="color:#e53e3e;">*</span></label>
+          <input type="text" id="rs-subject" maxlength="200" placeholder="物料/中间产品/产品/设备/方法等">
+        </div>
+        <div class="form-group">
+          <label>涉及型号</label>
+          <input type="text" id="rs-model" maxlength="200" placeholder="请输入涉及型号">
+        </div>
+        <div class="form-group">
+          <label>涉及的规格</label>
+          <input type="text" id="rs-spec" maxlength="200" placeholder="请输入涉及的规格">
+        </div>
+        <div class="form-group">
+          <label>涉及的批号/编号</label>
+          <input type="text" id="rs-batch" maxlength="200" placeholder="请输入涉及的批号/编号">
+        </div>
+        <div class="form-group">
+          <label>涉及的数量</label>
+          <input type="text" id="rs-quantity" maxlength="100" placeholder="请输入涉及的数量">
+        </div>
+        <div class="form-group full">
+          <label>详细的偏差描述 <span style="color:#e53e3e;">*</span></label>
+          <textarea id="rs-description" placeholder="时间、地点、人员、事件、结果、程度等"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('resubmit-modal')">取消</button>
+      <button class="btn-success" id="btn-submit-resubmit" onclick="submitResubmit()">重新提交</button>
     </div>
   </div>
 </div>
@@ -439,6 +499,7 @@ function renderSubmittedList() {
         <td>${formatInstanceStatus(ins.status)}</td>
         <td class="date-col">${formatDateTime(ins.created_at)}</td>
         <td class="action-col">
+          ${(ins.module_key === 'deviation_reports' && (ins.status === 'rejected' || ins.status === 'completed')) ? `<button class="btn-warning" onclick="openResubmitModal(${ins.id})">重新提交</button>` : ''}
           <button class="btn-primary" onclick="openHistoryModal(${ins.id})">历史</button>
         </td>
       </tr>`;
@@ -544,6 +605,158 @@ function renderGenericDetail(p) {
   });
   html += '</div>';
   return html;
+}
+
+// ==================== 重新提交偏差报告 ====================
+
+let resubmitReportId = null;
+let resubmitOptionsLoaded = false;
+
+// 打开重新提交弹窗：用流程实例的业务快照预填表单（仅"已驳回/已通过"可重新提交）
+async function openResubmitModal(instanceId) {
+  const ins = submittedData.find(i => i.id === instanceId);
+  if (!ins) return;
+  if (ins.status !== 'rejected' && ins.status !== 'completed') {
+    showToast('仅"已驳回"或"已通过"的偏差报告可以重新提交', 'error');
+    await loadTasks();
+    return;
+  }
+  const reportId = parseInt(String(ins.business_key || '').split(':').pop(), 10);
+  if (!reportId) return showToast('无法解析业务记录ID', 'error');
+  resubmitReportId = reportId;
+
+  const p = ins.payload || {};
+  await ensureResubmitOptions();
+
+  // 部门/发现人不在选项列表时（如已停用）补一个选项，保证能回显
+  const deptSelect = document.getElementById('rs-department');
+  if (p.department && !Array.from(deptSelect.options).some(o => o.value === p.department)) {
+    const opt = document.createElement('option');
+    opt.value = p.department;
+    opt.textContent = p.department;
+    deptSelect.appendChild(opt);
+  }
+  const reporterSelect = document.getElementById('rs-reporter');
+  if (p.reporter && !Array.from(reporterSelect.options).some(o => o.value === p.reporter)) {
+    const opt = document.createElement('option');
+    opt.value = p.reporter;
+    opt.textContent = p.reporter_name ? p.reporter_name + ' (' + p.reporter + ')' : p.reporter;
+    reporterSelect.appendChild(opt);
+  }
+
+  deptSelect.value = p.department || '';
+  document.getElementById('rs-dev-time').value = toDatetimeLocal(p.dev_time);
+  reporterSelect.value = p.reporter || '';
+  document.getElementById('rs-subject').value = p.subject || '';
+  document.getElementById('rs-model').value = p.model || '';
+  document.getElementById('rs-spec').value = p.spec || '';
+  document.getElementById('rs-batch').value = p.batch || '';
+  document.getElementById('rs-quantity').value = p.quantity || '';
+  document.getElementById('rs-description').value = p.description || '';
+
+  const statusText = { running: '审批中', completed: '已通过', rejected: '已驳回', recalled: '已撤回' }[ins.status] || ins.status;
+  document.getElementById('resubmit-context').textContent =
+    `报告ID：${reportId} ｜ 当前状态：${statusText} ｜ 修改后提交将发起新一轮审批`;
+
+  document.getElementById('resubmit-modal').classList.add('active');
+}
+
+// 懒加载部门/用户下拉选项（首次打开弹窗时请求）
+async function ensureResubmitOptions() {
+  if (resubmitOptionsLoaded) return;
+  try {
+    const [deptRes, userRes] = await Promise.all([
+      fetch('/api/departments/simple-list'),
+      fetch('/api/users/simple-list')
+    ]);
+
+    const deptSelect = document.getElementById('rs-department');
+    deptSelect.innerHTML = '<option value="">— 请选择部门 —</option>';
+    if (deptRes.ok) {
+      const r = await deptRes.json();
+      (r.data || []).forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.department_name;
+        opt.textContent = d.department_name;
+        deptSelect.appendChild(opt);
+      });
+    }
+
+    const userSelect = document.getElementById('rs-reporter');
+    userSelect.innerHTML = '<option value="">— 请选择发现人 —</option>';
+    if (userRes.ok) {
+      const r = await userRes.json();
+      (r.users || []).forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username;
+        userSelect.appendChild(opt);
+      });
+    }
+    resubmitOptionsLoaded = true;
+  } catch (e) {
+    console.error('加载重新提交下拉选项失败:', e);
+  }
+}
+
+// "YYYY-MM-DD HH:MM[:SS]" → datetime-local 需要的 "YYYY-MM-DDTHH:MM"
+function toDatetimeLocal(str) {
+  if (!str) return '';
+  const m = String(str).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{1,2})/);
+  if (!m) return '';
+  return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}T${m[4].padStart(2, '0')}:${m[5].padStart(2, '0')}`;
+}
+
+async function submitResubmit() {
+  const department = document.getElementById('rs-department').value;
+  const devTime = document.getElementById('rs-dev-time').value;
+  const reporter = document.getElementById('rs-reporter').value;
+  const subject = document.getElementById('rs-subject').value.trim();
+  const description = document.getElementById('rs-description').value.trim();
+
+  if (!department) return showToast('请选择偏差发现部门', 'error');
+  if (!devTime) return showToast('请选择发现时间', 'error');
+  if (!reporter) return showToast('请选择发现人', 'error');
+  if (!subject) return showToast('请输入涉及主体', 'error');
+  if (!description) return showToast('请输入详细的偏差描述', 'error');
+
+  // 从下拉选项文本提取发现人姓名（格式："中文名 (username)"）
+  const reporterSelect = document.getElementById('rs-reporter');
+  const selectedOpt = reporterSelect.options[reporterSelect.selectedIndex];
+  const reporterText = selectedOpt ? selectedOpt.textContent : reporter;
+  const reporterName = reporterText.includes(' (') ? reporterText.slice(0, reporterText.lastIndexOf(' (')) : reporterText;
+
+  const body = {
+    department: department,
+    dev_time: devTime.replace('T', ' '),
+    reporter: reporter,
+    reporter_name: reporterName,
+    subject: subject,
+    model: document.getElementById('rs-model').value.trim(),
+    spec: document.getElementById('rs-spec').value.trim(),
+    batch: document.getElementById('rs-batch').value.trim(),
+    quantity: document.getElementById('rs-quantity').value.trim(),
+    description: description
+  };
+
+  const btn = document.getElementById('btn-submit-resubmit');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/deviation-reports/' + resubmitReportId + '/resubmit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(result.error || '重新提交失败');
+    showToast('偏差报告已重新提交审批', 'success');
+    closeModal('resubmit-modal');
+    await loadTasks();
+  } catch (err) {
+    showToast('重新提交失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function openApproveModal(taskId) {

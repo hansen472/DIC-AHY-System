@@ -3678,6 +3678,93 @@ app.get('/api/deviation-reports', requireAuth, async (req, res) => {
   }
 });
 
+// 重新提交偏差上报：仅"已驳回/已通过"的记录可操作，修改内容后发起新一轮审批
+app.post('/api/deviation-reports/:id/resubmit', requireAuth, async (req, res) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId)) return res.status(400).json({ error: '参数错误' });
+
+    const { department, dev_time, reporter, reporter_name, subject, model, spec, batch, quantity, description } = req.body;
+    if (!department || !dev_time || !reporter || !subject || !description) {
+      return res.status(400).json({ error: '缺少必填字段（偏差发现部门/发现时间/发现人/涉及主体/偏差描述）' });
+    }
+
+    const username = getUsernameFromReq(req);
+
+    // 仅提交人本人可重新提交
+    const [rows] = await pool.execute(
+      'SELECT id, created_by, status FROM deviation_reports WHERE id = ?',
+      [reportId]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: '偏差报告不存在' });
+    if (rows[0].created_by !== username) {
+      return res.status(403).json({ error: '只能重新提交自己上报的偏差报告' });
+    }
+
+    // 仅"已驳回"和"已通过"的记录可以重新提交
+    if (rows[0].status !== 'rejected' && rows[0].status !== 'approved') {
+      return res.status(400).json({ error: '仅"已驳回"或"已通过"的偏差报告可以重新提交' });
+    }
+
+    const activeDef = await workflowEngine.getActiveDefinition('deviation_reports');
+    if (!activeDef) {
+      return res.status(400).json({ error: '偏差上报审批流未配置或未启用，请联系管理员在流程设计器中配置' });
+    }
+
+    // 双保险：存在审批中的流程实例时禁止重新提交
+    const [running] = await pool.execute(
+      "SELECT id FROM workflow_instances WHERE business_key = ? AND status = 'running' LIMIT 1",
+      [`deviation_reports:${reportId}`]
+    );
+    if (running.length > 0) {
+      return res.status(400).json({ error: '该偏差报告正在审批中，不能重新提交' });
+    }
+
+    const payload = {
+      department: String(department).trim(),
+      dev_time: dev_time,
+      reporter: reporter,
+      reporter_name: reporter_name ? String(reporter_name).trim() : null,
+      subject: String(subject).trim(),
+      model: model ? String(model).trim() : null,
+      spec: spec ? String(spec).trim() : null,
+      batch: batch ? String(batch).trim() : null,
+      quantity: quantity ? String(quantity).trim() : null,
+      description: String(description).trim()
+    };
+
+    await pool.execute(
+      `UPDATE deviation_reports SET
+         department = ?, dev_time = ?, reporter = ?, reporter_name = ?, subject = ?,
+         \`model\` = ?, spec = ?, batch = ?, quantity = ?, description = ?, status = 'pending_approval'
+       WHERE id = ?`,
+      [
+        payload.department, payload.dev_time, payload.reporter, payload.reporter_name, payload.subject,
+        payload.model, payload.spec, payload.batch, payload.quantity, payload.description,
+        reportId
+      ]
+    );
+
+    try {
+      await workflowEngine.startInstance({
+        module_key: 'deviation_reports',
+        business_key: `deviation_reports:${reportId}`,
+        payload: { id: reportId, ...payload },
+        created_by: username
+      });
+    } catch (wfErr) {
+      // 启动失败时回退为草稿状态，保留用户刚填写的内容
+      await pool.execute("UPDATE deviation_reports SET status = 'draft' WHERE id = ?", [reportId]);
+      throw wfErr;
+    }
+
+    res.json({ success: true, id: reportId, message: '偏差报告已重新提交审批' });
+  } catch (err) {
+    console.error('重新提交偏差上报失败:', err);
+    res.status(500).json({ error: err.message || '重新提交失败' });
+  }
+});
+
 // 启动审批超时扫描（每 5 分钟）
 workflowEngine.startTimeoutCheck(5 * 60 * 1000);
 
