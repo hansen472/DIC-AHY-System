@@ -385,6 +385,18 @@ body {
         <a href="/permission-admin.html" class="nav-sub-item" id="nav-permission-admin" style="display:none;">
           <span>权限配置</span>
         </a>
+      </div>
+    </div>
+
+    <div class="nav-group sidebar-group" id="nav-organization-group" style="display:none;">
+      <div class="nav-group-title sidebar-group-header" onclick="toggleSidebarGroup(this)">
+        <div class="title-left">
+          <span class="icon">👥</span>
+          <span>组织管理</span>
+        </div>
+        <span class="arrow-icon">▼</span>
+      </div>
+      <div class="nav-sub-menu sidebar-group-child">
         <a href="/user-management.html" class="nav-sub-item" id="nav-user-management" style="display:none;">
           <span>用户管理</span>
         </a>
@@ -583,12 +595,18 @@ document.getElementById('nav-qc-maintenance').style.display = 'flex';
         logsGroup.style.display = 'block';
       }
 
-      // 权限管理分组：包含权限配置和用户管理，仅对管理员可见
+      // 权限管理分组：包含权限配置，仅对管理员可见
       const permissionGroup = document.getElementById('nav-permission-group');
       if (isAdmin) {
         document.getElementById('nav-permission-admin').style.display = 'flex';
-        document.getElementById('nav-user-management').style.display = 'flex';
         permissionGroup.style.display = 'block';
+      }
+
+      // 组织管理分组：包含用户管理，仅对管理员可见
+      const organizationGroup = document.getElementById('nav-organization-group');
+      if (isAdmin) {
+        document.getElementById('nav-user-management').style.display = 'flex';
+        organizationGroup.style.display = 'block';
       }
 
       // 培训记录分组：包含培训记录录入、年度培训计划与用户培训记录（共用 training_records 权限）
