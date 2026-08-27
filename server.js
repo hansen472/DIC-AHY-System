@@ -597,9 +597,11 @@ app.get('/api/users', requireAdmin, async (req, res) => {
     const [rows] = await pool.execute(
       `SELECT u.id, u.username, u.status, u.last_login, u.locked_until, u.password_changed_at,
               u.chinese_name, u.department, u.direct_manager, u.email, u.position, u.hire_date,
-              u.company_id, c.company_name
+              u.company_id, c.company_name,
+              u.department_id, d.department_name AS dept_name
        FROM users u
        LEFT JOIN companies c ON u.company_id = c.id
+       LEFT JOIN departments d ON u.department_id = d.id
        ORDER BY u.id ASC`
     );
     res.json({ success: true, data: rows });
@@ -631,7 +633,7 @@ app.get('/api/users/simple-list', requireAuth, async (req, res) => {
 
 // API：新增用户（仅管理员）
 app.post('/api/users', requireAdmin, async (req, res) => {
-  const { username, password, chinese_name, department, direct_manager, email, position, hire_date, company_id } = req.body;
+  const { username, password, chinese_name, department, department_id, direct_manager, email, position, hire_date, company_id } = req.body;
 
   if (!username || typeof username !== 'string') {
     return res.status(400).json({ error: '缺少用户名' });
@@ -660,13 +662,14 @@ app.post('/api/users', requireAdmin, async (req, res) => {
   try {
     const [result] = await pool.execute(
       `INSERT INTO users
-       (username, password_hash, status, password_changed_at, chinese_name, department, direct_manager, email, position, hire_date, company_id)
-       VALUES (?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, ?)`,
+       (username, password_hash, status, password_changed_at, chinese_name, department, department_id, direct_manager, email, position, hire_date, company_id)
+       VALUES (?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         trimmedUsername,
         hashPassword(password),
         chinese_name ? String(chinese_name).trim() : null,
         department ? String(department).trim() : null,
+        department_id ? parseInt(department_id, 10) : null,
         direct_manager ? String(direct_manager).trim() : null,
         trimmedEmail || null,
         position ? String(position).trim() : null,
@@ -946,9 +949,11 @@ app.get('/api/users/:username', requireAdmin, async (req, res) => {
     const [rows] = await pool.execute(
       `SELECT u.id, u.username, u.status, u.last_login, u.locked_until, u.password_changed_at,
               u.chinese_name, u.department, u.direct_manager, u.email, u.position, u.hire_date,
-              u.company_id, c.company_name
+              u.company_id, c.company_name,
+              u.department_id, d.department_name AS dept_name
        FROM users u
        LEFT JOIN companies c ON u.company_id = c.id
+       LEFT JOIN departments d ON u.department_id = d.id
        WHERE u.username = ?`,
       [username]
     );
@@ -965,7 +970,7 @@ app.get('/api/users/:username', requireAdmin, async (req, res) => {
 // API：更新用户档案（仅管理员）
 app.put('/api/users/:username', requireAdmin, async (req, res) => {
   const username = req.params.username;
-  const { chinese_name, department, direct_manager, email, position, hire_date, company_id } = req.body;
+  const { chinese_name, department, department_id, direct_manager, email, position, hire_date, company_id } = req.body;
 
   const trimmedEmail = email ? String(email).trim() : '';
   if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
@@ -977,6 +982,7 @@ app.put('/api/users/:username', requireAdmin, async (req, res) => {
       `UPDATE users SET
          chinese_name = ?,
          department = ?,
+         department_id = ?,
          direct_manager = ?,
          email = ?,
          position = ?,
@@ -986,6 +992,7 @@ app.put('/api/users/:username', requireAdmin, async (req, res) => {
       [
         chinese_name ? String(chinese_name).trim() : null,
         department ? String(department).trim() : null,
+        department_id ? parseInt(department_id, 10) : null,
         direct_manager ? String(direct_manager).trim() : null,
         trimmedEmail || null,
         position ? String(position).trim() : null,

@@ -114,7 +114,9 @@ tr { cursor: pointer; }
           </div>
           <div class="form-group">
             <label>部门</label>
-            <input type="text" id="edit-department" placeholder="请输入部门" maxlength="100">
+            <select id="edit-department-id">
+              <option value="">— 请选择部门 —</option>
+            </select>
           </div>
           <div class="form-group">
             <label>岗位</label>
@@ -174,10 +176,11 @@ tr { cursor: pointer; }
 <script>
 let usersData = [];
 let companiesList = [];
+let departmentsList = [];
 let isEditMode = false;
 
 async function init() {
-  await loadCompaniesList();
+  await Promise.all([loadCompaniesList(), loadDepartmentsList()]);
   await loadUser();
   await loadUsers();
 }
@@ -194,6 +197,25 @@ async function loadCompaniesList() {
         const opt = document.createElement('option');
         opt.value = c.id;
         opt.textContent = c.company_name;
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {}
+}
+
+async function loadDepartmentsList() {
+  try {
+    const res = await fetch('/api/departments');
+    if (res.ok) {
+      const result = await res.json();
+      departmentsList = result.data || [];
+      const select = document.getElementById('edit-department-id');
+      select.innerHTML = '<option value="">— 请选择部门 —</option>';
+      departmentsList.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        const label = d.company_name ? d.department_name + ' (' + d.company_name + ')' : d.department_name;
+        opt.textContent = label;
         select.appendChild(opt);
       });
     }
@@ -301,7 +323,7 @@ function renderUserList() {
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.chinese_name)}</td>
         <td>${escapeHtml(u.company_name)}</td>
-        <td>${escapeHtml(u.department)}</td>
+        <td>${escapeHtml(u.dept_name || u.department)}</td>
         <td>${escapeHtml(u.position)}</td>
         <td>${escapeHtml(u.direct_manager)}</td>
         <td>${escapeHtml(u.email)}</td>
@@ -324,6 +346,7 @@ function openAddModal() {
   document.getElementById('edit-username').value = '';
   document.getElementById('edit-status').value = '1';
   document.getElementById('edit-company-id').value = '';
+  document.getElementById('edit-department-id').value = '';
 
   document.getElementById('edit-username-input').disabled = false;
   document.getElementById('password-section').style.display = 'block';
@@ -351,7 +374,7 @@ async function openEditModal(username) {
     document.getElementById('edit-username-input').value = u.username;
     document.getElementById('edit-chinese-name').value = u.chinese_name || '';
     document.getElementById('edit-company-id').value = u.company_id || '';
-    document.getElementById('edit-department').value = u.department || '';
+    document.getElementById('edit-department-id').value = u.department_id || '';
     document.getElementById('edit-position').value = u.position || '';
     document.getElementById('edit-direct-manager').value = u.direct_manager || '';
     document.getElementById('edit-email').value = u.email || '';
@@ -486,7 +509,10 @@ async function saveUser() {
   const username = document.getElementById('edit-username-input').value.trim();
   const chineseName = document.getElementById('edit-chinese-name').value.trim();
   const companyId = document.getElementById('edit-company-id').value;
-  const department = document.getElementById('edit-department').value.trim();
+  const departmentId = document.getElementById('edit-department-id').value;
+  // Look up department display name for text column
+  const selectedDept = departmentsList.find(d => d.id == departmentId);
+  const department = selectedDept ? selectedDept.department_name : '';
   const position = document.getElementById('edit-position').value.trim();
   const directManager = document.getElementById('edit-direct-manager').value.trim();
   const email = document.getElementById('edit-email').value.trim();
@@ -518,6 +544,7 @@ async function saveUser() {
           chinese_name: chineseName,
           company_id: companyId || null,
           department: department,
+          department_id: departmentId || null,
           direct_manager: directManager,
           email: email,
           position: position,
@@ -577,6 +604,7 @@ async function saveUser() {
           chinese_name: chineseName,
           company_id: companyId || null,
           department: department,
+          department_id: departmentId || null,
           direct_manager: directManager,
           email: email,
           position: position,
