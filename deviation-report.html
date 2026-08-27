@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>偏差上报 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --success: #047857;
+  --danger: #dc2626;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container { max-width: 1000px; margin: 0 auto; }
+
+header {
+  background: linear-gradient(to right, #A9D6F5 0%, #005EAA 100%);
+  color: #0B4F8F;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(0, 94, 170, 0.18);
+}
+
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; }
+header p { font-size: 13px; color: #33619C; margin-top: 6px; }
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+button:hover { transform: translateY(-1px); }
+button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.btn-back {
+  background: #64748b;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
+}
+
+.card {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+  margin-bottom: 24px;
+}
+
+.card h2 { font-size: 16px; margin-bottom: 20px; color: var(--text); }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; }
+.form-group { margin-bottom: 4px; }
+.form-group.full-width { grid-column: 1 / -1; }
+.form-group label { display: block; font-size: 13px; color: #374151; margin-bottom: 6px; font-weight: 500; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: #fff;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+}
+.form-group textarea { resize: vertical; min-height: 120px; }
+
+.btn-submit {
+  background: var(--primary);
+  color: #fff;
+  padding: 10px 32px;
+  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
+}
+.btn-reset {
+  background: #e2e8f0;
+  color: #333;
+  padding: 10px 32px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.empty { text-align: center; color: var(--text-secondary); padding: 40px 0; }
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: none;
+}
+.toast.error { background: var(--danger); }
+.toast.success { background: var(--success); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>偏差上报</h1>
+      <p>填写并提交偏差事件信息，用于质量偏差的记录与追踪</p>
+    </div>
+    <div class="toolbar">
+      <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>偏差信息填写</h2>
+    <div id="form-area">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>偏差发现部门 <span style="color:#dc2626;">*</span></label>
+          <select id="dev-department">
+            <option value="">— 请选择部门 —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>发现时间 <span style="color:#dc2626;">*</span></label>
+          <input type="datetime-local" id="dev-time">
+        </div>
+        <div class="form-group">
+          <label>发现人 <span style="color:#dc2626;">*</span></label>
+          <select id="dev-reporter">
+            <option value="">— 请选择发现人 —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>涉及主体 <span style="color:#dc2626;">*</span></label>
+          <input type="text" id="dev-subject" placeholder="物料/中间产品/产品/设备/方法等" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>涉及型号</label>
+          <input type="text" id="dev-model" placeholder="请输入涉及型号" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>涉及的规格</label>
+          <input type="text" id="dev-spec" placeholder="请输入涉及的规格" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>涉及的批号/编号</label>
+          <input type="text" id="dev-batch" placeholder="请输入涉及的批号/编号" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>涉及的数量</label>
+          <input type="text" id="dev-quantity" placeholder="请输入涉及的数量" maxlength="100">
+        </div>
+        <div class="form-group full-width">
+          <label>详细的偏差描述 <span style="color:#dc2626;">*</span></label>
+          <textarea id="dev-description" placeholder="时间、地点、人员、事件、结果、程度等"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-reset" onclick="resetForm()">重置</button>
+        <button class="btn-submit" id="btn-submit" onclick="submitForm()">提交</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let usersList = [];
+
+async function init() {
+  await loadUsers();
+  initDevTime();
+}
+
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/users/simple-list');
+    if (res.ok) {
+      const result = await res.json();
+      usersList = result.users || [];
+
+      // 发现人下拉：所有普通用户
+      const reporterSelect = document.getElementById('dev-reporter');
+      reporterSelect.innerHTML = '<option value="">— 请选择发现人 —</option>';
+      usersList.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username;
+        reporterSelect.appendChild(opt);
+      });
+
+      // 偏差发现部门下拉：从用户档案中提取不重复的部门名称
+      const departmentSelect = document.getElementById('dev-department');
+      departmentSelect.innerHTML = '<option value="">— 请选择部门 —</option>';
+      const departments = [...new Set(usersList.map(u => (u.department || '').trim()).filter(d => d))].sort();
+      departments.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        departmentSelect.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.error('加载用户列表失败:', e);
+  }
+}
+
+function initDevTime() {
+  // 默认填充当前时间
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  document.getElementById('dev-time').value = value;
+}
+
+function resetForm() {
+  document.getElementById('dev-department').value = '';
+  document.getElementById('dev-reporter').value = '';
+  document.getElementById('dev-subject').value = '';
+  document.getElementById('dev-model').value = '';
+  document.getElementById('dev-spec').value = '';
+  document.getElementById('dev-batch').value = '';
+  document.getElementById('dev-quantity').value = '';
+  document.getElementById('dev-description').value = '';
+  initDevTime();
+}
+
+function submitForm() {
+  const department = document.getElementById('dev-department').value;
+  const devTime = document.getElementById('dev-time').value;
+  const reporter = document.getElementById('dev-reporter').value;
+  const subject = document.getElementById('dev-subject').value.trim();
+  const description = document.getElementById('dev-description').value.trim();
+
+  if (!department) return showToast('请选择偏差发现部门', 'error');
+  if (!devTime) return showToast('请选择发现时间', 'error');
+  if (!reporter) return showToast('请选择发现人', 'error');
+  if (!subject) return showToast('请输入涉及主体', 'error');
+  if (!description) return showToast('请输入详细的偏差描述', 'error');
+
+  const reporterInfo = usersList.find(u => u.username === reporter);
+  const formData = {
+    department: department,
+    dev_time: devTime.replace('T', ' '),
+    reporter: reporter,
+    reporter_name: reporterInfo ? (reporterInfo.chinese_name || reporterInfo.username) : reporter,
+    subject: subject,
+    model: document.getElementById('dev-model').value.trim(),
+    spec: document.getElementById('dev-spec').value.trim(),
+    batch: document.getElementById('dev-batch').value.trim(),
+    quantity: document.getElementById('dev-quantity').value.trim(),
+    description: description
+  };
+
+  console.log('偏差上报数据:', formData);
+  showToast('偏差上报提交功能待接入后端存储', 'success');
+}
+
+function showToast(text, type) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.className = 'toast ' + type;
+  el.style.display = 'block';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+init();
+</script>
+</body>
+</html>

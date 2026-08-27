@@ -110,6 +110,9 @@ app.get('/coa-seal-data.html', requirePermissionPage('coa_report'), (req, res) =
 app.get('/coa-report-application.html', requirePermissionPage('coa_report'), (req, res) => {
   res.sendFile(path.join(__dirname, 'coa-report-application.html'));
 });
+app.get('/deviation-report.html', requirePermissionPage('coa_report'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'deviation-report.html'));
+});
 app.get('/logs.html', requirePermissionPage('logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'logs.html'));
 });
