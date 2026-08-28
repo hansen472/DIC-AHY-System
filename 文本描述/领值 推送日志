@@ -124,3 +124,25 @@ def main(sql_result: list) -> dict:
     在push-logs.html 页面中， 更新 选择按钮的名字
 将daily-overdue-workorder-push.html页面中的自动推送地址，换成下面的link
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
+
+
+
+1 将nav-sidebar.html 中的一级菜单下的”领值推送“下的二级菜单”日工单提醒推送“菜单，改为”日巡检工单提醒推送“
+2 修改”日工单提醒推送“中的SQL语句，增加了 responsible_name 字段，用于显示 responsible_name。在前台页面中，增加一列用于显示 responsible_name。
+3 responsible_name 显示为中文”负责人“，位于”资产“一列之后显示。
+    SELECT
+    CONCAT(wo.wo_id, ' ', wo.wo_name) AS wo_info,
+    CONCAT(a.asset_code, ' ', a.asset_name) AS asset_names,
+    ae.employee_name AS responsible_name,
+    wo.wo_schedule_time,
+    ms.status_name_cn
+FROM wo_list wo
+LEFT JOIN asset_list a
+    ON wo.wo_asset_id = a.asset_id
+LEFT JOIN admin_employee ae
+    ON wo.wo_responsible_id = ae.user_id
+LEFT JOIN mic_status ms
+    ON wo.wo_status = ms.status_id
+WHERE DATE(wo.wo_creation_time) = CURDATE()
+    AND wo.wo_type_id = 3
+    AND wo.wo_finish_time IS NULL;

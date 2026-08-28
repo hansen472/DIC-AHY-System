@@ -219,7 +219,7 @@ function renderTable() {
 
   let html = `<table>
     <thead><tr>
-      <th>#</th><th>工单信息</th><th>资产</th><th>安排时间</th><th>类型</th><th>状态</th>
+      <th>#</th><th>工单信息</th><th>资产</th><th>负责人</th><th>安排时间</th><th>类型</th><th>状态</th>
     </tr></thead><tbody>`;
 
   tableData.forEach((row, i) => {
@@ -228,6 +228,7 @@ function renderTable() {
       <td>${i + 1}</td>
       <td>${escapeHtml(row.wo_info || '')}</td>
       <td>${escapeHtml(row.asset_names || '')}</td>
+      <td>${escapeHtml(row.responsible_name || '-')}</td>
       <td>${escapeHtml(row.wo_schedule_time || '-')}</td>
       <td>日巡检工单</td>
       <td>${statusBadge}</td>

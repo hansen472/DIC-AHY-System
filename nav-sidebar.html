@@ -308,7 +308,7 @@ body {
           <span>周工单提醒推送</span>
         </a>
         <a href="/daily-overdue-workorder-push.html" class="nav-sub-item" id="nav-daily-overdue-workorder" style="display:none;">
-          <span>日工单提醒推送</span>
+          <span>日巡检工单提醒推送</span>
         </a>
         <a href="/qc-maintenance-push.html" class="nav-sub-item" id="nav-qc-maintenance" style="display:none;">
           <span>QC维护计划推送</span>
@@ -540,7 +540,7 @@ function initSidebarGroups() {
       if (perms.dashboard) document.getElementById('nav-dashboard').style.display = 'flex';
       if (perms.template_admin) document.getElementById('nav-template-admin').style.display = 'flex';
       if (perms.backup_management) document.getElementById('nav-backup-management').style.display = 'flex';
-      // 领值推送分组：当前包含仪器/仪表、周工单提醒推送、日工单提醒推送、QC维护计划推送、推送日志
+      // 领值推送分组：当前包含仪器/仪表、周工单提醒推送、日巡检工单提醒推送、QC维护计划推送、推送日志
       const lingzhiGroup = document.getElementById('nav-lingzhi-push-group');
       if (perms.instrument_meter) {
         document.getElementById('nav-instrument-meter').style.display = 'flex';

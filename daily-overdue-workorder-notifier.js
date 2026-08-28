@@ -15,10 +15,12 @@ const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f
 const DAILY_SQL = `SELECT
   CONCAT(wo.wo_id, ' ', wo.wo_name) AS wo_info,
   CONCAT(a.asset_code, ' ', a.asset_name) AS asset_names,
+  ae.employee_name AS responsible_name,
   wo.wo_schedule_time,
   ms.status_name_cn
 FROM wo_list wo
 LEFT JOIN asset_list a ON wo.wo_asset_id = a.asset_id
+LEFT JOIN admin_employee ae ON wo.wo_responsible_id = ae.user_id
 LEFT JOIN mic_status ms ON wo.wo_status = ms.status_id
 WHERE DATE(wo.wo_creation_time) = CURDATE()
   AND wo.wo_type_id = 3
