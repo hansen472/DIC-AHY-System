@@ -403,6 +403,8 @@ async function loadTasks() {
       }
       const result = await res.json();
       submittedData = result.data || [];
+      // 确保用户列表已加载，供"当前节点"列显示处理人中文名
+      if (optionCache.users === null) await loadOptionData();
       renderSubmittedList();
       return;
     }
@@ -514,9 +516,13 @@ function renderSubmittedList() {
   submittedData.forEach(ins => {
     const summary = formatInstanceSummary(ins);
     const nodeNames = (ins.current_node_names || []).join('、');
-    // 当前节点处理人（审批中时显示）
+    // 当前节点处理人（审批中时显示，优先用中文名）
     const assignees = (ins.status === 'running' && ins.current_assignees && ins.current_assignees.length > 0)
-      ? ins.current_assignees.join('、') : '';
+      ? ins.current_assignees.map(u => {
+          const found = (optionCache.users || []).find(x => x.username === u);
+          return (found && found.chinese_name) ? found.chinese_name : u;
+        }).join('、')
+      : '';
     const nodeCellTitle = assignees ? `${nodeNames}  处理人：${assignees}` : nodeNames;
     const nodeCellHtml = nodeNames
       ? escapeHtml(nodeNames) + (assignees ? `<br><span style="font-size:11px;color:#718096;">处理人：${escapeHtml(assignees)}</span>` : '')
