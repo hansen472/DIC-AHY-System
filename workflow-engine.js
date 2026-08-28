@@ -403,7 +403,7 @@ class WorkflowEngine {
 
   async loadInstanceVars(connection, instanceId) {
     const [rows] = await connection.execute(
-      'SELECT var_name, var_value FROM workflow_instance_vars WHERE instance_id = ?',
+      'SELECT var_name, var_value FROM workflow_instance_vars WHERE instance_id = ? ORDER BY id ASC',
       [instanceId]
     );
     const vars = {};
@@ -523,7 +523,7 @@ class WorkflowEngine {
     // 创建审批任务
     for (const nid of activeApprovalNodes) {
       const node = graph.nodeMap.get(nid);
-      await this.createNodeTasks(connection, instanceId, node);
+      await this.createNodeTasks(connection, instanceId, node, vars);
     }
 
     // 如果没有待审批节点，说明流程到达终点
@@ -536,11 +536,18 @@ class WorkflowEngine {
     }
   }
 
-  async createNodeTasks(connection, instanceId, node) {
+  async createNodeTasks(connection, instanceId, node, vars = {}) {
     const cfg = node.config || {};
-    const assignees = Array.isArray(cfg.assignees) ? cfg.assignees.filter(Boolean) : [];
+    const rawAssignees = Array.isArray(cfg.assignees) ? cfg.assignees.filter(Boolean) : [];
+
+    // 解析动态审批人：[变量:xxx] 读流程变量，[部门经理] 读发起人直属上级
+    const assignees = [];
+    for (const raw of rawAssignees) {
+      const resolved = await this.resolveAssignee(connection, instanceId, raw, vars);
+      if (resolved) assignees.push(resolved);
+    }
     if (assignees.length === 0) {
-      // 未指定审批人时默认发给发起人（避免流程卡死）
+      // 未指定审批人（或动态解析全部失败）时默认发给发起人（避免流程卡死）
       const [rows] = await connection.execute(
         'SELECT created_by FROM workflow_instances WHERE id = ?',
         [instanceId]
@@ -558,6 +565,44 @@ class WorkflowEngine {
         [instanceId, node.id, node.name || node.id, assignee, 'pending', dueTime]
       );
     }
+  }
+
+  // 解析单个审批人配置：普通用户名原样返回；[变量:xxx]/[部门经理] 动态解析；失败返回 null
+  async resolveAssignee(connection, instanceId, raw, vars) {
+    const str = String(raw).trim();
+
+    // [变量:xxx] → 从流程变量解析（变量由前置节点审批表单写入）
+    const varMatch = str.match(/^\[变量[:：]\s*(.+)\]$/);
+    if (varMatch) {
+      const varName = varMatch[1].trim();
+      const value = vars[varName];
+      if (value) {
+        console.log(`[WorkflowEngine] 动态审批人 [变量:${varName}] → ${value}`);
+        return String(value);
+      }
+      console.warn(`[WorkflowEngine] 动态审批人 [变量:${varName}] 未解析到值`);
+      return null;
+    }
+
+    // [部门经理] → 发起人的直属上级（users.direct_manager_username）
+    if (str === '[部门经理]') {
+      const [rows] = await connection.execute(
+        `SELECT u.direct_manager_username
+         FROM workflow_instances i
+         JOIN users u ON u.username = i.created_by
+         WHERE i.id = ?`,
+        [instanceId]
+      );
+      const mgr = rows[0]?.direct_manager_username;
+      if (mgr) {
+        console.log(`[WorkflowEngine] 动态审批人 [部门经理] → ${mgr}`);
+        return mgr;
+      }
+      console.warn('[WorkflowEngine] 发起人未配置直属上级，[部门经理] 解析失败');
+      return null;
+    }
+
+    return str;
   }
 
   // ---------- 任务处理 ----------
@@ -630,6 +675,15 @@ class WorkflowEngine {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [taskId, instanceId, task.node_id, task.node_name, completed_by, action, comment, now()]
       );
+
+      // 通知业务模块：单个任务已完成（节点表单数据随 variables 传递，供业务表同步）
+      await this.invokeHook(definition.module_key, 'onTaskComplete', {
+        instance: await this.getInstance(connection, instanceId),
+        task,
+        action,
+        comment,
+        variables: vars
+      });
 
       // 判断审批节点是否达成最终结论
       const nodeResult = await this.resolveNodeResult(connection, instanceId, node);
@@ -844,6 +898,8 @@ class WorkflowEngine {
     const r = rows[0];
     r.payload = parseJson(r.payload_json, {});
     r.current_node_ids = parseJson(r.current_node_ids, []);
+    // 附带流程变量（含各节点审批表单数据），供详情展示与业务同步使用
+    r.vars = await this.loadInstanceVars(conn, instanceId);
     return r;
   }
 
@@ -920,7 +976,7 @@ class WorkflowEngine {
 
   async getTasksByAssignee(assignee, status = 'pending') {
     const [rows] = await pool.execute(
-      `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, d.module_key, d.name as definition_name
+      `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, d.module_key, d.name as definition_name, d.nodes_json
        FROM workflow_tasks t
        JOIN workflow_instances i ON t.instance_id = i.id
        JOIN workflow_definitions d ON i.definition_id = d.id
@@ -929,14 +985,11 @@ class WorkflowEngine {
       [assignee, status]
     );
     console.log(`[WorkflowEngine] getTasksByAssignee assignee=${assignee} status=${status} count=${rows.length} ids=${rows.map(r => r.id).join(',')}`);
-    return rows.map(r => {
-      r.payload = parseJson(r.payload_json, {});
-      return r;
-    });
+    return rows.map(r => this.attachNodeConfig(r));
   }
 
   async getAllPendingTasks({ excludeCreatedBy } = {}) {
-    let sql = `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, i.created_by as instance_created_by, d.module_key, d.name as definition_name
+    let sql = `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, i.created_by as instance_created_by, d.module_key, d.name as definition_name, d.nodes_json
                FROM workflow_tasks t
                JOIN workflow_instances i ON t.instance_id = i.id
                JOIN workflow_definitions d ON i.definition_id = d.id
@@ -950,10 +1003,17 @@ class WorkflowEngine {
     sql += ' ORDER BY t.created_at DESC';
     const [rows] = await pool.execute(sql, params);
     console.log(`[WorkflowEngine] getAllPendingTasks count=${rows.length} ids=${rows.map(r => r.id).join(',')}`);
-    return rows.map(r => {
-      r.payload = parseJson(r.payload_json, {});
-      return r;
-    });
+    return rows.map(r => this.attachNodeConfig(r));
+  }
+
+  // 为任务行附加所属节点的配置（含 formFields 表单定义），并移除全量节点数据以减小响应体积
+  attachNodeConfig(taskRow) {
+    taskRow.payload = parseJson(taskRow.payload_json, {});
+    const nodes = parseJson(taskRow.nodes_json, []);
+    const node = nodes.find(n => n.id === taskRow.node_id);
+    taskRow.node_config = node ? (node.config || {}) : {};
+    delete taskRow.nodes_json;
+    return taskRow;
   }
 
   async getPendingTaskCount(assignee) {

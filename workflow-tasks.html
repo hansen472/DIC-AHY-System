@@ -118,6 +118,15 @@ tr:hover td { background: #f7fafc; }
   font-size: 13px; color: #2b6cb0; background: #ebf8ff; border: 1px solid #bee3f8;
   border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; line-height: 1.6;
 }
+/* 三段式详情的分节标题（上报 / 归类 / 处理） */
+.detail-section-title {
+  font-size: 13px; font-weight: 600; color: #2c3e50;
+  border-left: 4px solid #2b6cb0; padding-left: 8px; margin: 18px 0 10px;
+}
+.detail-section-title:first-of-type { margin-top: 0; }
+/* 审批节点动态表单（流程设计器配置） */
+#approve-form-fields .form-group { margin-bottom: 12px; }
+#approve-form-fields .ff-readonly { background: #f7fafc; color: #4a5568; }
 
 /* 重新提交表单弹窗 */
 .modal.modal-wide { max-width: 780px; }
@@ -171,6 +180,7 @@ tr:hover td { background: #f7fafc; }
         <label>业务标识</label>
         <input type="text" id="approve-business-key" readonly>
       </div>
+      <div id="approve-form-fields"></div>
       <div class="form-group">
         <label>审批意见 <span style="color:#e53e3e;">*</span></label>
         <textarea id="approve-comment" placeholder="请输入审批意见"></textarea>
@@ -540,24 +550,62 @@ function onRowDblClick(taskId, event) {
   openDetailModal(taskId);
 }
 
-function openDetailModal(taskId) {
+// 双击待办条目：弹窗查看业务数据详情（含各审批节点填写的表单数据）
+async function openDetailModal(taskId) {
   const task = tasksData.find(t => t.id === taskId);
   if (!task) return;
   const payload = task.payload || {};
+
+  // 拉取流程实例（含流程变量：各节点审批表单已提交的数据）
+  let vars = {};
+  try {
+    const res = await fetch('/api/workflow-instances/' + task.instance_id);
+    if (res.ok) {
+      const result = await res.json();
+      vars = (result.data && result.data.vars) || {};
+    }
+  } catch (e) {}
 
   const context = `流程：${task.definition_name || '-'} ｜ 节点：${task.node_name || '-'} ｜ 业务标识：${task.business_key || '-'}`;
   let bodyHtml = `<div class="detail-context">${escapeHtml(context)}</div>`;
 
   if (task.module_key === 'deviation_reports' || (p_isDeviationPayload(payload))) {
     document.getElementById('detail-modal-title').textContent = '偏差报告详情';
+    bodyHtml += `<div class="detail-section-title">一、偏差上报（提交人填写）</div>`;
     bodyHtml += renderDeviationDetail(payload);
+    bodyHtml += renderFormSections(vars);
   } else {
     document.getElementById('detail-modal-title').textContent = '业务数据详情';
     bodyHtml += renderGenericDetail(payload);
+    bodyHtml += renderFormSections(vars);
   }
 
   document.getElementById('detail-content').innerHTML = bodyHtml;
   document.getElementById('detail-modal').classList.add('active');
+}
+
+// 渲染各审批节点已提交的表单数据（流程变量中 __form_<nodeId> 归档，按首次写入顺序分节展示）
+function renderFormSections(vars) {
+  const formKeys = Object.keys(vars).filter(k => k.startsWith('__form_') && vars[k] && typeof vars[k] === 'object');
+  if (formKeys.length === 0) return '';
+  let html = '';
+  formKeys.forEach(k => {
+    const form = vars[k];
+    const entries = Object.entries(form).filter(([key, v]) => key !== '__node' && v !== null && v !== undefined && v !== '');
+    if (entries.length === 0) return;
+    html += `<div class="detail-section-title">${escapeHtml(form.__node || '节点表单')}</div>`;
+    html += '<div class="detail-grid">';
+    entries.forEach(([key, value]) => {
+      const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      html += `
+        <div class="detail-item${text.length > 60 ? ' full' : ''}">
+          <div class="detail-label">${escapeHtml(key)}</div>
+          <div class="detail-value">${escapeHtml(text)}</div>
+        </div>`;
+    });
+    html += '</div>';
+  });
+  return html;
 }
 
 // 判断负载是否为偏差上报表单（未识别模块时按字段特征兜底识别）
@@ -661,42 +709,55 @@ async function openResubmitModal(instanceId) {
   document.getElementById('resubmit-modal').classList.add('active');
 }
 
+// ==================== 共享下拉数据源（用户/部门） ====================
+
+// 全局缓存：审批节点表单与重新提交表单共用，避免重复请求
+const optionCache = { users: null, departments: null };
+
+async function loadOptionData() {
+  const tasks = [];
+  if (optionCache.users === null) {
+    tasks.push(
+      fetch('/api/users/simple-list')
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { optionCache.users = (j && j.users) || []; })
+        .catch(() => { optionCache.users = []; })
+    );
+  }
+  if (optionCache.departments === null) {
+    tasks.push(
+      fetch('/api/departments/simple-list')
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { optionCache.departments = (j && j.data) || []; })
+        .catch(() => { optionCache.departments = []; })
+    );
+  }
+  await Promise.all(tasks);
+}
+
 // 懒加载部门/用户下拉选项（首次打开弹窗时请求）
 async function ensureResubmitOptions() {
   if (resubmitOptionsLoaded) return;
-  try {
-    const [deptRes, userRes] = await Promise.all([
-      fetch('/api/departments/simple-list'),
-      fetch('/api/users/simple-list')
-    ]);
+  await loadOptionData();
 
-    const deptSelect = document.getElementById('rs-department');
-    deptSelect.innerHTML = '<option value="">— 请选择部门 —</option>';
-    if (deptRes.ok) {
-      const r = await deptRes.json();
-      (r.data || []).forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d.department_name;
-        opt.textContent = d.department_name;
-        deptSelect.appendChild(opt);
-      });
-    }
+  const deptSelect = document.getElementById('rs-department');
+  deptSelect.innerHTML = '<option value="">— 请选择部门 —</option>';
+  optionCache.departments.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.department_name;
+    opt.textContent = d.department_name;
+    deptSelect.appendChild(opt);
+  });
 
-    const userSelect = document.getElementById('rs-reporter');
-    userSelect.innerHTML = '<option value="">— 请选择发现人 —</option>';
-    if (userRes.ok) {
-      const r = await userRes.json();
-      (r.users || []).forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u.username;
-        opt.textContent = u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username;
-        userSelect.appendChild(opt);
-      });
-    }
-    resubmitOptionsLoaded = true;
-  } catch (e) {
-    console.error('加载重新提交下拉选项失败:', e);
-  }
+  const userSelect = document.getElementById('rs-reporter');
+  userSelect.innerHTML = '<option value="">— 请选择发现人 —</option>';
+  optionCache.users.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.username;
+    opt.textContent = u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username;
+    userSelect.appendChild(opt);
+  });
+  resubmitOptionsLoaded = true;
 }
 
 // "YYYY-MM-DD HH:MM[:SS]" → datetime-local 需要的 "YYYY-MM-DDTHH:MM"
@@ -778,13 +839,123 @@ async function openApproveModal(taskId) {
 
   const task = tasksData.find(t => t.id === taskId);
   if (!task) return;
+  activeTaskNode = { id: task.node_id, name: task.node_name };
 
   document.getElementById('approve-definition-name').value = task.definition_name || '';
   document.getElementById('approve-node-name').value = task.node_name || '';
   document.getElementById('approve-business-key').value = task.business_key || '';
   document.getElementById('approve-comment').value = '';
   document.querySelector('input[name="approve-action"][value="approve"]').checked = true;
+
+  await renderApproveForm(task);
   document.getElementById('approve-modal').classList.add('active');
+}
+
+// ==================== 审批节点动态表单 ====================
+
+// 当前审批任务所属节点（提交时按节点归档表单数据）
+let activeTaskNode = null;
+// 当前渲染的表单字段定义（提交时做必填校验）
+let activeFormFields = [];
+
+// 渲染流程设计器为本节点配置的表单字段；驳回重做的循环场景下用上一轮填写值预填
+async function renderApproveForm(task) {
+  const container = document.getElementById('approve-form-fields');
+  const fields = (task.node_config && Array.isArray(task.node_config.formFields))
+    ? task.node_config.formFields.filter(f => f && f.name)
+    : [];
+  activeFormFields = fields;
+
+  if (fields.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  // user/department 字段需要下拉数据源
+  if (fields.some(f => f.type === 'user' || f.type === 'department')) {
+    await loadOptionData();
+  }
+
+  // 读取流程变量预填（本节点上一轮的 __form_<nodeId> 或同名变量）
+  let prevValues = {};
+  try {
+    const res = await fetch('/api/workflow-instances/' + task.instance_id);
+    if (res.ok) {
+      const result = await res.json();
+      const vars = (result.data && result.data.vars) || {};
+      const prevForm = vars['__form_' + task.node_id];
+      if (prevForm && typeof prevForm === 'object') {
+        prevValues = { ...prevForm };
+        delete prevValues.__node;
+      }
+    }
+  } catch (e) {}
+
+  let html = `<div class="detail-section-title">节点表单（${escapeHtml(task.node_name || '')}）</div>`;
+  fields.forEach(f => {
+    const label = `${escapeHtml(f.label || f.name)}${f.required ? ' <span style="color:#e53e3e;">*</span>' : ''}`;
+    const val = prevValues[f.name] !== undefined && prevValues[f.name] !== null ? prevValues[f.name] : '';
+    let control = '';
+
+    if (f.type === 'textarea') {
+      control = `<textarea data-ff-name="${escapeHtml(f.name)}" placeholder="请输入${escapeHtml(f.label || f.name)}">${escapeHtml(val)}</textarea>`;
+    } else if (f.type === 'select') {
+      const opts = String(f.options || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+      control = `<select data-ff-name="${escapeHtml(f.name)}">
+        <option value="">— 请选择${escapeHtml(f.label || f.name)} —</option>
+        ${opts.map(o => `<option value="${escapeHtml(o)}" ${o === val ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+      </select>`;
+    } else if (f.type === 'user') {
+      control = `<select data-ff-name="${escapeHtml(f.name)}">
+        <option value="">— 请选择${escapeHtml(f.label || f.name)} —</option>
+        ${optionCache.users.map(u => `<option value="${escapeHtml(u.username)}" ${u.username === val ? 'selected' : ''}>${escapeHtml(u.chinese_name ? u.chinese_name + ' (' + u.username + ')' : u.username)}</option>`).join('')}
+      </select>`;
+    } else if (f.type === 'department') {
+      control = `<select data-ff-name="${escapeHtml(f.name)}">
+        <option value="">— 请选择${escapeHtml(f.label || f.name)} —</option>
+        ${optionCache.departments.map(d => `<option value="${escapeHtml(d.department_name)}" ${d.department_name === val ? 'selected' : ''}>${escapeHtml(d.department_name)}</option>`).join('')}
+      </select>`;
+    } else if (f.type === 'currentUser') {
+      // 当前审批人自动填充，只读展示
+      control = `<input type="text" data-ff-name="${escapeHtml(f.name)}" class="ff-readonly" value="${escapeHtml(currentUser)}" readonly>`;
+    } else if (f.type === 'date') {
+      control = `<input type="date" data-ff-name="${escapeHtml(f.name)}" value="${escapeHtml(val)}">`;
+    } else {
+      control = `<input type="text" data-ff-name="${escapeHtml(f.name)}" placeholder="请输入${escapeHtml(f.label || f.name)}" value="${escapeHtml(val)}">`;
+    }
+
+    html += `<div class="form-group"><label>${label}</label>${control}</div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+// 收集节点表单值：返回 { values, variables }
+// variables 含两份：字段名平铺（供 [变量:xxx] 动态审批人解析）+ __form_<nodeId> 归档（供详情分节展示与业务表同步）
+function collectApproveForm() {
+  const container = document.getElementById('approve-form-fields');
+  const values = {};
+  const variables = {};
+
+  // 必填校验（依据渲染时的字段定义）
+  for (const f of activeFormFields) {
+    const el = container.querySelector(`[data-ff-name="${cssEscape(f.name)}"]`);
+    if (!el) continue;
+    values[f.name] = el.value.trim();
+    if (f.required && !values[f.name]) {
+      return { error: '请填写「' + (f.label || f.name) + '」' };
+    }
+  }
+
+  Object.assign(variables, values);
+  if (Object.keys(values).length > 0 && activeTaskNode && activeTaskNode.id) {
+    variables['__form_' + activeTaskNode.id] = { __node: activeTaskNode.name, ...values };
+  }
+  return { values, variables };
+}
+
+function cssEscape(s) {
+  return String(s).replace(/["\\]/g, '\\$&');
 }
 
 async function openTransferModal(taskId) {
@@ -848,6 +1019,13 @@ async function submitApprove() {
     return;
   }
 
+  // 收集节点表单（无表单字段的节点返回空 variables）
+  const form = collectApproveForm();
+  if (form.error) {
+    showToast(form.error, 'error');
+    return;
+  }
+
   const action = document.querySelector('input[name="approve-action"]:checked').value;
   const btn = document.getElementById('btn-submit-approve');
   btn.disabled = true;
@@ -856,7 +1034,7 @@ async function submitApprove() {
     const res = await fetch('/api/workflow-tasks/' + activeTaskId + '/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, comment })
+      body: JSON.stringify({ action, comment, variables: form.variables })
     });
     const result = await res.json();
     console.log('[审批提交响应]', result);
@@ -926,6 +1104,12 @@ async function submitTransfer() {
 function closeModal(id) {
   document.getElementById(id).classList.remove('active');
   activeTaskId = null;
+  // 关闭审批弹窗时清理节点表单状态，避免残留到下一次审批
+  if (id === 'approve-modal') {
+    activeTaskNode = null;
+    activeFormFields = [];
+    document.getElementById('approve-form-fields').innerHTML = '';
+  }
 }
 
 function showMessage(text, type) {

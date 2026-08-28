@@ -183,7 +183,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
         <input type="text" id="inp-name" oninput="updateSelectedNode()">
       </div>
       <div class="form-group" id="pg-assignees">
-        <label>审批人（逗号分隔用户名）</label>
+        <label>审批人（逗号分隔，支持 [部门经理]、[变量:xxx]）</label>
         <div class="assignees-row">
           <input type="text" id="inp-assignees" onchange="updateSelectedNode()">
           <button class="btn-pick-user" onclick="openUserPicker()">选择人员</button>
@@ -204,6 +204,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
       <div class="form-group" id="pg-due">
         <label>审批时限（小时）</label>
         <input type="number" id="inp-due" min="0" step="1" onchange="updateSelectedNode()">
+      </div>
+      <div class="form-group" id="pg-form-fields">
+        <label>节点表单（审批人提交时填写）</label>
+        <div id="ff-list"></div>
+        <button type="button" class="btn-secondary" onclick="addFormField()" style="width:100%; margin-top:6px; font-size:12px;">+ 添加字段</button>
       </div>
       <div class="form-group" id="pg-condition">
         <label>条件表达式</label>
@@ -364,7 +369,7 @@ function addNode(type) {
     config: {}
   };
   if (type === 'approval') {
-    node.config = { assignees: [], approvalMode: 'all', ratio: 1, dueHours: 24 };
+    node.config = { assignees: [], approvalMode: 'all', ratio: 1, dueHours: 24, formFields: [] };
   }
   pushState();
   nodes.push(node);
@@ -449,10 +454,11 @@ function renderProperties() {
   const pgRatio = document.getElementById('pg-ratio');
   const pgDue = document.getElementById('pg-due');
   const pgCondition = document.getElementById('pg-condition');
+  const pgFormFields = document.getElementById('pg-form-fields');
   const pgEdgeLabel = document.getElementById('pg-edge-label');
 
   if (selectedEdge) {
-    [pgName, pgAssignees, pgMode, pgRatio, pgDue, pgCondition].forEach(el => el.style.display = 'none');
+    [pgName, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
     pgEdgeLabel.style.display = 'block';
     document.getElementById('inp-edge-label').value = selectedEdge.label || '';
     return;
@@ -469,6 +475,7 @@ function renderProperties() {
     pgAssignees.style.display = 'block';
     pgMode.style.display = 'block';
     pgDue.style.display = 'block';
+    pgFormFields.style.display = 'block';
     document.getElementById('inp-assignees').value = (node.config.assignees || []).join(', ');
     document.getElementById('inp-mode').value = node.config.approvalMode || 'all';
     document.getElementById('inp-due').value = node.config.dueHours || '';
@@ -476,15 +483,17 @@ function renderProperties() {
     pgRatio.style.display = showRatio ? 'block' : 'none';
     document.getElementById('inp-ratio').value = node.config.ratio || '';
     pgCondition.style.display = 'none';
+    renderFormFields();
   } else if (node.type === 'condition') {
     pgAssignees.style.display = 'none';
     pgMode.style.display = 'none';
     pgRatio.style.display = 'none';
     pgDue.style.display = 'none';
+    pgFormFields.style.display = 'none';
     pgCondition.style.display = 'block';
     document.getElementById('inp-condition').value = node.config.condition || '';
   } else {
-    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition].forEach(el => el.style.display = 'none');
+    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
   }
 }
 
@@ -803,6 +812,86 @@ async function loadUser() {
   } catch (e) {
     window.location.href = '/login';
   }
+}
+
+// ========== 节点表单（formFields）编辑 ==========
+
+// 表单字段类型：user/department 为动态数据源下拉，currentUser 提交时自动填充当前审批人
+const FF_TYPES = [
+  { value: 'text', label: '文本' },
+  { value: 'textarea', label: '多行文本' },
+  { value: 'select', label: '下拉（固定选项）' },
+  { value: 'date', label: '日期' },
+  { value: 'user', label: '用户下拉' },
+  { value: 'department', label: '部门下拉' },
+  { value: 'currentUser', label: '当前用户（只读）' }
+];
+
+// 获取当前选中审批节点的表单字段数组（无则初始化为空数组）
+function getFormFields() {
+  const node = nodes.find(n => n.id === selectedNodeId);
+  if (!node || node.type !== 'approval') return null;
+  if (!Array.isArray(node.config.formFields)) node.config.formFields = [];
+  return node.config.formFields;
+}
+
+function renderFormFields() {
+  const list = document.getElementById('ff-list');
+  if (!list) return;
+  const fields = getFormFields();
+  if (fields === null) { list.innerHTML = ''; return; }
+  if (fields.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:#a0aec0;">暂无字段（该节点审批人无需填写表单）</div>';
+    return;
+  }
+  const inpStyle = 'flex:1; min-width:0; font-size:12px; padding:4px 6px; border:1px solid #e2e8f0; border-radius:4px;';
+  list.innerHTML = fields.map((f, i) => {
+    const isSelect = f.type === 'select';
+    return `
+      <div style="border:1px solid #e2e8f0; border-radius:6px; padding:8px; margin-bottom:8px; background:#f8fafc;">
+        <div style="display:flex; gap:4px; margin-bottom:4px;">
+          <input type="text" value="${escapeAttr(f.name)}" placeholder="变量名 如 handler" onchange="updateFormField(${i},'name',this.value)" style="${inpStyle}">
+          <input type="text" value="${escapeAttr(f.label)}" placeholder="标签 如 处理人" onchange="updateFormField(${i},'label',this.value)" style="${inpStyle}">
+        </div>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <select onchange="updateFormField(${i},'type',this.value); renderFormFields();" style="${inpStyle}">
+            ${FF_TYPES.map(t => `<option value="${t.value}" ${f.type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
+          </select>
+          <label style="font-size:12px; display:flex; align-items:center; gap:2px; white-space:nowrap; cursor:pointer;">
+            <input type="checkbox" ${f.required ? 'checked' : ''} onchange="updateFormField(${i},'required',this.checked)">必填
+          </label>
+          <button type="button" class="btn-danger" onclick="removeFormField(${i})" style="font-size:11px; padding:3px 8px;">删</button>
+        </div>
+        ${isSelect ? `<input type="text" value="${escapeAttr(f.options || '')}" placeholder="选项，逗号分隔 如：微小,中等,重大" onchange="updateFormField(${i},'options',this.value)" style="width:100%; margin-top:4px; ${inpStyle}">` : ''}
+      </div>`;
+  }).join('');
+}
+
+function addFormField() {
+  const fields = getFormFields();
+  if (!fields) return;
+  pushState();
+  fields.push({ name: '', label: '', type: 'text', options: '', required: false });
+  renderFormFields();
+}
+
+function updateFormField(index, key, value) {
+  const fields = getFormFields();
+  if (!fields || !fields[index]) return;
+  pushState();
+  fields[index][key] = value;
+}
+
+function removeFormField(index) {
+  const fields = getFormFields();
+  if (!fields) return;
+  pushState();
+  fields.splice(index, 1);
+  renderFormFields();
+}
+
+function escapeAttr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
 // ========== 审批人选择器 ==========

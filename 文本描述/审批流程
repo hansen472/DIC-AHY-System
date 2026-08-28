@@ -77,3 +77,182 @@ Step 4:前端对接
 增加一个条件，只有审批流处理被”已驳回“以及”已通过“的记录可以重新提交。
 
 再次收紧条件，只有”已驳回“的条目才可以”重新提交“
+
+在现在的偏差上报流程中，共有三部分内容：
+1 偏差上报现状（现在已经设计完成）---提交人完成
+2 偏差归类（现在没有设计完成）---审批人 偏差负责人完成
+3 偏差处理（现在没有设计完成）---由上一步的偏差负责人决定谁是处理人，决定后，流程转到处理人那里去。处理人填写处理的内容，提交后流程至偏差负责人处审核，审核通过，流程结束，流程不通过，则流程返回处理人处重新处理，一直循环。
+
+根据以上要求，帮我设计方案。（具体说明，三部分的收集控件如何设计，流程中决定的负责人，如何应用到审批流，中转循环审批如何实现）
+偏差上报三段式流程设计方案
+〇、先说两个代码现状（方案的基础）
+已具备的能力：
+• 引擎的 completeTask 已支持 variables 参数 → 写入 workflow_instance_vars 表，且条件表达式可用 vars.xxx 访问 —— 运行时变量的写入/读取通道已存在，这是本方案的核心依托
+• 驳回路由按连线标签走（reject 边指向哪就到哪）—— 循环审批天然支持，引擎零改动
+• 每轮处理都写 workflow_task_history —— 多轮循环的审计追溯免费获得
+发现的缺陷（顺带修复）：
+• 设计器插入的虚拟角色 [部门经理] 在引擎中没有任何解析逻辑（全项目 grep 确认只存在于 designer）——createNodeTasks 会把字符串 [部门经理]当成真实用户名写进 workflow_tasks.assignee_username，任务实际无人可办。本方案的“动态审批人”机制会一并补上这个解析。
+￼
+一、总体流程设计
+
+plaintext
+￼
+开始 ──→ ①偏差归类 ──(同意)──→ ②偏差处理 ──(同意)──→ ③处理审核 ──(同意)──→ 结束
+            │                    ↑    ↑                    │
+          (驳回)                 │    └──────(驳回)─────────┘  ← 循环：退回处理人重做
+            ↓                    │
+        流程结束(已驳回)      ②③之间循环，直到审核通过
+节点
+承办人
+做什么
+① 偏差归类
+设计器配置的固定人员（如 QA 主管）或 [部门经理]
+审阅上报内容，填写归类表单 + 指定处理人
+② 偏差处理
+[变量:handler]（上一步指定）
+填写处理措施，提交
+③ 处理审核
+[变量:deviation_owner]（归类人本人）
+审核处理结果：通过→结束；驳回→退回②循环
+①处驳回 → 流程结束（报告状态=已驳回），提交人用现有的“重新提交”功能修改后再报 —— 复用已有闭环，不新增循环。
+￼
+二、三部分收集控件设计
+第 1 部分 偏差上报现状（已有，不动）：提交人在 deviation-report.html 填写。第 2 部分 偏差归类（新增）——归类人在 workflow-tasks.html 的审批弹窗中填写：
+控件
+类型
+必填
+存储变量
+偏差类别
+下拉（物料/设备/方法/环境/人员，选项可配）
+✓
+form_归类.类别
+严重程度
+下拉（微小/中等/重大）
+✓
+form_归类.程度
+责任部门
+下拉（departments 表）
+￼
+form_归类.责任部门
+偏差负责人
+只读自动填充 = 当前审批人
+自动
+deviation_owner（路由变量）
+处理人
+用户下拉（复用现有 simple-list）
+✓
+handler（路由变量）
+归类说明
+多行文本
+￼
+form_归类.说明
+第 3 部分 偏差处理（新增）——处理人在审批弹窗中填写：
+控件
+类型
+必填
+存储变量
+处理措施（纠正/预防措施）
+多行文本
+✓
+form_处理.措施
+处理结果
+下拉（已完成/需跟踪）
+✓
+form_处理.结果
+完成时间
+日期
+￼
+form_处理.完成时间
+③ 处理审核：用现有控件（审批意见 + 同意/驳回），无新控件。表单定义存在流程定义节点的 config.formFields 里（设计器配置），审批弹窗按节点动态渲染 —— 通用机制，将来其他业务模块也能用。
+￼
+三、动态负责人如何应用到审批流（核心机制：变量审批人）
+引擎 createNodeTasks 扩展：审批人字符串匹配 [变量:xxx]或 [部门经理] 时按下面规则解析：
+
+plaintext
+￼
+[变量:handler]          → 读 workflow_instance_vars.handler
+[变量:deviation_owner]  → 读 workflow_instance_vars.deviation_owner
+[部门经理]              → 读 instance.created_by 对应用户的 direct_manager_username（补上现有缺陷）
+解析失败 → 兜底发给发起人 + 控制台告警（与现有"空审批人"兜底一致，防流程卡死）
+变量注入时机：归类人提交审批时，completeTask({ action:'approve', variables:{ handler:'zhangsan', deviation_owner:'lisi', 'form_归类.类别':'...' } }) —— variables 通道现成，前端只需把表单值装进去。这样设计器里三个节点的审批人配置分别是：固定人员/[部门经理]、[变量:handler]、[变量:deviation_owner]。
+￼
+四、中转循环审批实现
+引擎零改动（这部分是现有机制的自然运用）：
+1. 处理审核节点驳回 → completeTask 找 reject 标签的连线 → 指回“偏差处理”节点
+2. advance() 为该节点重新建任务，审批人 [变量:handler] 从持久化的实例变量中解析（变量存表，跨轮次存活）
+3. 处理人收到新待办 → 重新填写处理措施 → 提交 → 再到审核 → 不通过再退回……无限循环直到审核同意
+4. 每一轮都留 workflow_task_history（含驳回意见），审核人驳回理由处理人可见
+需要补充的一点：循环中每轮 advance 会新建任务而不是复用旧任务，所以历史按轮次清晰可查；dueHours 超时提醒对每轮新任务都生效。
+￼
+五、数据模型与展示
+sql/alter-deviation-reports-add-classification-handling.sql：
+
+sql
+￼
+ALTER TABLE deviation_reports  
+ADD COLUMN deviation_owner   VARCHAR(50)  NULL COMMENT '偏差负责人（归类人）',  
+ADD COLUMN handler           VARCHAR(50)  NULL COMMENT '处理人',  
+ADD COLUMN classification_json LONGTEXT   NULL COMMENT '归类表单数据',  
+ADD COLUMN handling_json     LONGTEXT     NULL COMMENT '处理表单数据（每轮最新）';
+数据流：引擎新增通用钩子 onTaskComplete({ instance, task, variables })（在每次任务完成时调用，与现有 onProcessFinish/onTaskReject并列）→ deviation_reports 模块钩子检测到节点名含“归类/处理”时，把表单变量同步进业务表 → 双击详情弹窗扩展为三段式展示：上报信息（payload）/ 归类信息 / 处理信息。
+￼
+六、实施改动清单
+#
+文件
+改动
+1
+sql/alter-...sql（新建）
+上述 4 列
+2
+workflow-engine.js
+① createNodeTasks 变量/部门经理解析；② onTaskComplete 钩子调用点；③ getInstance 附带 vars（详情展示用）
+3
+workflow-designer.html
+审批节点属性面板增加“节点表单”编辑器（字段名/类型/选项/必填）+ 审批人输入框支持 [变量:xxx] 提示
+4
+workflow-tasks.html
+① 审批弹窗按节点 formFields 动态渲染表单+必填校验，提交时随 variables 发送；② 偏差报告详情弹窗改为三段式
+5
+server.js
+deviation_reports 模块注册 onTaskComplete 钩子同步业务表
+6
+（管理员操作）
+流程设计器按第一节画流程、配表单、启用
+￼
+七、待您确认的 4 个设计决策
+1. 归类节点的审批人：固定 QA 人员名单（或签/会签）？还是 [部门经理]？还是两者都配？
+2. 偏差类别、严重程度的选项清单：我拟了 GMP 常用分类（物料/设备/方法/环境/人员 + 微小/中等/重大），需要您给出实际业务用的选项
+3. 归类节点“驳回”：按本方案=流程结束转“已驳回”（提交人修改后用现有重新提交功能）——确认这个语义是否符合预期？
+4. 处理审核是否需要多人：当前设计为单人（偏差负责人），若需多人会签/或签也可支持
+
+归类节点的审批人是固定 QA 人员名单，这个人员会在流程设计中指定。
+偏差类别、严重程度的选项清单--先按你提示的进行，后续再进行修改。
+归类节点“驳回”：按本方案=流程结束转“已驳回”（提交人修改后用现有重新提交功能）——确认这个语义是否符合预期？-----符合预期。 
+处理审核是否需要多人--暂时不需要。
+
+What Was Implemented
+1. SQL — alter-deviation-reports-add-classification-handling.sql: adds deviation_owner, handler, classification_json, handling_json columns. Needs to be executed on the server before use.2. Engine (workflow-engine.js):
+• resolveAssignee() — resolves [变量:xxx] from instance variables and [部门经理] from the initiator's direct_manager_username(this also fixes the previously-discovered defect where [部门经理] was UI-only)
+• onTaskComplete hook fires on every task completion, carrying the form variables
+• getInstance() now returns .vars; task list queries attach node_config (with formFields)
+• advance() passes the latest vars through routing — so when 处理审核 rejects back to 偏差处理， the loop re-entry resolves the current [变量:handler]
+3. Designer (workflow-designer.html): each approval node gets a form editor — field variable name, label, type (text/textarea/select/date/user dropdown/department dropdown/currentUser-readonly), required flag, and comma-separated options for select fields.4. Tasks page (workflow-tasks.html):
+• Approve modal renders the node's dynamic form; user/department fields use real dropdowns; currentUser fields auto-fill readonly; on re-work rounds the form pre-fills with the handler's previous submission
+• Required validation before submit; form values sent as variables
+• Detail modal now shows all three sections: 偏差上报 payload + each node's submitted form archive (归类 → 处理， in order)
+5. Server (server.js): the onTaskComplete hook syncs deviation_owner/handler (flat vars) and writes form snapshots to classification_json/handling_json (matched by characteristic field names). Resubmit now clears stale classification/handling datasince a new instance starts a fresh round.
+Last Step: Configure the Flow in the Designer
+Per your confirmed decisions, the admin sets up (module = 偏差上报):
+Node
+Assignees
+Form fields (variable names)
+① 偏差归类
+Fixed QA list
+偏差类别 select (物料，设备，方法，环境，人员) ； 严重程度 select (微小，中等，重大) ； 责任部门 department ; deviation_owner currentUser (label 偏差负责人)； handler user (label 处理人)； 归类说明 textarea
+② 偏差处理
+[变量:handler]
+处理措施 textarea ; 处理结果 ; 完成时间 date
+③ 处理审核
+[变量:deviation_owner]
+(none needed, comment only)
+Connections: ① →approve→ ② →approve→ ③ →approve→ 结束； ③ →reject→ ② (the loop); ① gets no reject edge — the engine automatically ends the flow as 已驳回 when QA rejects, and the submitter uses the existing resubmit function.The variable names handler and deviation_owner are load-bearing — they drive both dynamic assignee resolution and the business-table sync. Would you like me to adjust anything in the field option lists or add the three-section detail view to the 我提交的审批 tab as well (currently it's only on the pending-task rows)?

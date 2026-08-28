@@ -3552,6 +3552,11 @@ workflowEngine.registerModule('supplier_qualifications', {
   }
 });
 
+// 偏差归类/处理表单的特征字段名（与流程设计器中节点表单的变量名对应，
+// onTaskComplete 钩子据此判定归档数据应写入 classification_json 还是 handling_json）
+const DEV_CLASSIFICATION_KEYS = ['偏差类别', '严重程度', '责任部门', '归类说明'];
+const DEV_HANDLING_KEYS = ['处理措施', '处理结果', '完成时间'];
+
 // 注册偏差上报模块钩子：流程结束时回写审批状态
 workflowEngine.registerModule('deviation_reports', {
   onProcessFinish: async ({ instance, result }) => {
@@ -3566,6 +3571,41 @@ workflowEngine.registerModule('deviation_reports', {
       );
     } catch (e) {
       console.error('回写偏差上报审批结果失败:', e.message);
+    }
+  },
+  // 单个任务完成时同步节点表单数据到业务表（归类/处理阶段数据落库，供查询与报表使用）
+  onTaskComplete: async ({ instance, task, action, comment, variables }) => {
+    try {
+      const reportId = parseBusinessId(instance.business_key);
+      if (!reportId || !variables) return;
+
+      const updates = {};
+
+      // 平铺变量：偏差负责人（归类审批人）/ 处理人（归类节点指定）
+      if (variables.deviation_owner) updates.deviation_owner = variables.deviation_owner;
+      if (variables.handler) updates.handler = variables.handler;
+
+      // __form_<nodeId> 归档：按特征字段名判定归类/处理表单，整份快照写入业务表
+      // （字段名与流程设计器中配置一致：偏差类别/严重程度/责任部门/归类说明 → 归类；处理措施/处理结果/完成时间 → 处理）
+      for (const [key, val] of Object.entries(variables)) {
+        if (!key.startsWith('__form_') || !val || typeof val !== 'object') continue;
+        const fieldNames = Object.keys(val).filter(k => k !== '__node');
+        if (fieldNames.some(k => DEV_CLASSIFICATION_KEYS.includes(k))) {
+          updates.classification_json = JSON.stringify(val);
+        } else if (fieldNames.some(k => DEV_HANDLING_KEYS.includes(k))) {
+          updates.handling_json = JSON.stringify(val);
+        }
+      }
+
+      if (Object.keys(updates).length === 0) return;
+      const setClause = Object.keys(updates).map(k => '`' + k + '` = ?').join(', ');
+      await pool.execute(
+        'UPDATE deviation_reports SET ' + setClause + ' WHERE id = ?',
+        [...Object.values(updates), reportId]
+      );
+      console.log(`[偏差上报] 任务 #${task?.id}（${task?.node_name || ''}）表单数据已同步到报告 #${reportId}`);
+    } catch (e) {
+      console.error('同步偏差上报节点表单数据失败:', e.message);
     }
   },
   onTaskReject: async ({ instance }) => {
@@ -3736,7 +3776,8 @@ app.post('/api/deviation-reports/:id/resubmit', requireAuth, async (req, res) =>
     await pool.execute(
       `UPDATE deviation_reports SET
          department = ?, dev_time = ?, reporter = ?, reporter_name = ?, subject = ?,
-         \`model\` = ?, spec = ?, batch = ?, quantity = ?, description = ?, status = 'pending_approval'
+         \`model\` = ?, spec = ?, batch = ?, quantity = ?, description = ?, status = 'pending_approval',
+         deviation_owner = NULL, handler = NULL, classification_json = NULL, handling_json = NULL
        WHERE id = ?`,
       [
         payload.department, payload.dev_time, payload.reporter, payload.reporter_name, payload.subject,
@@ -3744,6 +3785,7 @@ app.post('/api/deviation-reports/:id/resubmit', requireAuth, async (req, res) =>
         reportId
       ]
     );
+    // 重新提交会发起新的流程实例，上一轮的归类/处理数据已过时，随新一轮审批重新产生
 
     try {
       await workflowEngine.startInstance({
