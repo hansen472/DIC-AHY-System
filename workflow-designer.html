@@ -76,6 +76,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .node-approval { background: #ebf8ff; color: #2b6cb0; }
 .node-condition { background: #fefcbf; color: #744210; }
 .node-end { background: #fed7d7; color: #742a2a; }
+/* 文本描述：纯标注节点，虚线边框、左对齐、可换行，不参与流程连线 */
+.node-text { background: #fdf6e3; color: #6b4f1d; width: 200px; text-align: left; border: 2px dashed #d9c48a; }
+.node-text .node-text-content {
+  white-space: pre-wrap; word-break: break-word;
+  font-size: 12px; line-height: 1.5; min-height: 18px;
+}
+.node-text .node-text-content.placeholder { color: #b8a37a; }
 .node-type-label { font-size: 11px; opacity: 0.8; margin-top: 2px; }
 
 .modal-overlay {
@@ -165,6 +172,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     <div class="palette-item" onclick="addNode('approval')">👤 审批</div>
     <div class="palette-item" onclick="addNode('condition')">🔀 条件</div>
     <div class="palette-item" onclick="addNode('end')">🏁 结束</div>
+    <div class="palette-item" onclick="addNode('text')">📝 文本描述</div>
     <div style="margin-top:20px; padding-top:14px; border-top:1px solid #e2e8f0; font-size:12px; color:#718096;">
       提示：拖拽节点可调整位置；从节点右侧拖到另一节点左侧即可连线。
     </div>
@@ -181,6 +189,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
       <div class="form-group" id="pg-name">
         <label>节点名称</label>
         <input type="text" id="inp-name" oninput="updateSelectedNode()">
+      </div>
+      <div class="form-group" id="pg-text">
+        <label>节点描述（文本描述节点）</label>
+        <textarea id="inp-text" onchange="updateSelectedNode()" placeholder="填写该节点的描述说明，画布上对应节点会实时显示此内容"></textarea>
       </div>
       <div class="form-group" id="pg-assignees">
         <label>审批人（逗号分隔，支持 [部门经理]、[变量:xxx]）</label>
@@ -359,7 +371,7 @@ function getCanvasRect() {
 function addNode(type) {
   if (!jpInstance) return;
   const rect = getCanvasRect();
-  const names = { start: '开始', approval: '审批', condition: '条件判断', end: '结束' };
+  const names = { start: '开始', approval: '审批', condition: '条件判断', end: '结束', text: '文本描述' };
   const node = {
     id: generateId('node'),
     type,
@@ -370,6 +382,9 @@ function addNode(type) {
   };
   if (type === 'approval') {
     node.config = { assignees: [], approvalMode: 'all', ratio: 1, dueHours: 24, formFields: [] };
+  }
+  if (type === 'text') {
+    node.config = { text: '' };
   }
   pushState();
   nodes.push(node);
@@ -383,7 +398,13 @@ function renderNode(node) {
   el.className = `node node-${node.type}`;
   el.style.left = node.x + 'px';
   el.style.top = node.y + 'px';
-  el.innerHTML = `<div>${escapeHtml(node.name)}</div><div class="node-type-label">${typeLabel(node.type)}</div>`;
+  if (node.type === 'text') {
+    // 文本描述节点：画布直接显示描述内容，未填写时显示占位提示
+    const text = (node.config && node.config.text) || '';
+    el.innerHTML = `<div class="node-text-content${text ? '' : ' placeholder'}">${escapeHtml(text || '（未填写描述）')}</div><div class="node-type-label">${typeLabel(node.type)}</div>`;
+  } else {
+    el.innerHTML = `<div>${escapeHtml(node.name)}</div><div class="node-type-label">${typeLabel(node.type)}</div>`;
+  }
   document.getElementById('canvas').appendChild(el);
 
   jpInstance.draggable(el, {
@@ -397,7 +418,8 @@ function renderNode(node) {
     }
   });
 
-  if (node.type !== 'end') {
+  // 文本描述为纯标注节点，不添加连线端点（不能接入流程，引擎不会遍历到它）
+  if (node.type !== 'end' && node.type !== 'text') {
     jpInstance.addEndpoint(el, {
       anchor: 'Right',
       isSource: true,
@@ -407,7 +429,7 @@ function renderNode(node) {
       hoverPaintStyle: { fill: '#2b6cb0' }
     });
   }
-  if (node.type !== 'start') {
+  if (node.type !== 'start' && node.type !== 'text') {
     jpInstance.addEndpoint(el, {
       anchor: 'Left',
       isTarget: true,
@@ -425,7 +447,7 @@ function renderNode(node) {
 }
 
 function typeLabel(type) {
-  return { start: '开始', approval: '审批', condition: '条件', end: '结束' }[type] || type;
+  return { start: '开始', approval: '审批', condition: '条件', end: '结束', text: '文本描述' }[type] || type;
 }
 
 function selectNode(id) {
@@ -449,6 +471,7 @@ function renderProperties() {
   form.style.display = 'block';
 
   const pgName = document.getElementById('pg-name');
+  const pgText = document.getElementById('pg-text');
   const pgAssignees = document.getElementById('pg-assignees');
   const pgMode = document.getElementById('pg-mode');
   const pgRatio = document.getElementById('pg-ratio');
@@ -458,7 +481,7 @@ function renderProperties() {
   const pgEdgeLabel = document.getElementById('pg-edge-label');
 
   if (selectedEdge) {
-    [pgName, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    [pgName, pgText, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
     pgEdgeLabel.style.display = 'block';
     document.getElementById('inp-edge-label').value = selectedEdge.label || '';
     return;
@@ -470,6 +493,15 @@ function renderProperties() {
 
   pgName.style.display = 'block';
   document.getElementById('inp-name').value = node.name || '';
+
+  if (node.type === 'text') {
+    // 文本描述节点：只显示名称与描述内容编辑框
+    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    pgText.style.display = 'block';
+    document.getElementById('inp-text').value = (node.config && node.config.text) || '';
+    return;
+  }
+  pgText.style.display = 'none';
 
   if (node.type === 'approval') {
     pgAssignees.style.display = 'block';
@@ -503,6 +535,9 @@ function updateSelectedNode() {
   if (!node) return;
   pushState();
   node.name = document.getElementById('inp-name').value || node.name;
+  if (node.type === 'text') {
+    node.config.text = document.getElementById('inp-text').value;
+  }
   if (node.type === 'approval') {
     const assigneesStr = document.getElementById('inp-assignees').value || '';
     node.config.assignees = assigneesStr.split(/[,，]/).map(s => s.trim()).filter(Boolean);
@@ -514,7 +549,19 @@ function updateSelectedNode() {
     node.config.condition = document.getElementById('inp-condition').value || '';
   }
   const el = document.getElementById(node.id);
-  if (el) el.firstChild.textContent = node.name;
+  if (el) {
+    if (node.type === 'text') {
+      // 文本描述节点：实时刷新画布上的描述内容
+      const content = el.querySelector('.node-text-content');
+      const text = node.config.text || '';
+      if (content) {
+        content.textContent = text || '（未填写描述）';
+        content.classList.toggle('placeholder', !text);
+      }
+    } else {
+      el.firstChild.textContent = node.name;
+    }
+  }
   renderProperties();
 }
 
@@ -562,6 +609,8 @@ function validateFlow() {
   edges.forEach(e => { outgoingCount[e.source]++; incomingCount[e.target]++; });
 
   for (const n of nodes) {
+    // 文本描述为纯标注节点，不要求连线
+    if (n.type === 'text') continue;
     if (n.type === 'start' && incomingCount[n.id] > 0) return '开始节点不能有进入连线';
     if (n.type === 'end' && outgoingCount[n.id] > 0) return '结束节点不能有出去连线';
     if (n.type !== 'end' && outgoingCount[n.id] === 0) return `节点 "${n.name}" 缺少出去连线`;
@@ -732,7 +781,8 @@ function autoLayout() {
   g.setDefaultEdgeLabel(function() { return {}; });
 
   nodes.forEach(n => {
-    g.setNode(n.id, { width: 140, height: 60 });
+    // 文本描述节点不参与自动布局，保持在标注位置不动
+    if (n.type !== 'text') g.setNode(n.id, { width: 140, height: 60 });
   });
   edges.forEach(e => {
     g.setEdge(e.source, e.target);

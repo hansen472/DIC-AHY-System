@@ -256,3 +256,6 @@ Fixed QA list
 [变量:deviation_owner]
 (none needed, comment only)
 Connections: ① →approve→ ② →approve→ ③ →approve→ 结束； ③ →reject→ ② (the loop); ① gets no reject edge — the engine automatically ends the flow as 已驳回 when QA rejects, and the submitter uses the existing resubmit function.The variable names handler and deviation_owner are load-bearing — they drive both dynamic assignee resolution and the business-table sync. Would you like me to adjust anything in the field option lists or add the three-section detail view to the 我提交的审批 tab as well (currently it's only on the pending-task rows)?
+
+
+在workflow-designer.html 界面，在节点类型中，增加一个文本描述控件，用于填写节点描述。
