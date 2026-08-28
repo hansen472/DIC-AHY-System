@@ -85,6 +85,25 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .node-text .node-text-content.placeholder { color: #b8a37a; }
 .node-type-label { font-size: 11px; opacity: 0.8; margin-top: 2px; }
 
+/* 连线标签：按类型着色 */
+.connection-label {
+  font-size: 11px; font-weight: 600; padding: 2px 7px;
+  border-radius: 10px; white-space: nowrap; pointer-events: none;
+  background: #e2e8f0; color: #4a5568;
+}
+.connection-label.label-approve {
+  background: #c6f6d5; color: #22543d;
+}
+.connection-label.label-reject {
+  background: #fed7d7; color: #742a2a;
+}
+.connection-label.label-true {
+  background: #bee3f8; color: #2a4365;
+}
+.connection-label.label-false {
+  background: #fefcbf; color: #744210;
+}
+
 .modal-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4);
   display: none; align-items: center; justify-content: center; z-index: 1500;
@@ -338,6 +357,7 @@ function initJsPlumb() {
       selectedNodeId = null;
       selectedEdge = edge;
       renderProperties();
+      renderConnections();
     });
 
     jpInstance.bind('connectionDetached', function(info) {
@@ -603,12 +623,47 @@ function deleteSelected() {
   renderProperties();
 }
 
+// 根据连线标签返回颜色方案和中文显示文本
+function getEdgeStyle(label) {
+  const l = (label || '').toLowerCase();
+  if (l === 'reject' || l === '驳回') {
+    return { stroke: '#e53e3e', text: '驳回', cssClass: 'label-reject' };
+  }
+  if (l === 'approve' || l === '通过') {
+    return { stroke: '#38a169', text: '通过', cssClass: 'label-approve' };
+  }
+  if (l === '' || l === 'default') {
+    return { stroke: '#38a169', text: '通过', cssClass: 'label-approve' };
+  }
+  if (l === 'true' || l === '条件成立') {
+    return { stroke: '#3182ce', text: '成立', cssClass: 'label-true' };
+  }
+  if (l === 'false' || l === '条件不成立') {
+    return { stroke: '#d69e2e', text: '不成立', cssClass: 'label-false' };
+  }
+  return { stroke: '#a0aec0', text: label || '', cssClass: '' };
+}
+
 function renderConnections() {
   if (!jpInstance) return;
   jpInstance.getConnections().forEach(conn => {
     const edge = edges.find(e => e.source === conn.sourceId && e.target === conn.targetId);
-    if (edge && conn.getOverlay('Label')) {
-      conn.getOverlay('Label').setLabel(edge.label || '');
+    if (!edge) return;
+    const style = getEdgeStyle(edge.label);
+    // 更新连线和箭头颜色
+    conn.setPaintStyle({ stroke: style.stroke, strokeWidth: 2 });
+    conn.setHoverPaintStyle({ stroke: style.stroke, strokeWidth: 3 });
+    const arrow = conn.getOverlay('Arrow');
+    if (arrow) arrow.setPaintStyle({ fill: style.stroke, stroke: style.stroke });
+    // 更新标签文字和颜色 CSS class
+    const labelOverlay = conn.getOverlay('Label');
+    if (labelOverlay) {
+      labelOverlay.setLabel(style.text);
+      // 替换标签 class（保留基础 connection-label，追加颜色 class）
+      const el = labelOverlay.getElement ? labelOverlay.getElement() : null;
+      if (el) {
+        el.className = 'connection-label' + (style.cssClass ? ' ' + style.cssClass : '');
+      }
     }
   });
 }
