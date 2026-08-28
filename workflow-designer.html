@@ -121,6 +121,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding: 2px 8px; border-radius: 9999px; font-weight: 600;
 }
 .up-role-desc { font-size: 12px; color: #718096; margin-left: auto; }
+.up-section-title {
+  font-size: 12px; font-weight: 600; color: #4a5568;
+  margin: 14px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0;
+}
 .up-list { max-height: 300px; overflow-y: auto; }
 .up-user-item {
   display: flex; align-items: center; gap: 10px; padding: 8px 12px;
@@ -266,6 +270,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     <h3>选择审批人</h3>
     <input type="text" id="up-search" class="up-search" placeholder="搜索用户名或姓名..." oninput="filterUserPicker()">
     <div id="up-virtual-roles"></div>
+    <div id="up-flow-vars"></div>
     <div id="up-user-list" class="up-list"></div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeUserPicker()">取消</button>
@@ -980,6 +985,9 @@ async function openUserPicker() {
     </div>
   `;
 
+  // 渲染流程变量区（由节点表单字段 + 常用约定变量聚合）
+  renderFlowVariables();
+
   // 渲染用户列表
   renderUserPickerList('');
   document.getElementById('up-search').value = '';
@@ -1069,11 +1077,69 @@ function toggleVirtualRole() {
  * 确认选择，将勾选的用户写入审批人输入框
  */
 function confirmUserPicker() {
-  // 将选中的用户名（包括 [部门经理]）写入输入框
+  // 将选中的用户名（包括 [部门经理]、[变量:xxx]）写入输入框
   const names = Array.from(userPickerSelected);
   document.getElementById('inp-assignees').value = names.join(', ');
   updateSelectedNode();
   closeUserPicker();
+}
+
+// ---------- 流程变量选择（用于动态审批人 [变量:xxx]）----------
+
+function isFlowVarToken(s) {
+  return /^\[(变量[:：]\s*.+)\]$/.test(String(s || '').trim());
+}
+
+function extractFlowVarName(s) {
+  const m = String(s || '').trim().match(/^\[变量[:：]\s*(.+)\]$/);
+  return m ? m[1].trim() : '';
+}
+
+// 收集设计器中可用于动态审批人的变量：
+// 常用约定变量 + 所有审批节点表单中的字段名
+function collectAvailableVariables() {
+  const vars = new Set();
+  // 约定变量（偏差上报工作流专用）
+  vars.add('handler');         // 偏差执行人
+  vars.add('deviation_owner'); // 偏差负责人/当前审批人
+  // 所有审批节点表单字段
+  (nodes || []).forEach(n => {
+    if (n.type === 'approval' && n.config && Array.isArray(n.config.formFields)) {
+      n.config.formFields.forEach(f => {
+        if (f && f.name) vars.add(f.name);
+      });
+    }
+  });
+  return Array.from(vars).sort();
+}
+
+function renderFlowVariables() {
+  const container = document.getElementById('up-flow-vars');
+  const vars = collectAvailableVariables();
+  if (vars.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = '<div class="up-section-title">流程变量</div>' + vars.map(v => {
+    const token = '[变量:' + v + ']';
+    const selected = userPickerSelected.has(token);
+    return `
+      <div class="up-role-item ${selected ? 'selected' : ''}" onclick="toggleFlowVar('${escapeHtml(v)}')">
+        <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation(); toggleFlowVar('${escapeHtml(v)}')">
+        <span class="up-role-badge">${escapeHtml(token)}</span>
+        <span class="up-role-desc">使用节点表单字段“${escapeHtml(v)}”的值作为审批人</span>
+      </div>`;
+  }).join('');
+}
+
+function toggleFlowVar(name) {
+  const token = '[变量:' + name + ']';
+  if (userPickerSelected.has(token)) {
+    userPickerSelected.delete(token);
+  } else {
+    userPickerSelected.add(token);
+  }
+  renderFlowVariables();
 }
 
 init();
