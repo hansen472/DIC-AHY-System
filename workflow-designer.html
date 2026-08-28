@@ -194,6 +194,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
         <label>节点名称</label>
         <input type="text" id="inp-name" oninput="updateSelectedNode()">
       </div>
+      <div class="form-group" id="pg-node-desc">
+        <label>节点描述（备注，不影响流程逻辑）</label>
+        <textarea id="inp-node-desc" onchange="updateSelectedNode()" rows="3" placeholder="可填写该节点的用途说明，仅供查阅，不参与流程执行"></textarea>
+      </div>
       <div class="form-group" id="pg-text">
         <label>节点描述（文本描述节点）</label>
         <textarea id="inp-text" onchange="updateSelectedNode()" placeholder="填写该节点的描述说明，画布上对应节点会实时显示此内容"></textarea>
@@ -476,6 +480,7 @@ function renderProperties() {
   form.style.display = 'block';
 
   const pgName = document.getElementById('pg-name');
+  const pgNodeDesc = document.getElementById('pg-node-desc');
   const pgText = document.getElementById('pg-text');
   const pgAssignees = document.getElementById('pg-assignees');
   const pgMode = document.getElementById('pg-mode');
@@ -486,7 +491,7 @@ function renderProperties() {
   const pgEdgeLabel = document.getElementById('pg-edge-label');
 
   if (selectedEdge) {
-    [pgName, pgText, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    [pgName, pgNodeDesc, pgText, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
     pgEdgeLabel.style.display = 'block';
     document.getElementById('inp-edge-label').value = selectedEdge.label || '';
     return;
@@ -500,13 +505,16 @@ function renderProperties() {
   document.getElementById('inp-name').value = node.name || '';
 
   if (node.type === 'text') {
-    // 文本描述节点：只显示名称与描述内容编辑框
-    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    // 文本描述节点：只显示名称与描述内容编辑框，无节点备注
+    [pgNodeDesc, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
     pgText.style.display = 'block';
     document.getElementById('inp-text').value = (node.config && node.config.text) || '';
     return;
   }
   pgText.style.display = 'none';
+  // 所有非文本节点均显示节点描述备注框
+  pgNodeDesc.style.display = 'block';
+  document.getElementById('inp-node-desc').value = (node.config && node.config.description) || '';
 
   if (node.type === 'approval') {
     pgAssignees.style.display = 'block';
@@ -542,6 +550,9 @@ function updateSelectedNode() {
   node.name = document.getElementById('inp-name').value || node.name;
   if (node.type === 'text') {
     node.config.text = document.getElementById('inp-text').value;
+  } else {
+    // 所有非文本节点：保存节点描述备注（不参与流程逻辑）
+    node.config.description = document.getElementById('inp-node-desc').value;
   }
   if (node.type === 'approval') {
     const assigneesStr = document.getElementById('inp-assignees').value || '';
