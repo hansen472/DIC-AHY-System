@@ -626,7 +626,7 @@ async function openSubmittedDetailModal(instanceId) {
     definitionNodes: inst.definition_nodes || [],
     moduleKey: inst.module_key || ''
   };
-  const statusText = { running: '审批中', completed: '已通过', rejected: '已驳回', recalled: '已撤回' }[ins.status] || ins.status;
+  const statusText = { running: '审批中', completed: '已通过', rejected: '已驳回', recalled: '已撤回' }[inst.status] || inst.status;
   detailContext = `流程：${inst.definition_name || '-'} ｜ 业务标识：${inst.business_key || '-'} ｜ 状态：${statusText}`;
   applyDetailTitle();
   switchDetailTab('data');
