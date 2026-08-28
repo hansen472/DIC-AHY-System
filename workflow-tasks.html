@@ -514,6 +514,13 @@ function renderSubmittedList() {
   submittedData.forEach(ins => {
     const summary = formatInstanceSummary(ins);
     const nodeNames = (ins.current_node_names || []).join('、');
+    // 当前节点处理人（审批中时显示）
+    const assignees = (ins.status === 'running' && ins.current_assignees && ins.current_assignees.length > 0)
+      ? ins.current_assignees.join('、') : '';
+    const nodeCellTitle = assignees ? `${nodeNames}  处理人：${assignees}` : nodeNames;
+    const nodeCellHtml = nodeNames
+      ? escapeHtml(nodeNames) + (assignees ? `<br><span style="font-size:11px;color:#718096;">处理人：${escapeHtml(assignees)}</span>` : '')
+      : '-';
     // 撤回按钮：仅审批中可撤回；已有审批人处理过（同意/驳回/转交）则禁用
     let recallBtn = '';
     if (ins.status === 'running') {
@@ -526,7 +533,7 @@ function renderSubmittedList() {
         <td>${ins.id}</td>
         <td class="td-wrap" title="${escapeHtml(ins.definition_name)}">${escapeHtml(ins.definition_name)}</td>
         <td class="td-wrap" title="${escapeHtml(summary)}">${escapeHtml(summary)}</td>
-        <td class="td-wrap" title="${escapeHtml(nodeNames)}">${nodeNames ? escapeHtml(nodeNames) : '-'}</td>
+        <td class="td-wrap" title="${escapeHtml(nodeCellTitle)}">${nodeCellHtml}</td>
         <td>${formatInstanceStatus(ins.status)}</td>
         <td class="date-col">${formatDateTime(ins.created_at)}</td>
         <td class="action-col">

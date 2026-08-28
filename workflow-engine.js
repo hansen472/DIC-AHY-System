@@ -969,22 +969,30 @@ class WorkflowEngine {
     });
     if (instances.length === 0) return instances;
 
-    // 批量查询这些实例的待办任务，汇总当前节点名称
+    // 批量查询这些实例的待办任务，汇总当前节点名称和当前处理人
     const ids = instances.map(i => i.id);
     const placeholders = ids.map(() => '?').join(',');
     const [taskRows] = await pool.execute(
-      `SELECT instance_id, node_name FROM workflow_tasks
+      `SELECT instance_id, node_name, assignee_username FROM workflow_tasks
        WHERE status = 'pending' AND instance_id IN (${placeholders})`,
       ids
     );
     const nodeMap = {};
+    const assigneeMap = {};
     taskRows.forEach(t => {
       if (!nodeMap[t.instance_id]) nodeMap[t.instance_id] = [];
       if (t.node_name && !nodeMap[t.instance_id].includes(t.node_name)) {
         nodeMap[t.instance_id].push(t.node_name);
       }
+      if (!assigneeMap[t.instance_id]) assigneeMap[t.instance_id] = [];
+      if (t.assignee_username && !assigneeMap[t.instance_id].includes(t.assignee_username)) {
+        assigneeMap[t.instance_id].push(t.assignee_username);
+      }
     });
-    instances.forEach(i => { i.current_node_names = nodeMap[i.id] || []; });
+    instances.forEach(i => {
+      i.current_node_names = nodeMap[i.id] || [];
+      i.current_assignees = assigneeMap[i.id] || [];
+    });
 
     // 批量统计是否已有审批人处理过（同意/驳回/转交），用于前端控制"撤回"按钮是否可用
     const [actRows] = await pool.execute(
