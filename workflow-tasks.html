@@ -124,6 +124,16 @@ tr:hover td { background: #f7fafc; }
   border-left: 4px solid #2b6cb0; padding-left: 8px; margin: 18px 0 10px;
 }
 .detail-section-title:first-of-type { margin-top: 0; }
+/* 详情弹窗内部标签页（业务数据 / 节点描述） */
+.detail-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #edf2f7; }
+.detail-tab-btn {
+  padding: 8px 18px; border: none; border-bottom: 2px solid transparent; background: transparent;
+  color: #718096; font-size: 13px; cursor: pointer; border-radius: 0;
+}
+.detail-tab-btn:hover { color: #2b6cb0; opacity: 1; }
+.detail-tab-btn.active { color: #2b6cb0; border-bottom-color: #2b6cb0; font-weight: 600; }
+/* 节点描述标签页条目 */
+.node-desc-item { margin-bottom: 14px; }
 /* 审批节点动态表单（流程设计器配置） */
 #approve-form-fields .form-group { margin-bottom: 12px; }
 #approve-form-fields .ff-readonly { background: #f7fafc; color: #4a5568; }
@@ -240,7 +250,7 @@ tr:hover td { background: #f7fafc; }
   </div>
 </div>
 
-<!-- 业务详情弹窗（双击待办条目查看） -->
+<!-- 业务详情弹窗（双击条目查看，含业务数据/节点描述两个标签页） -->
 <div id="detail-modal" class="modal-overlay">
   <div class="modal">
     <div class="modal-header">
@@ -248,6 +258,10 @@ tr:hover td { background: #f7fafc; }
       <button class="btn-secondary" onclick="closeModal('detail-modal')">关闭</button>
     </div>
     <div class="modal-body">
+      <div class="detail-tabs">
+        <button class="detail-tab-btn active" id="detail-tab-data" onclick="switchDetailTab('data')">业务数据</button>
+        <button class="detail-tab-btn" id="detail-tab-desc" onclick="switchDetailTab('desc')">节点描述</button>
+      </div>
       <div id="detail-content"></div>
     </div>
     <div class="modal-footer">
@@ -500,8 +514,15 @@ function renderSubmittedList() {
   submittedData.forEach(ins => {
     const summary = formatInstanceSummary(ins);
     const nodeNames = (ins.current_node_names || []).join('、');
+    // 撤回按钮：仅审批中可撤回；已有审批人处理过（同意/驳回/转交）则禁用
+    let recallBtn = '';
+    if (ins.status === 'running') {
+      recallBtn = ins.has_activity
+        ? '<button class="btn-secondary" disabled title="已有审批人处理，不能撤回">撤回</button>'
+        : `<button class="btn-danger" onclick="recallInstance(${ins.id})">撤回</button>`;
+    }
     html += `
-      <tr>
+      <tr ondblclick="onSubmittedRowDblClick(${ins.id}, event)" title="双击查看详情">
         <td>${ins.id}</td>
         <td class="td-wrap" title="${escapeHtml(ins.definition_name)}">${escapeHtml(ins.definition_name)}</td>
         <td class="td-wrap" title="${escapeHtml(summary)}">${escapeHtml(summary)}</td>
@@ -509,6 +530,7 @@ function renderSubmittedList() {
         <td>${formatInstanceStatus(ins.status)}</td>
         <td class="date-col">${formatDateTime(ins.created_at)}</td>
         <td class="action-col">
+          ${recallBtn}
           ${(ins.module_key === 'deviation_reports' && ins.status === 'rejected') ? `<button class="btn-warning" onclick="openResubmitModal(${ins.id})">重新提交</button>` : ''}
           <button class="btn-primary" onclick="openHistoryModal(${ins.id})">历史</button>
         </td>
@@ -550,38 +572,110 @@ function onRowDblClick(taskId, event) {
   openDetailModal(taskId);
 }
 
-// 双击待办条目：弹窗查看业务数据详情（含各审批节点填写的表单数据）
+// ==================== 详情弹窗（业务数据 / 节点描述 标签页） ====================
+
+// 当前详情弹窗数据与上下文，两个标签页共用
+let detailData = null;
+let detailContext = '';
+
+// 拉取流程实例详情（含流程变量与节点描述）
+async function fetchInstanceDetail(instanceId) {
+  const res = await fetch('/api/workflow-instances/' + instanceId);
+  if (!res.ok) throw new Error('加载流程详情失败');
+  const result = await res.json();
+  return result.data || null;
+}
+
+// 待办条目：双击查看详情（业务快照优先取任务行自带数据，实例数据作补充）
 async function openDetailModal(taskId) {
   const task = tasksData.find(t => t.id === taskId);
   if (!task) return;
-  const payload = task.payload || {};
 
-  // 拉取流程实例（含流程变量：各节点审批表单已提交的数据）
-  let vars = {};
-  try {
-    const res = await fetch('/api/workflow-instances/' + task.instance_id);
-    if (res.ok) {
-      const result = await res.json();
-      vars = (result.data && result.data.vars) || {};
-    }
-  } catch (e) {}
+  let inst = null;
+  try { inst = await fetchInstanceDetail(task.instance_id); } catch (e) {}
 
-  const context = `流程：${task.definition_name || '-'} ｜ 节点：${task.node_name || '-'} ｜ 业务标识：${task.business_key || '-'}`;
-  let bodyHtml = `<div class="detail-context">${escapeHtml(context)}</div>`;
+  const payload = (task.payload && Object.keys(task.payload).length > 0)
+    ? task.payload
+    : ((inst && inst.payload) || {});
+  detailData = {
+    payload: payload,
+    vars: (inst && inst.vars) || {},
+    definitionNodes: (inst && inst.definition_nodes) || [],
+    moduleKey: task.module_key || (inst && inst.module_key) || ''
+  };
+  detailContext = `流程：${task.definition_name || '-'} ｜ 节点：${task.node_name || '-'} ｜ 业务标识：${task.business_key || '-'}`;
+  applyDetailTitle();
+  switchDetailTab('data');
+  document.getElementById('detail-modal').classList.add('active');
+}
 
-  if (task.module_key === 'deviation_reports' || (p_isDeviationPayload(payload))) {
-    document.getElementById('detail-modal-title').textContent = '偏差报告详情';
-    bodyHtml += `<div class="detail-section-title">一、偏差上报（提交人填写）</div>`;
-    bodyHtml += renderDeviationDetail(payload);
-    bodyHtml += renderFormSections(vars);
-  } else {
-    document.getElementById('detail-modal-title').textContent = '业务数据详情';
-    bodyHtml += renderGenericDetail(payload);
-    bodyHtml += renderFormSections(vars);
+// 我提交的审批：双击条目查看流程详情（忽略对行内按钮的双击）
+function onSubmittedRowDblClick(instanceId, event) {
+  if (event && event.target && event.target.closest && event.target.closest('button')) return;
+  openSubmittedDetailModal(instanceId);
+}
+
+async function openSubmittedDetailModal(instanceId) {
+  let inst = null;
+  try { inst = await fetchInstanceDetail(instanceId); } catch (e) {}
+  if (!inst || !inst.id) return showToast('加载流程详情失败', 'error');
+
+  detailData = {
+    payload: inst.payload || {},
+    vars: inst.vars || {},
+    definitionNodes: inst.definition_nodes || [],
+    moduleKey: inst.module_key || ''
+  };
+  const statusText = { running: '审批中', completed: '已通过', rejected: '已驳回', recalled: '已撤回' }[ins.status] || ins.status;
+  detailContext = `流程：${inst.definition_name || '-'} ｜ 业务标识：${inst.business_key || '-'} ｜ 状态：${statusText}`;
+  applyDetailTitle();
+  switchDetailTab('data');
+  document.getElementById('detail-modal').classList.add('active');
+}
+
+// 详情弹窗标题：按业务模块判定（偏差报告 / 通用业务数据）
+function applyDetailTitle() {
+  const p = detailData ? detailData.payload : {};
+  const isDeviation = detailData.moduleKey === 'deviation_reports' || p_isDeviationPayload(p);
+  document.getElementById('detail-modal-title').textContent = isDeviation ? '偏差报告详情' : '业务数据详情';
+}
+
+// 切换详情弹窗标签页：data=业务数据（表单快照+各节点表单归档），desc=节点描述
+function switchDetailTab(tab) {
+  document.getElementById('detail-tab-data').classList.toggle('active', tab === 'data');
+  document.getElementById('detail-tab-desc').classList.toggle('active', tab === 'desc');
+  const content = document.getElementById('detail-content');
+  if (!detailData) { content.innerHTML = ''; return; }
+
+  if (tab === 'desc') {
+    content.innerHTML = renderNodeDescriptions(detailData.definitionNodes);
+    return;
   }
 
-  document.getElementById('detail-content').innerHTML = bodyHtml;
-  document.getElementById('detail-modal').classList.add('active');
+  const payload = detailData.payload;
+  const isDeviation = detailData.moduleKey === 'deviation_reports' || p_isDeviationPayload(payload);
+  let bodyHtml = `<div class="detail-context">${escapeHtml(detailContext)}</div>`;
+  if (isDeviation) {
+    bodyHtml += `<div class="detail-section-title">一、偏差上报（提交人填写）</div>`;
+    bodyHtml += renderDeviationDetail(payload);
+  } else {
+    bodyHtml += renderGenericDetail(payload);
+  }
+  bodyHtml += renderFormSections(detailData.vars);
+  content.innerHTML = bodyHtml;
+}
+
+// 节点描述标签页：展示流程设计器中配置的文本描述节点内容
+function renderNodeDescriptions(nodes) {
+  const textNodes = (nodes || []).filter(n => n.type === 'text');
+  if (textNodes.length === 0) {
+    return '<div class="empty">该流程未配置节点描述（可在流程设计器中添加"文本描述"节点）</div>';
+  }
+  return textNodes.map(n => `
+    <div class="node-desc-item">
+      <div class="detail-label">📝 ${escapeHtml(n.name || '文本描述')}</div>
+      <div class="detail-value">${escapeHtml(n.description || '（未填写描述）')}</div>
+    </div>`).join('');
 }
 
 // 渲染各审批节点已提交的表单数据（流程变量中 __form_<nodeId> 归档，按首次写入顺序分节展示）
@@ -653,6 +747,35 @@ function renderGenericDetail(p) {
   });
   html += '</div>';
   return html;
+}
+
+// ==================== 撤回我发起的流程 ====================
+
+// 撤回流程：仅审批中且尚无任何审批人处理（同意/驳回/转交）时可撤回
+async function recallInstance(instanceId) {
+  const ins = submittedData.find(i => i.id === instanceId);
+  if (!ins) return;
+  if (ins.status !== 'running') return showToast('仅"审批中"的流程可以撤回', 'error');
+  if (ins.has_activity) {
+    showToast('已有审批人处理该流程，不能撤回', 'error');
+    await loadTasks();
+    return;
+  }
+  if (!confirm('确定要撤回该审批吗？撤回后流程终止。')) return;
+
+  try {
+    const res = await fetch('/api/workflow-instances/' + instanceId + '/recall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: '发起人撤回' })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '撤回失败');
+    showToast('流程已撤回', 'success');
+    await loadTasks();
+  } catch (err) {
+    showToast('撤回失败：' + err.message, 'error');
+  }
 }
 
 // ==================== 重新提交偏差报告 ====================

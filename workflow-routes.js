@@ -214,19 +214,36 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
     }
   });
 
-  app.post('/api/workflow-instances/:id/recall', requirePermission('workflow_recall_task'), async (req, res) => {
+  // 撤回流程：发起人可撤回自己发起的流程（须尚无任何审批人处理）；其他人凭 workflow_recall_task 权限撤回（不受该限制）
+  app.post('/api/workflow-instances/:id/recall', requireAuth, async (req, res) => {
+    const instanceId = parseInt(req.params.id, 10);
+    const username = getUsername(req);
+
+    const doRecall = async (byCreator) => {
+      try {
+        const { comment } = req.body || {};
+        const result = await engine.recallInstance(instanceId, {
+          recalled_by: username,
+          comment,
+          byCreator
+        });
+        res.json({ success: true, data: result });
+      } catch (err) {
+        console.error('撤回流程失败:', err);
+        res.status(500).json({ error: err.message || '撤回失败' });
+      }
+    };
+
     try {
-      const instanceId = parseInt(req.params.id, 10);
-      const { comment } = req.body || {};
-      const result = await engine.recallInstance(instanceId, {
-        recalled_by: getUsername(req),
-        comment
-      });
-      res.json({ success: true, data: result });
-    } catch (err) {
-      console.error('撤回流程失败:', err);
-      res.status(500).json({ error: err.message || '撤回失败' });
+      const instance = await engine.getInstance(null, instanceId);
+      if (instance && instance.created_by === username) {
+        return doRecall(true);
+      }
+    } catch (e) {
+      console.error('查询流程实例失败:', e.message);
     }
+    // 非发起人：沿用权限校验（管理员强制撤回）
+    return requirePermission('workflow_recall_task')(req, res, () => doRecall(false));
   });
 
   // 注意：具体路由必须放在 /:id 参数路由之前，否则 Express 会把 my/pending/all-pending 当成 id

@@ -838,7 +838,7 @@ class WorkflowEngine {
     }
   }
 
-  async recallInstance(instanceId, { recalled_by, comment = '' }) {
+  async recallInstance(instanceId, { recalled_by, comment = '', byCreator = false }) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -852,6 +852,16 @@ class WorkflowEngine {
       );
       if (insRows.length === 0) throw new Error('流程实例不存在或已结束');
       const instance = insRows[0];
+
+      // 发起人撤回：已有审批人处理过（同意/驳回/转交）的流程不允许撤回；管理员凭权限强制撤回不受此限制
+      if (byCreator) {
+        const [actRows] = await connection.execute(
+          `SELECT COUNT(*) AS cnt FROM workflow_tasks
+           WHERE instance_id = ? AND status IN ('completed', 'rejected', 'transferred')`,
+          [instanceId]
+        );
+        if (actRows[0].cnt > 0) throw new Error('已有审批人处理该流程，不能撤回');
+      }
 
       await connection.execute(
         "UPDATE workflow_instances SET status = 'recalled' WHERE id = ?",
@@ -888,7 +898,7 @@ class WorkflowEngine {
   async getInstance(connection, instanceId) {
     const conn = connection || pool;
     const [rows] = await conn.execute(
-      `SELECT i.*, d.module_key, d.name as definition_name, d.version
+      `SELECT i.*, d.module_key, d.name as definition_name, d.version, d.nodes_json AS def_nodes_json
        FROM workflow_instances i
        JOIN workflow_definitions d ON i.definition_id = d.id
        WHERE i.id = ?`,
@@ -898,6 +908,15 @@ class WorkflowEngine {
     const r = rows[0];
     r.payload = parseJson(r.payload_json, {});
     r.current_node_ids = parseJson(r.current_node_ids, []);
+    // 附带流程定义的节点列表（含文本描述节点的描述内容），供详情弹窗展示节点描述
+    const defNodes = parseJson(r.def_nodes_json, []);
+    delete r.def_nodes_json;
+    r.definition_nodes = defNodes.map(n => ({
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      description: (n.config && n.config.text) || ''
+    }));
     // 附带流程变量（含各节点审批表单数据），供详情展示与业务同步使用
     r.vars = await this.loadInstanceVars(conn, instanceId);
     return r;
@@ -959,6 +978,17 @@ class WorkflowEngine {
       }
     });
     instances.forEach(i => { i.current_node_names = nodeMap[i.id] || []; });
+
+    // 批量统计是否已有审批人处理过（同意/驳回/转交），用于前端控制"撤回"按钮是否可用
+    const [actRows] = await pool.execute(
+      `SELECT instance_id, COUNT(*) AS cnt FROM workflow_tasks
+       WHERE instance_id IN (${placeholders}) AND status IN ('completed', 'rejected', 'transferred')
+       GROUP BY instance_id`,
+      ids
+    );
+    const actMap = {};
+    actRows.forEach(r => { actMap[r.instance_id] = r.cnt; });
+    instances.forEach(i => { i.has_activity = (actMap[i.id] || 0) > 0; });
     return instances;
   }
 
