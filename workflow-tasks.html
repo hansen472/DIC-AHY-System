@@ -620,6 +620,9 @@ async function openSubmittedDetailModal(instanceId) {
   try { inst = await fetchInstanceDetail(instanceId); } catch (e) {}
   if (!inst || !inst.id) return showToast('加载流程详情失败', 'error');
 
+  // 确保用户列表已加载（处理人名称解析需要）
+  if (optionCache.users === null) await loadOptionData();
+
   detailData = {
     payload: inst.payload || {},
     vars: inst.vars || {},
@@ -627,7 +630,16 @@ async function openSubmittedDetailModal(instanceId) {
     moduleKey: inst.module_key || ''
   };
   const statusText = { running: '审批中', completed: '已通过', rejected: '已驳回', recalled: '已撤回' }[inst.status] || inst.status;
-  detailContext = `流程：${inst.definition_name || '-'} ｜ 业务标识：${inst.business_key || '-'} ｜ 状态：${statusText}`;
+  // 审批中时追加当前处理人（可能有多人会签）
+  let handlerText = '';
+  if (inst.status === 'running' && Array.isArray(inst.pending_assignees) && inst.pending_assignees.length > 0) {
+    const displayNames = inst.pending_assignees.map(u => {
+      const found = (optionCache.users || []).find(x => x.username === u);
+      return found && found.chinese_name ? found.chinese_name + '(' + u + ')' : u;
+    });
+    handlerText = ' ｜ 处理人：' + displayNames.join('、');
+  }
+  detailContext = `流程：${inst.definition_name || '-'} ｜ 业务标识：${inst.business_key || '-'} ｜ 状态：${statusText}${handlerText}`;
   applyDetailTitle();
   switchDetailTab('data');
   document.getElementById('detail-modal').classList.add('active');

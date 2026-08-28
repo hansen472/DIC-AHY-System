@@ -919,6 +919,13 @@ class WorkflowEngine {
     }));
     // 附带流程变量（含各节点审批表单数据），供详情展示与业务同步使用
     r.vars = await this.loadInstanceVars(conn, instanceId);
+    // 附带当前待办任务的审批人列表，供详情弹窗显示"处理人"
+    const [pendingRows] = await conn.execute(
+      `SELECT assignee_username FROM workflow_tasks
+       WHERE instance_id = ? AND status = 'pending'`,
+      [instanceId]
+    );
+    r.pending_assignees = pendingRows.map(p => p.assignee_username);
     return r;
   }
 
