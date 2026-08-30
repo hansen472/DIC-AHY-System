@@ -317,6 +317,22 @@ let selectedNodeId = null;
 let selectedEdge = null;
 let isRestoring = false;
 
+// 根据节点位置自适应画布尺寸，确保下方/右侧节点可通过滚动条查看
+function fitCanvasSize() {
+  const wrap = document.getElementById('canvas-wrap');
+  const canvas = document.getElementById('canvas');
+  if (!wrap || !canvas) return;
+  const wrapRect = wrap.getBoundingClientRect();
+  let maxBottom = wrapRect.height;
+  let maxRight = wrapRect.width;
+  nodes.forEach(n => {
+    maxBottom = Math.max(maxBottom, n.y + 120);
+    maxRight = Math.max(maxRight, n.x + 170);
+  });
+  canvas.style.height = Math.max(wrapRect.height, maxBottom + 80) + 'px';
+  canvas.style.width = Math.max(wrapRect.width, maxRight + 80) + 'px';
+}
+
 const NODE_COLORS = {
   start: '#c6f6d5',
   approval: '#ebf8ff',
@@ -436,6 +452,7 @@ function addNode(type) {
   nodes.push(node);
   renderNode(node);
   selectNode(node.id);
+  fitCanvasSize();
 }
 
 function renderNode(node) {
@@ -461,6 +478,7 @@ function renderNode(node) {
         n.x = params.pos[0];
         n.y = params.pos[1];
       }
+      fitCanvasSize();
     }
   });
 
@@ -852,6 +870,7 @@ function restoreCanvas() {
     jpInstance.connect({ source: e.source, target: e.target });
   });
   renderConnections();
+  fitCanvasSize();
   isRestoring = false;
 }
 
@@ -893,6 +912,7 @@ function autoLayout() {
     }
   });
   restoreCanvas();
+  fitCanvasSize();
   showMessage('自动布局完成', 'success');
 }
 
