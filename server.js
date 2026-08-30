@@ -4965,17 +4965,18 @@ app.post('/api/daily-overdue-workorder/push', requirePermission('instrument_mete
         '### 📋 未完成日巡检工单列表',
         `#### 共查询到 ${total || data.length} 条未完成日工单`,
         `#### 第 ${batchNo}/${totalBatches} 批`,
-        '| 工单 | 资产 | 安排时间 | 类型 | 状态 |',
-        '| :--- | :--- | :--- | :--- | :--- |'
+        '| 工单 | 资产 | 负责人 | 安排时间 | 类型 | 状态 |',
+        '| :--- | :--- | :--- | :--- | :--- | :--- |'
       ];
 
       batch.forEach(item => {
         const woInfo = clean(item.wo_info);
         const assetName = clean(item.asset_names);
+        const responsibleName = clean(item.responsible_name) || '-';
         const scheduleTime = clean(item.wo_schedule_time);
         const statusName = clean(item.status_name_cn);
         const emoji = statusEmoji[statusName] || '⚪';
-        lines.push(`| ${woInfo} | ${assetName} | ${scheduleTime} | 日巡检工单 | ${emoji} ${statusName} |`);
+        lines.push(`| ${woInfo} | ${assetName} | ${responsibleName} | ${scheduleTime} | 日巡检工单 | ${emoji} ${statusName} |`);
       });
 
       const markdown = lines.join('\n');

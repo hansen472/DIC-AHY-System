@@ -146,3 +146,5 @@ LEFT JOIN mic_status ms
 WHERE DATE(wo.wo_creation_time) = CURDATE()
     AND wo.wo_type_id = 3
     AND wo.wo_finish_time IS NULL;
+
+在”日巡检工单提醒推送“页面中，已经完成增加一列用于显示 responsible_name，但是推送给企业微信的消息内容中， responsible_name 列没有显示出来。现在需要将 responsible_name 列显示在消息内容中。具体显示的位置和daily-overdue-workorder-push.html页面中的 responsible_name 列相同。
