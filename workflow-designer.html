@@ -1061,6 +1061,13 @@ function getFormFields() {
   const node = nodes.find(n => n.id === selectedNodeId);
   if (!node || node.type !== 'approval') return null;
   if (!Array.isArray(node.config.formFields)) node.config.formFields = [];
+  // 迁移旧字段：required 布尔值 → requiredMode 字符串
+  node.config.formFields.forEach(f => {
+    if (f && typeof f.required === 'boolean' && !f.requiredMode) {
+      f.requiredMode = f.required ? 'always' : '';
+      delete f.required;
+    }
+  });
   return node.config.formFields;
 }
 
@@ -1086,9 +1093,12 @@ function renderFormFields() {
           <select onchange="updateFormField(${i},'type',this.value); renderFormFields();" style="${inpStyle}">
             ${FF_TYPES.map(t => `<option value="${t.value}" ${f.type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
           </select>
-          <label style="font-size:12px; display:flex; align-items:center; gap:2px; white-space:nowrap; cursor:pointer;">
-            <input type="checkbox" ${f.required ? 'checked' : ''} onchange="updateFormField(${i},'required',this.checked)">必填
-          </label>
+          <select onchange="updateFormField(${i},'requiredMode',this.value)" style="font-size:12px; ${inpStyle}">
+            <option value="" ${(!f.requiredMode || f.requiredMode === '') ? 'selected' : ''}>非必填</option>
+            <option value="always" ${f.requiredMode === 'always' ? 'selected' : ''}>始终必填</option>
+            <option value="approve" ${f.requiredMode === 'approve' ? 'selected' : ''}>审批时必填</option>
+            <option value="reject" ${f.requiredMode === 'reject' ? 'selected' : ''}>驳回时必填</option>
+          </select>
           <button type="button" class="btn-danger" onclick="removeFormField(${i})" style="font-size:11px; padding:3px 8px;">删</button>
         </div>
         ${isSelect ? `<input type="text" value="${escapeAttr(f.options || '')}" placeholder="选项，逗号分隔 如：微小,中等,重大" onchange="updateFormField(${i},'options',this.value)" style="width:100%; margin-top:4px; ${inpStyle}">` : ''}
@@ -1100,7 +1110,7 @@ function addFormField() {
   const fields = getFormFields();
   if (!fields) return;
   pushState();
-  fields.push({ name: '', label: '', type: 'text', options: '', required: false });
+  fields.push({ name: '', label: '', type: 'text', options: '', requiredMode: 'always' });
   renderFormFields();
 }
 

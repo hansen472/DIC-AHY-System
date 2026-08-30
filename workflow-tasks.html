@@ -212,8 +212,8 @@ tr:hover td { background: #f7fafc; }
       <div class="form-group">
         <label>操作</label>
         <div class="radio-group">
-          <label><input type="radio" name="approve-action" value="approve" checked> 同意</label>
-          <label><input type="radio" name="approve-action" value="reject"> 驳回</label>
+          <label><input type="radio" name="approve-action" value="approve" checked onchange="onApproveActionChange()"> 同意</label>
+          <label><input type="radio" name="approve-action" value="reject" onchange="onApproveActionChange()"> 驳回</label>
         </div>
       </div>
     </div>
@@ -1125,6 +1125,8 @@ async function openApproveModal(taskId) {
   const task = tasksData.find(t => t.id === taskId);
   if (!task) return;
   activeTaskNode = { id: task.node_id, name: task.node_name };
+  activeApproveTask = task;
+  activeApprovePrevValues = await fetchApprovePrevValues(task.instance_id, task.node_id);
 
   document.getElementById('approve-definition-name').value = task.definition_name || '';
   document.getElementById('approve-node-name').value = task.node_name || '';
@@ -1132,7 +1134,7 @@ async function openApproveModal(taskId) {
   document.getElementById('approve-comment').value = '';
   document.querySelector('input[name="approve-action"][value="approve"]').checked = true;
 
-  await renderApproveForm(task);
+  await renderApproveForm(task, 'approve');
   document.getElementById('approve-modal').classList.add('active');
 }
 
@@ -1142,9 +1144,51 @@ async function openApproveModal(taskId) {
 let activeTaskNode = null;
 // 当前渲染的表单字段定义（提交时做必填校验）
 let activeFormFields = [];
+// 当前审批弹窗的任务与预填值（操作切换时复用）
+let activeApproveTask = null;
+let activeApprovePrevValues = {};
+
+// 判断字段在当前审批操作下是否需要显示/必填
+function isFieldVisibleForAction(f, action) {
+  const mode = f.requiredMode || '';
+  if (mode === 'approve') return action === 'approve';
+  if (mode === 'reject') return action === 'reject';
+  return true; // always / 空（可选）均显示
+}
+function isFieldRequiredForAction(f, action) {
+  const mode = f.requiredMode || '';
+  if (mode === 'always') return true;
+  if (mode === 'approve') return action === 'approve';
+  if (mode === 'reject') return action === 'reject';
+  return false;
+}
+
+// 读取本节点上一轮填写值（用于驳回重做循环场景预填）
+async function fetchApprovePrevValues(instanceId, nodeId) {
+  try {
+    const res = await fetch('/api/workflow-instances/' + instanceId);
+    if (res.ok) {
+      const result = await res.json();
+      const vars = (result.data && result.data.vars) || {};
+      const prevForm = vars['__form_' + nodeId];
+      if (prevForm && typeof prevForm === 'object') {
+        const values = { ...prevForm };
+        delete values.__node;
+        return values;
+      }
+    }
+  } catch (e) {}
+  return {};
+}
+
+// 操作切换时重新渲染表单字段（显示/隐藏随操作变化）
+function onApproveActionChange() {
+  const action = document.querySelector('input[name="approve-action"]:checked').value;
+  if (activeApproveTask) renderApproveForm(activeApproveTask, action);
+}
 
 // 渲染流程设计器为本节点配置的表单字段；驳回重做的循环场景下用上一轮填写值预填
-async function renderApproveForm(task) {
+async function renderApproveForm(task, action = 'approve') {
   const container = document.getElementById('approve-form-fields');
   const fields = (task.node_config && Array.isArray(task.node_config.formFields))
     ? task.node_config.formFields.filter(f => f && f.name)
@@ -1161,24 +1205,13 @@ async function renderApproveForm(task) {
     await loadOptionData();
   }
 
-  // 读取流程变量预填（本节点上一轮的 __form_<nodeId> 或同名变量）
-  let prevValues = {};
-  try {
-    const res = await fetch('/api/workflow-instances/' + task.instance_id);
-    if (res.ok) {
-      const result = await res.json();
-      const vars = (result.data && result.data.vars) || {};
-      const prevForm = vars['__form_' + task.node_id];
-      if (prevForm && typeof prevForm === 'object') {
-        prevValues = { ...prevForm };
-        delete prevValues.__node;
-      }
-    }
-  } catch (e) {}
+  const prevValues = activeApprovePrevValues;
 
   let html = `<div class="detail-section-title">节点表单（${escapeHtml(task.node_name || '')}）</div>`;
   fields.forEach(f => {
-    const label = `${escapeHtml(f.label || f.name)}${f.required ? ' <span style="color:#e53e3e;">*</span>' : ''}`;
+    if (!isFieldVisibleForAction(f, action)) return;
+    const required = isFieldRequiredForAction(f, action);
+    const label = `${escapeHtml(f.label || f.name)}${required ? ' <span style="color:#e53e3e;">*</span>' : ''}`;
     const val = prevValues[f.name] !== undefined && prevValues[f.name] !== null ? prevValues[f.name] : '';
     let control = '';
 
