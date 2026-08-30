@@ -113,6 +113,9 @@ app.get('/coa-report-application.html', requirePermissionPage('coa_report'), (re
 app.get('/deviation-report.html', requirePermissionPage('coa_report'), (req, res) => {
   res.sendFile(path.join(__dirname, 'deviation-report.html'));
 });
+app.get('/deviation-report-detail.html', requirePermissionPage('coa_report'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'deviation-report-detail.html'));
+});
 app.get('/logs.html', requirePermissionPage('logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'logs.html'));
 });
