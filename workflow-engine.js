@@ -1057,6 +1057,21 @@ class WorkflowEngine {
     return rows.map(r => this.attachNodeConfig(r));
   }
 
+  // 查询当前用户参与过的任务（含待办、已审批、已驳回、已转交），用于"我的参与"标签页
+  async getParticipatedTasks(username) {
+    const [rows] = await pool.execute(
+      `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, d.module_key, d.name as definition_name, d.nodes_json
+       FROM workflow_tasks t
+       JOIN workflow_instances i ON t.instance_id = i.id
+       JOIN workflow_definitions d ON i.definition_id = d.id
+       WHERE t.assignee_username = ?
+       ORDER BY t.created_at DESC`,
+      [username]
+    );
+    console.log(`[WorkflowEngine] getParticipatedTasks username=${username} count=${rows.length} ids=${rows.map(r => r.id).join(',')}`);
+    return rows.map(r => this.attachNodeConfig(r));
+  }
+
   // 为任务行附加所属节点的配置（含 formFields 表单定义），并移除全量节点数据以减小响应体积
   attachNodeConfig(taskRow) {
     taskRow.payload = parseJson(taskRow.payload_json, {});

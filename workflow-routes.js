@@ -288,6 +288,16 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
     }
   });
 
+  app.get('/api/workflow-tasks/my-participated', requireAuth, async (req, res) => {
+    try {
+      const tasks = await engine.getParticipatedTasks(getUsername(req));
+      res.json({ success: true, data: tasks });
+    } catch (err) {
+      console.error('查询我的参与失败:', err);
+      res.status(500).json({ error: '查询失败' });
+    }
+  });
+
   app.get('/api/workflow-tasks/:id', requireAuth, async (req, res) => {
     try {
       const task = await engine.getTask(parseInt(req.params.id, 10));

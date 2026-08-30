@@ -283,3 +283,6 @@ Connections: ① →approve→ ② →approve→ ③ →approve→ 结束； ③
 在workflow-designer.html界面，增加一个下拉框，现在节点在下方时，视图无法显示节点。加一个下拉框，用于将整个页面下拉。
 
 在workflow-designer.html界面，可以在中间画布上增加一个功能，即当按钮空格键不松手，再按住鼠标左键可以拖动这个画布。
+
+在workflow-tasks.html界面，增加一个“我的参与”标签页，用于显示当前用户参与的任务。
+1. 在workflow-tasks.html界面，增加一个“我的参与”标签页，用于显示当前用户参与的任务。

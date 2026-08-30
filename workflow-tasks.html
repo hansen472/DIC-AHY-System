@@ -164,6 +164,7 @@ tr:hover td { background: #f7fafc; }
 
   <div class="tabs-container">
     <button class="tab-btn active" data-tab="my" onclick="switchTab('my')">我的待办</button>
+    <button class="tab-btn" data-tab="participated" onclick="switchTab('participated')">我的参与</button>
     <button class="tab-btn" data-tab="submitted" onclick="switchTab('submitted')">我提交的审批</button>
     <button class="tab-btn" id="tab-all" data-tab="all" onclick="switchTab('all')" style="display:none;">全部待办</button>
     <button class="tab-btn btn-secondary" onclick="loadTasks()" style="margin-left:auto;">刷新</button>
@@ -385,7 +386,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  const titles = { my: '我的待办任务', submitted: '我提交的审批', all: '全部待办任务' };
+  const titles = { my: '我的待办任务', participated: '我的参与任务', submitted: '我提交的审批', all: '全部待办任务' };
   document.getElementById('list-title').textContent = titles[tab] || '任务列表';
   loadTasks();
 }
@@ -414,7 +415,10 @@ async function loadTasks() {
       return;
     }
 
-    const url = currentTab === 'my' ? '/api/workflow-tasks/my' : '/api/workflow-tasks/all-pending';
+    let url;
+    if (currentTab === 'my') url = '/api/workflow-tasks/my';
+    else if (currentTab === 'participated') url = '/api/workflow-tasks/my-participated';
+    else url = '/api/workflow-tasks/all-pending';
     const res = await fetch(url);
     if (!res.ok) {
       let msg = '加载失败';
@@ -449,7 +453,8 @@ async function loadTasks() {
 
 function renderTaskList() {
   if (tasksData.length === 0) {
-    document.getElementById('task-list').innerHTML = '<div class="empty">暂无待办任务</div>';
+    const emptyText = currentTab === 'participated' ? '暂无参与的任务' : '暂无待办任务';
+    document.getElementById('task-list').innerHTML = '<div class="empty">' + emptyText + '</div>';
     return;
   }
 
