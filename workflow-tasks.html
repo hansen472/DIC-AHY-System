@@ -104,6 +104,8 @@ tr:hover td { background: #f7fafc; }
 .history-item .meta { font-size: 12px; color: #718096; margin-bottom: 6px; }
 .history-item .action { font-weight: 600; color: #2c3e50; }
 .history-item .comment { margin-top: 6px; color: #4a5568; font-size: 13px; }
+.history-item.rejected { border-left-color: #e53e3e; background: #fff5f5; }
+.history-item.rejected .action { color: #c53030; }
 
 /* 业务详情弹窗（双击待办条目查看） */
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
@@ -1285,8 +1287,9 @@ function renderHistory(history) {
   let html = '';
   history.forEach(h => {
     const actionText = formatHistoryAction(h.action);
+    const isRejected = h.action === 'reject' || h.action === 'rejected';
     html += `
-      <div class="history-item">
+      <div class="history-item${isRejected ? ' rejected' : ''}">
         <div class="meta">${formatDateTime(h.created_at)} · ${escapeHtml(h.assignee_username)}</div>
         <div class="action">${actionText} ${h.node_name ? '· ' + escapeHtml(h.node_name) : ''}</div>
         ${h.comment ? `<div class="comment">意见：${escapeHtml(h.comment)}</div>` : ''}
