@@ -343,6 +343,11 @@ function renderFlowchart(nodes, edges, currentNodeIds) {
     return;
   }
 
+  // 隐藏左上角区域的“文本描述”节点，其他文本描述保留
+  const visibleNodes = nodes.filter(n => !(n.type === 'text' && (n.x || 0) < 200 && (n.y || 0) < 200));
+  const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = (edges || []).filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+
   const currentSet = new Set(currentNodeIds || []);
   const nodeW = 126;
   const nodeH = 52;
@@ -350,7 +355,7 @@ function renderFlowchart(nodes, edges, currentNodeIds) {
 
   // 计算坐标范围
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  nodes.forEach(n => {
+  visibleNodes.forEach(n => {
     const x = n.x || 0;
     const y = n.y || 0;
     if (x < minX) minX = x;
@@ -366,7 +371,7 @@ function renderFlowchart(nodes, edges, currentNodeIds) {
   const offsetY = padding - minY + nodeH / 2;
 
   const nodeMap = {};
-  nodes.forEach(n => {
+  visibleNodes.forEach(n => {
     nodeMap[n.id] = {
       ...n,
       cx: (n.x || 0) + offsetX,
@@ -380,14 +385,14 @@ function renderFlowchart(nodes, edges, currentNodeIds) {
   // 检测双向连线（source→target 且 target→source）
   const edgeKey = (a, b) => a + '|' + b;
   const edgeSet = new Set();
-  edges.forEach(e => edgeSet.add(edgeKey(e.source, e.target)));
+  visibleEdges.forEach(e => edgeSet.add(edgeKey(e.source, e.target)));
   const reverseSet = new Set();
-  edges.forEach(e => {
+  visibleEdges.forEach(e => {
     if (edgeSet.has(edgeKey(e.target, e.source))) reverseSet.add(edgeKey(e.source, e.target));
   });
   let curveIndex = 0;
 
-  edges.forEach(e => {
+  visibleEdges.forEach(e => {
     const s = nodeMap[e.source];
     const t = nodeMap[e.target];
     if (!s || !t) return;
@@ -421,7 +426,7 @@ function renderFlowchart(nodes, edges, currentNodeIds) {
     </defs>
   </svg>`;
 
-  nodes.forEach(n => {
+  visibleNodes.forEach(n => {
     const isCurrent = currentSet.has(n.id);
     const typeText = { start: '开始', end: '结束', approval: '审批', condition: '条件', text: '文本' }[n.type] || n.type;
     html += `
