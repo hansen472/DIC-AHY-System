@@ -298,3 +298,4 @@ Connections: ① →approve→ ② →approve→ ③ →approve→ 结束； ③
 当双击任务标题时，弹出的窗口提示  Cannot GET /deviation-report-detail.html,查找原因并修正
 在deviation-report-detail.html页面的最下方，增加一个“审批流程图”的模块，将审批流程图显示出来。并且在图中，将当前节点显示为绿色。
 在deviation-report-detail.html页面中，增加一个“审批流程图”的模块，将审批流程图显示出来。并且在图中，将当前节点显示为绿色。
+在“审批流程图”的模块中，两个审批节点有双箭头的线，这个线是代表两个方向的。但是线的描述中只显示了reject，approve 默认是不显示的。现在希望可以将approve 也显示出来，同时不要显示双箭头的线，可以改成两条线，这样可以更清楚的看到，审批和驳回的两个方向。

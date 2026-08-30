@@ -317,6 +317,25 @@ function getEdgePoint(cx, cy, w, h, tx, ty) {
   return { x, y };
 }
 
+// 为双向连线计算曲线控制点（让两条线分向两侧）
+function getCurveControl(p1, p2, dir) {
+  const mx = (p1.x + p2.x) / 2;
+  const my = (p1.y + p2.y) / 2;
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const offset = Math.max(30, len * 0.25);
+  return { x: mx + nx * offset * dir, y: my + ny * offset * dir };
+}
+
+function formatEdgeLabel(label) {
+  const raw = String(label || '').toLowerCase().trim();
+  if (raw === 'reject' || raw === '驳回') return '驳回';
+  return '同意';
+}
+
 function renderFlowchart(nodes, edges, currentNodeIds) {
   const container = document.getElementById('flowchart');
   if (!Array.isArray(nodes) || nodes.length === 0) {
@@ -358,18 +377,38 @@ function renderFlowchart(nodes, edges, currentNodeIds) {
   let html = `<svg class="flowchart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
   const edgeLabels = [];
 
+  // 检测双向连线（source→target 且 target→source）
+  const edgeKey = (a, b) => a + '|' + b;
+  const edgeSet = new Set();
+  edges.forEach(e => edgeSet.add(edgeKey(e.source, e.target)));
+  const reverseSet = new Set();
+  edges.forEach(e => {
+    if (edgeSet.has(edgeKey(e.target, e.source))) reverseSet.add(edgeKey(e.source, e.target));
+  });
+  let curveIndex = 0;
+
   edges.forEach(e => {
     const s = nodeMap[e.source];
     const t = nodeMap[e.target];
     if (!s || !t) return;
     const p1 = getEdgePoint(s.cx, s.cy, nodeW, nodeH, t.cx, t.cy);
     const p2 = getEdgePoint(t.cx, t.cy, nodeW, nodeH, s.cx, s.cy);
-    html += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />`;
-    if (e.label) {
+    const hasReverse = reverseSet.has(edgeKey(e.source, e.target));
+    const labelText = formatEdgeLabel(e.label);
+
+    if (hasReverse) {
+      // 双向连线：用两条反向曲线，避免重叠成双箭头
+      const dir = curveIndex % 2 === 0 ? 1 : -1;
+      const cp = getCurveControl(p1, p2, dir);
+      html += `<path d="M ${p1.x} ${p1.y} Q ${cp.x} ${cp.y} ${p2.x} ${p2.y}" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)" />`;
+      edgeLabels.push({ x: cp.x, y: cp.y, label: labelText });
+      curveIndex++;
+    } else {
+      html += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />`;
       edgeLabels.push({
         x: (p1.x + p2.x) / 2,
         y: (p1.y + p2.y) / 2,
-        label: e.label
+        label: labelText
       });
     }
   });
