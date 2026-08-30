@@ -124,6 +124,11 @@ tr:hover td { background: #f7fafc; }
   border-left: 4px solid #2b6cb0; padding-left: 8px; margin: 18px 0 10px;
 }
 .detail-section-title:first-of-type { margin-top: 0; }
+.detail-current-node {
+  background: #ebf8ff; color: #2b6cb0; font-size: 12px;
+  padding: 8px 12px; border-radius: 6px; margin: 12px 0;
+  border-left: 4px solid #2b6cb0;
+}
 /* 详情弹窗内部标签页（业务数据 / 节点描述） */
 .detail-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #edf2f7; }
 .detail-tab-btn {
@@ -614,6 +619,9 @@ async function openDetailModal(taskId) {
     payload: payload,
     vars: (inst && inst.vars) || {},
     definitionNodes: (inst && inst.definition_nodes) || [],
+    currentNodeIds: (inst && inst.current_node_ids) || [],
+    pendingAssignees: (inst && inst.pending_assignees) || [],
+    instanceStatus: (inst && inst.status) || 'running',
     moduleKey: task.module_key || (inst && inst.module_key) || ''
   };
   detailContext = `流程：${task.definition_name || '-'} ｜ 节点：${task.node_name || '-'} ｜ 业务标识：${task.business_key || '-'}`;
@@ -640,6 +648,9 @@ async function openSubmittedDetailModal(instanceId) {
     payload: inst.payload || {},
     vars: inst.vars || {},
     definitionNodes: inst.definition_nodes || [],
+    currentNodeIds: inst.current_node_ids || [],
+    pendingAssignees: inst.pending_assignees || [],
+    instanceStatus: inst.status || 'running',
     moduleKey: inst.module_key || ''
   };
   const statusText = { running: '审批中', completed: '已通过', rejected: '已驳回', recalled: '已撤回' }[inst.status] || inst.status;
@@ -680,6 +691,7 @@ function switchDetailTab(tab) {
   const payload = detailData.payload;
   const isDeviation = detailData.moduleKey === 'deviation_reports' || p_isDeviationPayload(payload);
   let bodyHtml = `<div class="detail-context">${escapeHtml(detailContext)}</div>`;
+  bodyHtml += renderCurrentNodeInfo();
   if (isDeviation) {
     bodyHtml += `<div class="detail-section-title">一、偏差上报（提交人填写）</div>`;
     bodyHtml += renderDeviationDetail(payload);
@@ -701,6 +713,28 @@ function renderNodeDescriptions(nodes) {
       <div class="detail-label">📝 ${escapeHtml(n.name || '文本描述')}</div>
       <div class="detail-value">${escapeHtml(n.description || '（未填写描述）')}</div>
     </div>`).join('');
+}
+
+// 渲染“当前节点/处理人”提示区（仅审批中且已知当前节点时显示）
+function renderCurrentNodeInfo() {
+  const status = detailData.instanceStatus;
+  const nodeIds = detailData.currentNodeIds || [];
+  if (status !== 'running' || nodeIds.length === 0) return '';
+
+  const nodeMap = new Map((detailData.definitionNodes || []).map(n => [n.id, n.name]));
+  const nodeNames = nodeIds.map(id => nodeMap.get(id) || id).join('、') || '-';
+
+  let assigneeText = '';
+  const assignees = detailData.pendingAssignees || [];
+  if (assignees.length > 0) {
+    const displayNames = assignees.map(u => {
+      const found = (optionCache.users || []).find(x => x.username === u);
+      return (found && found.chinese_name) ? found.chinese_name + '(' + u + ')' : u;
+    });
+    assigneeText = ' ｜ 处理人：' + displayNames.join('、');
+  }
+
+  return `<div class="detail-current-node">当前节点：${escapeHtml(nodeNames)}${escapeHtml(assigneeText)}</div>`;
 }
 
 // 渲染各审批节点已提交的表单数据（流程变量中 __form_<nodeId> 归档，按首次写入顺序分节展示）
