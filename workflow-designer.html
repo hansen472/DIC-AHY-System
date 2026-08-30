@@ -346,10 +346,20 @@ function initJsPlumb() {
 
     jpInstance.bind('connection', function(info) {
       if (isRestoring) return;
+      const sourceId = info.sourceId;
+      const targetId = info.targetId;
+      // 同一对节点之间只允许一条连线，防止拖拽/自动布局时产生重复边
+      const existing = edges.find(e => e.source === sourceId && e.target === targetId);
+      if (existing) {
+        selectedNodeId = null;
+        selectedEdge = existing;
+        renderProperties();
+        return;
+      }
       const edge = {
         id: generateId('edge'),
-        source: info.sourceId,
-        target: info.targetId,
+        source: sourceId,
+        target: targetId,
         label: ''
       };
       pushState();
@@ -364,9 +374,12 @@ function initJsPlumb() {
       if (isRestoring) return;
       const sourceId = info.sourceId;
       const targetId = info.targetId;
+      // 只删除一条匹配的边（按顺序找到第一条），避免误删重复边
+      const idx = edges.findIndex(e => e.source === sourceId && e.target === targetId);
+      if (idx === -1) return;
       pushState();
-      edges = edges.filter(e => !(e.source === sourceId && e.target === targetId));
-      if (selectedEdge && selectedEdge.source === sourceId && selectedEdge.target === targetId) {
+      const removed = edges.splice(idx, 1)[0];
+      if (selectedEdge && selectedEdge.id === removed.id) {
         selectedEdge = null;
       }
       renderProperties();
