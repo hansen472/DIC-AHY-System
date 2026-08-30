@@ -274,3 +274,9 @@ Connections: ① →approve→ ② →approve→ ③ →approve→ 结束； ③
 在workflow-tasks.html界面，”我提交的审批“标签页中，在”当前节点“ 这一行，增加一个”处理人：xxx“的显示。（显示处理人的中文名字）
 
 在workflow-designer.html界面，增加一个”节点描述“的文本描述控件，用于填写节点描述。该控件没有实际功能，只是用于填写节点描述，方便查看和理解。不影响流程逻辑。不与任何其它节点或任务关联。
+
+1 在 数据库中workflow_definitions 中存储的nodes_json 以及 edges_json 中可以看到节点和连线的ID。这个ID在前台 workflow-designer.html 页面中也同样显示出来。当选择某个节点或连线时，页面会自动跳转到该节点或连线的配置面板。
+2 在 workflow-designer.html 页面中，选择某个节点或连线时，页面会自动跳转到该节点或连线的配置面板。这个配置面板包含节点或连线的ID、名称、类型、属性等信息。通过这个配置面板，可以方便地查看和修改节点或连线的配置。
+3 在数据库在 数据库中workflow_definitions 中存储的edges_json 可以看到edges_json	
+    [{"id":"edge-1787811880018-8258","source":"node-1787811874263-3632","target":"node-1787811876804-4696","label":""}, 有label 这个值 是空的。在前台相应的地方设计一个位置，可以让我输入这个label 的值 ，最后存入数据库中。
+    

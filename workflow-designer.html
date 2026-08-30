@@ -258,9 +258,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
         <textarea id="inp-condition" onchange="updateSelectedNode()" placeholder="例如：amount > 1000 && category == 'production'"></textarea>
       </div>
       <div class="form-group" id="pg-edge-label">
-        <label>连线标签（直接输入 label 值）</label>
-        <input type="text" id="inp-edge-label" onchange="updateSelectedEdge()" placeholder="空=通过，reject=驳回，true/false=条件">
-        <div style="font-size:11px;color:#718096;margin-top:4px;">常用值：空（通过）、approve（通过）、reject（驳回）、true（条件成立）、false（条件不成立）</div>
+        <label>连线标签</label>
+        <select id="inp-edge-label" onchange="updateSelectedEdge()">
+          <option value="">默认（通过）</option>
+          <option value="approve">通过</option>
+          <option value="reject">驳回</option>
+          <option value="true">条件成立</option>
+          <option value="false">条件不成立</option>
+        </select>
       </div>
       <button class="btn-danger" onclick="deleteSelected()" style="width:100%;">删除选中</button>
     </div>
