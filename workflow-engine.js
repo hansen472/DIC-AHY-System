@@ -904,7 +904,7 @@ class WorkflowEngine {
   async getInstance(connection, instanceId) {
     const conn = connection || pool;
     const [rows] = await conn.execute(
-      `SELECT i.*, d.module_key, d.name as definition_name, d.version, d.nodes_json AS def_nodes_json
+      `SELECT i.*, d.module_key, d.name as definition_name, d.version, d.nodes_json AS def_nodes_json, d.edges_json AS def_edges_json
        FROM workflow_instances i
        JOIN workflow_definitions d ON i.definition_id = d.id
        WHERE i.id = ?`,
@@ -916,12 +916,21 @@ class WorkflowEngine {
     r.current_node_ids = parseJson(r.current_node_ids, []);
     // 附带流程定义的节点列表（含文本描述节点的描述内容），供详情弹窗展示节点描述
     const defNodes = parseJson(r.def_nodes_json, []);
+    const defEdges = parseJson(r.def_edges_json, []);
     delete r.def_nodes_json;
+    delete r.def_edges_json;
     r.definition_nodes = defNodes.map(n => ({
       id: n.id,
       name: n.name,
       type: n.type,
+      x: n.x,
+      y: n.y,
       description: (n.config && n.config.text) || ''
+    }));
+    r.definition_edges = defEdges.map(e => ({
+      source: e.source,
+      target: e.target,
+      label: e.label || ''
     }));
     // 附带流程变量（含各节点审批表单数据），供详情展示与业务同步使用
     r.vars = await this.loadInstanceVars(conn, instanceId);

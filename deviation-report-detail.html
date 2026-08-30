@@ -155,6 +155,70 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 }
 .toast.error { background: var(--danger); }
 .toast.success { background: var(--success); }
+
+/* 审批流程图 */
+.flowchart-wrap {
+  position: relative;
+  min-height: 360px;
+  overflow: auto;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.flowchart-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.flow-node {
+  position: absolute;
+  width: 126px;
+  padding: 10px 8px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1f2937;
+  background: #fff;
+  border: 2px solid #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 48px;
+}
+.flow-node .node-type {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+  font-weight: 400;
+}
+.flow-node.start { background: #e0f2fe; border-color: #0ea5e9; }
+.flow-node.end { background: #f3f4f6; border-color: #6b7280; }
+.flow-node.approval { background: #fef3c7; border-color: #f59e0b; }
+.flow-node.condition { background: #ede9fe; border-color: #8b5cf6; }
+.flow-node.text { background: #f0fdf4; border-color: #22c55e; color: #15803d; }
+.flow-node.current {
+  background: #d1fae5 !important;
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.15);
+}
+.flow-edge-label {
+  position: absolute;
+  font-size: 10px;
+  color: #475569;
+  background: rgba(255,255,255,0.9);
+  padding: 1px 4px;
+  border-radius: 4px;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  white-space: nowrap;
+}
 </style>
 </head>
 <body>
@@ -192,6 +256,13 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
     </div>
 
     <div class="card">
+      <h2>审批流程图</h2>
+      <div id="flowchart" class="flowchart-wrap">
+        <div class="empty">暂无流程图数据</div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>审批历史</h2>
       <div id="history-list"></div>
     </div>
@@ -224,6 +295,108 @@ function formatDateTime(str) {
 
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 计算矩形中心到目标点的边界交点（用于绘制贴边的连线）
+function getEdgePoint(cx, cy, w, h, tx, ty) {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  const hw = w / 2;
+  const hh = h / 2;
+  let x, y;
+  if (absDx * hh > absDy * hw) {
+    x = dx > 0 ? cx + hw : cx - hw;
+    y = cx === tx ? cy : cy + dy * (hw / absDx);
+  } else {
+    y = dy > 0 ? cy + hh : cy - hh;
+    x = cy === ty ? cx : cx + dx * (hh / absDy);
+  }
+  return { x, y };
+}
+
+function renderFlowchart(nodes, edges, currentNodeIds) {
+  const container = document.getElementById('flowchart');
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    container.innerHTML = '<div class="empty">暂无流程图数据</div>';
+    return;
+  }
+
+  const currentSet = new Set(currentNodeIds || []);
+  const nodeW = 126;
+  const nodeH = 52;
+  const padding = 50;
+
+  // 计算坐标范围
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  nodes.forEach(n => {
+    const x = n.x || 0;
+    const y = n.y || 0;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  });
+  if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
+
+  const width = Math.max(400, maxX - minX + nodeW + padding * 2);
+  const height = Math.max(300, maxY - minY + nodeH + padding * 2);
+  const offsetX = padding - minX + nodeW / 2;
+  const offsetY = padding - minY + nodeH / 2;
+
+  const nodeMap = {};
+  nodes.forEach(n => {
+    nodeMap[n.id] = {
+      ...n,
+      cx: (n.x || 0) + offsetX,
+      cy: (n.y || 0) + offsetY
+    };
+  });
+
+  let html = `<svg class="flowchart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
+  const edgeLabels = [];
+
+  edges.forEach(e => {
+    const s = nodeMap[e.source];
+    const t = nodeMap[e.target];
+    if (!s || !t) return;
+    const p1 = getEdgePoint(s.cx, s.cy, nodeW, nodeH, t.cx, t.cy);
+    const p2 = getEdgePoint(t.cx, t.cy, nodeW, nodeH, s.cx, s.cy);
+    html += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />`;
+    if (e.label) {
+      edgeLabels.push({
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2,
+        label: e.label
+      });
+    }
+  });
+
+  html += `
+    <defs>
+      <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8" />
+      </marker>
+    </defs>
+  </svg>`;
+
+  nodes.forEach(n => {
+    const isCurrent = currentSet.has(n.id);
+    const typeText = { start: '开始', end: '结束', approval: '审批', condition: '条件', text: '文本' }[n.type] || n.type;
+    html += `
+      <div class="flow-node ${escapeHtml(n.type)}${isCurrent ? ' current' : ''}" style="left:${nodeMap[n.id].cx}px;top:${nodeMap[n.id].cy}px;">
+        <div>${escapeHtml(n.name || '')}</div>
+        ${n.type !== 'approval' && n.type !== 'start' && n.type !== 'end' ? `<div class="node-type">${escapeHtml(typeText)}</div>` : ''}
+      </div>`;
+  });
+
+  edgeLabels.forEach(l => {
+    html += `<div class="flow-edge-label" style="left:${l.x}px;top:${l.y}px;">${escapeHtml(l.label)}</div>`;
+  });
+
+  container.innerHTML = html;
 }
 
 function showToast(text, type) {
@@ -330,6 +503,9 @@ async function loadData() {
       document.getElementById('handling-info').innerHTML = renderFormSnapshot(report.handling);
       document.getElementById('handling-card').style.display = 'block';
     }
+
+    // 审批流程图
+    renderFlowchart(instance.definition_nodes || [], instance.definition_edges || [], instance.current_node_ids || []);
 
     // 审批历史
     const historyList = document.getElementById('history-list');

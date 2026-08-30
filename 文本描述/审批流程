@@ -296,3 +296,5 @@ Connections: ① →approve→ ② →approve→ ③ →approve→ 结束； ③
 
 
 当双击任务标题时，弹出的窗口提示  Cannot GET /deviation-report-detail.html,查找原因并修正
+在deviation-report-detail.html页面的最下方，增加一个“审批流程图”的模块，将审批流程图显示出来。并且在图中，将当前节点显示为绿色。
+在deviation-report-detail.html页面中，增加一个“审批流程图”的模块，将审批流程图显示出来。并且在图中，将当前节点显示为绿色。
