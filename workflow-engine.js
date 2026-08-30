@@ -756,17 +756,23 @@ class WorkflowEngine {
   async resolveNodeResult(connection, instanceId, node) {
     const cfg = node.config || {};
     const mode = cfg.approvalMode || 'all';
+    // 按创建时间倒序，取最新一轮的任务（支持循环审批：旧轮次任务不污染当前决策）
     const [rows] = await connection.execute(
-      `SELECT status, action FROM workflow_tasks
-       WHERE instance_id = ? AND node_id = ?`,
+      `SELECT status, action, created_at FROM workflow_tasks
+       WHERE instance_id = ? AND node_id = ?
+       ORDER BY created_at DESC`,
       [instanceId, node.id]
     );
     if (rows.length === 0) return { decided: false };
 
-    const total = rows.length;
-    const completed = rows.filter(r => r.status !== 'pending').length;
-    const approved = rows.filter(r => r.action === 'approve' || (r.status === 'completed' && r.action === 'approve')).length;
-    const rejected = rows.filter(r => r.action === 'reject' || r.status === 'rejected').length;
+    const latestTime = new Date(rows[0].created_at).getTime();
+    // 同一轮创建的任务时间差通常在毫秒级，用 1 秒容差归为一组
+    const latestRows = rows.filter(r => Math.abs(new Date(r.created_at).getTime() - latestTime) < 1000);
+
+    const total = latestRows.length;
+    const completed = latestRows.filter(r => r.status !== 'pending').length;
+    const approved = latestRows.filter(r => r.action === 'approve' || (r.status === 'completed' && r.action === 'approve')).length;
+    const rejected = latestRows.filter(r => r.action === 'reject' || r.status === 'rejected').length;
 
     if (mode === 'any') {
       if (approved > 0) return { decided: true, result: 'approve' };
