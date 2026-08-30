@@ -575,7 +575,7 @@ function renderParticipatedList() {
         const createdAt = formatDateTime(t.created_at);
         const isMine = t.assignee_username === currentUser;
         html += `
-          <tr class="pg-group-row" ondblclick="onRowDblClick(${t.id}, event)" title="双击查看详情">
+          <tr class="pg-group-row" ondblclick="onBusinessRowDblClick(event, '${escapeHtml(t.module_key)}', '${escapeHtml(t.business_key)}', ${t.instance_id})" title="双击查看业务详情">
             <td></td>
             <td colspan="2">
               <div style="padding-left:20px;">
@@ -643,7 +643,7 @@ function renderSubmittedList() {
         : `<button class="btn-danger" onclick="recallInstance(${ins.id})">撤回</button>`;
     }
     html += `
-      <tr ondblclick="onSubmittedRowDblClick(${ins.id}, event)" title="双击查看详情">
+      <tr ondblclick="onBusinessRowDblClick(event, '${escapeHtml(ins.module_key)}', '${escapeHtml(ins.business_key)}', ${ins.id})" title="双击查看业务详情">
         <td>${ins.id}</td>
         <td class="td-wrap" title="${escapeHtml(ins.definition_name)}">${escapeHtml(ins.definition_name)}</td>
         <td class="td-wrap" title="${escapeHtml(summary)}">${escapeHtml(summary)}</td>
@@ -691,6 +691,29 @@ function formatInstanceSummary(ins) {
 function onRowDblClick(taskId, event) {
   if (event && event.target && event.target.closest && event.target.closest('button')) return;
   openDetailModal(taskId);
+}
+
+// 业务详情页路由：按 module_key 跳转到对应业务详情页面
+function getBusinessDetailUrl(moduleKey, businessKey, instanceId) {
+  if (moduleKey === 'deviation_reports') {
+    return '/deviation-report-detail.html?instance_id=' + encodeURIComponent(instanceId) + '&business_key=' + encodeURIComponent(businessKey);
+  }
+  return null;
+}
+
+function navigateToBusinessDetail(moduleKey, businessKey, instanceId) {
+  const url = getBusinessDetailUrl(moduleKey, businessKey, instanceId);
+  if (url) {
+    window.open(url, '_blank');
+  } else {
+    showToast('该业务类型暂无详情页面', 'info');
+  }
+}
+
+// 双击业务行跳转详情（忽略对行内按钮的双击）
+function onBusinessRowDblClick(event, moduleKey, businessKey, instanceId) {
+  if (event && event.target && event.target.closest && event.target.closest('button')) return;
+  navigateToBusinessDetail(moduleKey, businessKey, instanceId);
 }
 
 // ==================== 详情弹窗（业务数据 / 节点描述 标签页） ====================

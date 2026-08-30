@@ -3718,6 +3718,39 @@ app.get('/api/deviation-reports', requireAuth, async (req, res) => {
   }
 });
 
+// 查询单个偏差上报详情（含归类/处理表单数据）
+app.get('/api/deviation-reports/:id', requireAuth, async (req, res) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId)) return res.status(400).json({ error: '参数错误' });
+
+    const [rows] = await pool.execute(
+      `SELECT id, department, dev_time, reporter, reporter_name, subject, \`model\`, spec, batch, quantity, description,
+              status, created_by, created_at, updated_at,
+              deviation_owner, handler, classification_json, handling_json
+       FROM deviation_reports
+       WHERE id = ?`,
+      [reportId]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: '偏差报告不存在' });
+
+    const row = rows[0];
+    if (row.classification_json) {
+      try { row.classification = JSON.parse(row.classification_json); } catch (e) { row.classification = {}; }
+    }
+    if (row.handling_json) {
+      try { row.handling = JSON.parse(row.handling_json); } catch (e) { row.handling = {}; }
+    }
+    delete row.classification_json;
+    delete row.handling_json;
+
+    res.json({ success: true, data: row });
+  } catch (err) {
+    console.error('查询偏差上报详情失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
 // 重新提交偏差上报：仅"已驳回"的记录可操作，修改内容后发起新一轮审批
 app.post('/api/deviation-reports/:id/resubmit', requireAuth, async (req, res) => {
   try {

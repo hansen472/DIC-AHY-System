@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>偏差上报详情 - 数智中心</title>
+<link rel="icon" href="http://172.19.40.91/images/Favicon.png">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --success: #047857;
+  --danger: #dc2626;
+  --warning: #d97706;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.container { max-width: 1100px; margin: 0 auto; }
+
+header {
+  background: linear-gradient(to right, #A9D6F5 0%, #005EAA 100%);
+  color: #0B4F8F;
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(0, 94, 170, 0.18);
+}
+
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; }
+header p { font-size: 13px; color: #33619C; margin-top: 6px; }
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+button:hover { transform: translateY(-1px); }
+button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.btn-back {
+  background: #64748b;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
+}
+
+.card {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+  margin-bottom: 24px;
+}
+
+.card h2 { font-size: 16px; margin-bottom: 20px; color: var(--text); }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; }
+.form-group { margin-bottom: 4px; }
+.form-group.full-width { grid-column: 1 / -1; }
+.form-group label {
+  display: block;
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.form-group .value {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #f9fafb;
+  min-height: 40px;
+  word-break: break-word;
+}
+.form-group .value.pre {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.empty { text-align: center; color: var(--text-secondary); padding: 40px 0; }
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.status-pending { background: #fef3c7; color: #92400e; }
+.status-completed { background: #d1fae5; color: #065f46; }
+.status-rejected { background: #fee2e2; color: #991b1b; }
+.status-cancelled { background: #f3f4f6; color: #4b5563; }
+
+.history-item {
+  padding: 12px;
+  border-left: 3px solid #2b6cb0;
+  background: #f7fafc;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+.history-item.rejected { border-left-color: #e53e3e; background: #fff5f5; }
+.history-item .meta { font-size: 12px; color: #718096; margin-bottom: 6px; }
+.history-item .action { font-weight: 600; color: #2c3e50; }
+.history-item.rejected .action { color: #c53030; }
+.history-item .comment { margin-top: 6px; color: #4a5568; font-size: 13px; }
+
+.approval-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+  margin-bottom: 16px;
+}
+.approval-info .info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+.approval-info .info-row .label { color: var(--text-secondary); white-space: nowrap; }
+.approval-info .info-row .text { color: var(--text); font-weight: 500; }
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: none;
+}
+.toast.error { background: var(--danger); }
+.toast.success { background: var(--success); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>偏差上报详情</h1>
+      <p>查看偏差事件信息及审批流转记录</p>
+    </div>
+    <div class="toolbar">
+      <button class="btn-back" onclick="window.location.href='/workflow-tasks.html'">返回审批</button>
+    </div>
+  </header>
+
+  <div id="loading" class="card empty">加载中...</div>
+  <div id="content" style="display:none;">
+    <div class="card">
+      <h2>审批信息</h2>
+      <div class="approval-info" id="approval-info"></div>
+    </div>
+
+    <div class="card">
+      <h2>上报信息</h2>
+      <div class="form-grid" id="report-info"></div>
+    </div>
+
+    <div class="card" id="classification-card" style="display:none;">
+      <h2>归类信息</h2>
+      <div class="form-grid" id="classification-info"></div>
+    </div>
+
+    <div class="card" id="handling-card" style="display:none;">
+      <h2>处理信息</h2>
+      <div class="form-grid" id="handling-info"></div>
+    </div>
+
+    <div class="card">
+      <h2>审批历史</h2>
+      <div id="history-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const instanceId = params.get('instance_id');
+const businessKey = params.get('business_key') || '';
+const reportId = parseBusinessId(businessKey);
+
+function parseBusinessId(key) {
+  if (!key) return null;
+  const parts = String(key).split(':');
+  const id = parseInt(parts[parts.length - 1], 10);
+  return isNaN(id) ? null : id;
+}
+
+function formatDateTime(str) {
+  if (!str) return '-';
+  const text = String(str).trim();
+  const m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2}):(\d{1,2}))?/);
+  if (!m) return str;
+  const pad = n => String(n).padStart(2, '0');
+  return `${m[1]}-${pad(m[2])}-${pad(m[3])} ${m[4] ? pad(m[4]) : '00'}:${m[5] ? pad(m[5]) : '00'}`;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function showToast(text, type) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.className = 'toast ' + type;
+  el.style.display = 'block';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function formatInstanceStatus(status) {
+  const map = { running: '审批中', completed: '已通过', rejected: '已驳回', recalled: '已撤回' };
+  const clsMap = { running: 'status-pending', completed: 'status-completed', rejected: 'status-rejected', recalled: 'status-cancelled' };
+  return `<span class="status-badge ${clsMap[status] || 'status-pending'}">${escapeHtml(map[status] || status)}</span>`;
+}
+
+function formatHistoryAction(action) {
+  const map = { approve: '同意', reject: '驳回', transfer: '转交', recall: '撤回', cancel: '取消' };
+  return escapeHtml(map[action] || action);
+}
+
+function renderInfoRow(label, value, pre = false) {
+  return `
+    <div class="form-group">
+      <label>${escapeHtml(label)}</label>
+      <div class="value ${pre ? 'pre' : ''}">${pre ? escapeHtml(value) : escapeHtml(value)}</div>
+    </div>`;
+}
+
+function renderFormSnapshot(data) {
+  if (!data || typeof data !== 'object') return '';
+  const excluded = ['__node'];
+  let html = '';
+  Object.entries(data).forEach(([key, val]) => {
+    if (excluded.includes(key)) return;
+    html += renderInfoRow(key, val, typeof val === 'string' && val.length > 40);
+  });
+  return html || '<div class="form-group full-width"><div class="value">暂无数据</div></div>';
+}
+
+async function loadData() {
+  const loading = document.getElementById('loading');
+  const content = document.getElementById('content');
+
+  if (!reportId || !instanceId) {
+    loading.textContent = '缺少业务标识或流程实例参数';
+    return;
+  }
+
+  try {
+    const [reportRes, instanceRes, historyRes] = await Promise.all([
+      fetch('/api/deviation-reports/' + reportId),
+      fetch('/api/workflow-instances/' + instanceId),
+      fetch('/api/workflow-instances/' + instanceId + '/history')
+    ]);
+
+    if (!reportRes.ok) throw new Error('加载偏差报告失败');
+    if (!instanceRes.ok) throw new Error('加载流程实例失败');
+
+    const reportResult = await reportRes.json();
+    const instanceResult = await instanceRes.json();
+    const historyResult = historyRes.ok ? await historyRes.json() : { data: [] };
+
+    const report = reportResult.data || {};
+    const instance = instanceResult.data || {};
+    const history = historyResult.data || [];
+
+    // 审批信息
+    document.getElementById('approval-info').innerHTML = `
+      <div class="info-row"><span class="label">业务标识：</span><span class="text">${escapeHtml(businessKey)}</span></div>
+      <div class="info-row"><span class="label">流程状态：</span><span class="text">${formatInstanceStatus(instance.status || 'running')}</span></div>
+      <div class="info-row"><span class="label">流程名称：</span><span class="text">${escapeHtml(instance.definition_name || '-')}</span></div>
+      <div class="info-row"><span class="label">当前节点：</span><span class="text">${escapeHtml((instance.current_node_ids || []).join('、') || '-')}</span></div>
+      <div class="info-row"><span class="label">当前处理人：</span><span class="text">${escapeHtml((instance.pending_assignees || []).join('、') || '-')}</span></div>
+      <div class="info-row"><span class="label">提交人：</span><span class="text">${escapeHtml(report.created_by || instance.created_by || '-')}</span></div>
+      <div class="info-row"><span class="label">提交时间：</span><span class="text">${formatDateTime(report.created_at || instance.created_at)}</span></div>
+      <div class="info-row"><span class="label">更新时间：</span><span class="text">${formatDateTime(report.updated_at)}</span></div>
+    `;
+
+    // 上报信息
+    document.getElementById('report-info').innerHTML = `
+      ${renderInfoRow('偏差发现部门', report.department)}
+      ${renderInfoRow('发现时间', formatDateTime(report.dev_time))}
+      ${renderInfoRow('发现人', report.reporter_name || report.reporter)}
+      ${renderInfoRow('涉及主体', report.subject)}
+      ${renderInfoRow('涉及型号', report.model)}
+      ${renderInfoRow('涉及的规格', report.spec)}
+      ${renderInfoRow('涉及的批号/编号', report.batch)}
+      ${renderInfoRow('涉及的数量', report.quantity)}
+      ${renderInfoRow('详细的偏差描述', report.description, true)}
+      ${renderInfoRow('偏差负责人', report.deviation_owner)}
+      ${renderInfoRow('处理人', report.handler)}
+    `;
+
+    // 归类信息
+    if (report.classification && Object.keys(report.classification).length > 0) {
+      document.getElementById('classification-info').innerHTML = renderFormSnapshot(report.classification);
+      document.getElementById('classification-card').style.display = 'block';
+    }
+
+    // 处理信息
+    if (report.handling && Object.keys(report.handling).length > 0) {
+      document.getElementById('handling-info').innerHTML = renderFormSnapshot(report.handling);
+      document.getElementById('handling-card').style.display = 'block';
+    }
+
+    // 审批历史
+    const historyList = document.getElementById('history-list');
+    if (history.length === 0) {
+      historyList.innerHTML = '<div class="empty">暂无审批历史</div>';
+    } else {
+      historyList.innerHTML = history.map(h => {
+        const isRejected = h.action === 'reject' || h.action === 'rejected';
+        return `
+          <div class="history-item ${isRejected ? 'rejected' : ''}">
+            <div class="meta">${formatDateTime(h.created_at)} · ${escapeHtml(h.assignee_username)} · ${escapeHtml(h.node_name || '-')}</div>
+            <div class="action">${formatHistoryAction(h.action)}</div>
+            ${h.comment ? `<div class="comment">意见：${escapeHtml(h.comment)}</div>` : ''}
+          </div>`;
+      }).join('');
+    }
+
+    loading.style.display = 'none';
+    content.style.display = 'block';
+  } catch (err) {
+    loading.textContent = '加载失败：' + err.message;
+    showToast('加载失败：' + err.message, 'error');
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
