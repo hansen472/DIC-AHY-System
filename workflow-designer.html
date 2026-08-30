@@ -209,6 +209,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     <h3>属性面板</h3>
     <div id="prop-empty" class="empty-tip">选中节点或连线以编辑属性</div>
     <div id="prop-form" style="display:none;">
+      <div class="form-group" id="pg-id">
+        <label>ID</label>
+        <input type="text" id="inp-id" readonly style="background:#f7fafc; color:#718096;">
+      </div>
       <div class="form-group" id="pg-name">
         <label>节点名称</label>
         <input type="text" id="inp-name" oninput="updateSelectedNode()">
@@ -254,14 +258,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
         <textarea id="inp-condition" onchange="updateSelectedNode()" placeholder="例如：amount > 1000 && category == 'production'"></textarea>
       </div>
       <div class="form-group" id="pg-edge-label">
-        <label>连线标签</label>
-        <select id="inp-edge-label" onchange="updateSelectedEdge()">
-          <option value="">默认（通过）</option>
-          <option value="approve">通过</option>
-          <option value="reject">驳回</option>
-          <option value="true">条件成立</option>
-          <option value="false">条件不成立</option>
-        </select>
+        <label>连线标签（直接输入 label 值）</label>
+        <input type="text" id="inp-edge-label" onchange="updateSelectedEdge()" placeholder="空=通过，reject=驳回，true/false=条件">
+        <div style="font-size:11px;color:#718096;margin-top:4px;">常用值：空（通过）、approve（通过）、reject（驳回）、true（条件成立）、false（条件不成立）</div>
       </div>
       <button class="btn-danger" onclick="deleteSelected()" style="width:100%;">删除选中</button>
     </div>
@@ -512,6 +511,7 @@ function renderProperties() {
   empty.style.display = 'none';
   form.style.display = 'block';
 
+  const pgId = document.getElementById('pg-id');
   const pgName = document.getElementById('pg-name');
   const pgNodeDesc = document.getElementById('pg-node-desc');
   const pgText = document.getElementById('pg-text');
@@ -525,6 +525,8 @@ function renderProperties() {
 
   if (selectedEdge) {
     [pgName, pgNodeDesc, pgText, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    pgId.style.display = 'block';
+    document.getElementById('inp-id').value = selectedEdge.id || '';
     pgEdgeLabel.style.display = 'block';
     document.getElementById('inp-edge-label').value = selectedEdge.label || '';
     return;
@@ -534,6 +536,8 @@ function renderProperties() {
   const node = nodes.find(n => n.id === selectedNodeId);
   if (!node) return;
 
+  pgId.style.display = 'block';
+  document.getElementById('inp-id').value = node.id || '';
   pgName.style.display = 'block';
   document.getElementById('inp-name').value = node.name || '';
 
