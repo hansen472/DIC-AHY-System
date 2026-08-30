@@ -143,6 +143,12 @@ tr:hover td { background: #f7fafc; }
 #approve-form-fields .form-group { margin-bottom: 12px; }
 #approve-form-fields .ff-readonly { background: #f7fafc; color: #4a5568; }
 
+/* 我的参与分组折叠 */
+.pg-group-header { background: #f7fafc; cursor: pointer; font-weight: 600; }
+.pg-group-header:hover { background: #edf2f7; }
+.pg-group-row { background: #fff; }
+.pg-group-row td { border-top: none; padding-top: 8px; padding-bottom: 8px; }
+
 /* 重新提交表单弹窗 */
 .modal.modal-wide { max-width: 780px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
@@ -445,7 +451,8 @@ async function loadTasks() {
       } catch (e) {}
     }
 
-    renderTaskList();
+    if (currentTab === 'participated') renderParticipatedList();
+    else renderTaskList();
   } catch (err) {
     document.getElementById('task-list').innerHTML = '<div class="empty">加载失败：' + escapeHtml(err.message) + '</div>';
   }
@@ -497,6 +504,95 @@ function renderTaskList() {
           <button class="btn-primary" onclick="openHistoryModal(${t.instance_id})">历史</button>
         </td>
       </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('task-list').innerHTML = html;
+}
+
+// 我的参与：按业务标识分组折叠展示
+const participatedExpanded = new Set();
+
+function toggleParticipatedGroup(key) {
+  if (participatedExpanded.has(key)) participatedExpanded.delete(key);
+  else participatedExpanded.add(key);
+  renderParticipatedList();
+}
+
+function renderParticipatedList() {
+  if (tasksData.length === 0) {
+    document.getElementById('task-list').innerHTML = '<div class="empty">暂无参与的任务</div>';
+    return;
+  }
+
+  // 按业务标识分组
+  const groups = {};
+  tasksData.forEach(t => {
+    const key = t.business_key || '(无业务标识)';
+    if (!groups[key]) {
+      groups[key] = {
+        businessKey: key,
+        definitionName: t.definition_name || '-',
+        instanceStatus: t.instance_status || 'running',
+        tasks: []
+      };
+    }
+    groups[key].tasks.push(t);
+  });
+
+  let html = `<table>
+    <thead>
+      <tr>
+        <th style="width:30px;"></th>
+        <th>业务标识</th>
+        <th>流程</th>
+        <th>任务数</th>
+        <th>实例状态</th>
+        <th class="action-col">操作</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  Object.values(groups).forEach(g => {
+    const expanded = participatedExpanded.has(g.businessKey);
+    const arrow = expanded ? '▼' : '▶';
+    html += `
+      <tr class="pg-group-header" onclick="toggleParticipatedGroup('${escapeHtml(g.businessKey)}')">
+        <td>${arrow}</td>
+        <td class="td-wrap" title="${escapeHtml(g.businessKey)}">${escapeHtml(g.businessKey)}</td>
+        <td class="td-wrap" title="${escapeHtml(g.definitionName)}">${escapeHtml(g.definitionName)}</td>
+        <td>${g.tasks.length}</td>
+        <td>${formatInstanceStatus(g.instanceStatus)}</td>
+        <td class="action-col"><button class="btn-primary" onclick="event.stopPropagation();openHistoryModal(${g.tasks[0].instance_id})">历史</button></td>
+      </tr>`;
+
+    if (expanded) {
+      g.tasks.forEach(t => {
+        const statusHtml = formatTaskStatus(t.status);
+        const dueTime = t.due_time ? formatDateTime(t.due_time) : '-';
+        const createdAt = formatDateTime(t.created_at);
+        const isMine = t.assignee_username === currentUser;
+        html += `
+          <tr class="pg-group-row" ondblclick="onRowDblClick(${t.id}, event)" title="双击查看详情">
+            <td></td>
+            <td colspan="2">
+              <div style="padding-left:20px;">
+                <div><strong>${escapeHtml(t.node_name || '-')}</strong></div>
+                <div style="font-size:11px;color:#718096;">审批人：${escapeHtml(t.assignee_username)} ｜ 状态：${statusHtml}</div>
+              </div>
+            </td>
+            <td style="font-size:12px;color:#718096;">${createdAt}</td>
+            <td style="font-size:12px;color:#718096;">${dueTime}</td>
+            <td class="action-col">
+              ${t.status === 'pending' ? `
+                ${isMine ? `<button class="btn-success" onclick="openApproveModal(${t.id})">审批</button>` : ''}
+                ${(isMine || canTransfer) ? `<button class="btn-warning" onclick="openTransferModal(${t.id})">转交</button>` : ''}
+              ` : ''}
+              <button class="btn-primary" onclick="openHistoryModal(${t.instance_id})">历史</button>
+            </td>
+          </tr>`;
+      });
+    }
   });
 
   html += '</tbody></table>';
