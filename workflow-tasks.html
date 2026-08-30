@@ -1255,12 +1255,15 @@ function collectApproveForm() {
   const values = {};
   const variables = {};
 
-  // 必填校验（依据渲染时的字段定义）
+  const action = document.querySelector('input[name="approve-action"]:checked').value;
+
+  // 必填校验（依据当前审批操作和字段 requiredMode）
   for (const f of activeFormFields) {
+    if (!isFieldVisibleForAction(f, action)) continue;
     const el = container.querySelector(`[data-ff-name="${cssEscape(f.name)}"]`);
     if (!el) continue;
     values[f.name] = el.value.trim();
-    if (f.required && !values[f.name]) {
+    if (isFieldRequiredForAction(f, action) && !values[f.name]) {
       return { error: '请填写「' + (f.label || f.name) + '」' };
     }
   }
