@@ -80,18 +80,19 @@ async function pushToWechat(data, total) {
       '### 📋 未完成日巡检工单列表（自动推送）',
       `#### 共查询到 ${total} 条未完成日工单`,
       `#### 第 ${batchNo}/${totalBatches} 批`,
-      '| 工单 | 资产 | 安排时间 | 类型 | 状态 |',
-      '| :--- | :--- | :--- | :--- | :--- |'
+      '| 工单 | 资产 | 负责人 | 安排时间 | 类型 | 状态 |',
+      '| :--- | :--- | :--- | :--- | :--- | :--- |'
     ];
 
     batch.forEach(item => {
       const woInfo = clean(item.wo_info);
       const assetName = clean(item.asset_names);
+      const responsibleName = clean(item.responsible_name) || '-';
       const scheduleTime = clean(item.wo_schedule_time);
       const assetType = '日巡检工单';
       const statusName = clean(item.status_name_cn);
       const emoji = STATUS_EMOJI[statusName] || '⚪';
-      lines.push(`| ${woInfo} | ${assetName} | ${scheduleTime} | ${assetType} | ${emoji} ${statusName} |`);
+      lines.push(`| ${woInfo} | ${assetName} | ${responsibleName} | ${scheduleTime} | ${assetType} | ${emoji} ${statusName} |`);
     });
 
     const markdown = lines.join('\n');
