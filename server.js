@@ -29,7 +29,7 @@ const { startDailyCheck } = require('./email-notifier');
 const { setupWorkflowRoutes } = require('./workflow-routes');
 const { runBackup, listBackups, startDailyBackup } = require('./backup-service');
 const { queryInstruments, queryByAssetCodes } = require('./instrument-meter-service');
-const { startWeeklyCheck } = require('./instrument-meter-notifier');
+const { startWeeklyCheck, updateSettings: updateMeterNotificationSettings, getSettings: getMeterNotificationSettings } = require('./instrument-meter-notifier');
 const { startWeeklyPush } = require('./weekly-overdue-workorder-notifier');
 const { startDailyPush: startDailyOverduePush } = require('./daily-overdue-workorder-notifier');
 const { startDailyPush: startQcMaintenancePush } = require('./qc-maintenance-notifier');
@@ -4783,6 +4783,40 @@ app.delete('/api/instrument-meter/baseline/:date', requirePermission('instrument
   } catch (err) {
     console.error('删除基准日失败:', err.message);
     res.status(500).json({ error: '删除失败: ' + err.message });
+  }
+});
+
+// ========== 仪器/仪表到期邮件通知设置 ==========
+
+/**
+ * GET /api/instrument-meter/notification-settings
+ * 获取当前邮件通知设置（开关状态 + 间隔天数）
+ */
+app.get('/api/instrument-meter/notification-settings', requirePermission('instrument_meter'), (req, res) => {
+  const settings = getMeterNotificationSettings();
+  res.json({ success: true, data: settings });
+});
+
+/**
+ * PUT /api/instrument-meter/notification-settings
+ * 更新邮件通知设置
+ * Body: { enabled: boolean, intervalDays: number }
+ */
+app.put('/api/instrument-meter/notification-settings', requirePermission('instrument_meter'), async (req, res) => {
+  const { enabled, intervalDays } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled 必须是布尔值' });
+  }
+  const validIntervals = [30, 45, 60, 90, 180];
+  if (!validIntervals.includes(intervalDays)) {
+    return res.status(400).json({ error: 'intervalDays 必须是 ' + validIntervals.join('/') + ' 之一' });
+  }
+  try {
+    const updated = await updateMeterNotificationSettings(enabled, intervalDays);
+    res.json({ success: true, data: updated, message: `邮件通知已${enabled ? '开启' : '停用'}，间隔 ${intervalDays} 天` });
+  } catch (err) {
+    console.error('更新通知设置失败:', err.message);
+    res.status(500).json({ error: '更新失败: ' + err.message });
   }
 });
 

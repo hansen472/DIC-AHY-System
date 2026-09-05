@@ -167,6 +167,52 @@ button:hover { transform: translateY(-1px); }
   box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
 }
 
+.notification-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.notification-bar label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.notification-bar select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+}
+
+.notification-bar select:focus {
+  border-color: var(--primary);
+}
+
+.btn-toggle-on {
+  background: #059669;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+}
+
+.btn-toggle-off {
+  background: #94a3b8;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(148, 163, 184, 0.25);
+}
+
+.notification-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
 .card {
   background: var(--panel);
   border-radius: 16px;
@@ -329,6 +375,22 @@ footer-actions {
       </select>
       <button class="btn-danger-sm" onclick="deleteBaseline()" id="btn-delete-baseline" disabled>删除</button>
       <span id="baseline-info" style="font-size:12px; color:var(--text-secondary);"></span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px; padding:16px 24px;">
+    <div class="notification-bar">
+      <label>邮件通知：</label>
+      <button id="btn-toggle-notification" class="btn-toggle-on" onclick="toggleNotification()">已开启</button>
+      <label for="notification-interval" style="margin-left:8px;">发送间隔：</label>
+      <select id="notification-interval" onchange="changeNotificationInterval()">
+        <option value="30">30 天</option>
+        <option value="45">45 天</option>
+        <option value="60">60 天</option>
+        <option value="90">90 天</option>
+        <option value="180">180 天</option>
+      </select>
+      <span id="notification-status" class="notification-status"></span>
     </div>
   </div>
 
@@ -626,7 +688,76 @@ async function deleteBaseline() {
   }
 }
 
+// ========== 邮件通知设置 ==========
+
+let notificationEnabled = true;
+
+async function loadNotificationSettings() {
+  try {
+    const res = await fetch('/api/instrument-meter/notification-settings');
+    const result = await res.json();
+    if (!res.ok || !result.success) return;
+    const settings = result.data;
+    notificationEnabled = settings.enabled;
+    updateToggleButton(settings.enabled);
+    document.getElementById('notification-interval').value = settings.intervalDays;
+  } catch (err) {
+    console.error('加载通知设置失败:', err.message);
+  }
+}
+
+function updateToggleButton(enabled) {
+  const btn = document.getElementById('btn-toggle-notification');
+  if (enabled) {
+    btn.textContent = '已开启';
+    btn.className = 'btn-toggle-on';
+  } else {
+    btn.textContent = '已停用';
+    btn.className = 'btn-toggle-off';
+  }
+}
+
+async function toggleNotification() {
+  notificationEnabled = !notificationEnabled;
+  const intervalDays = parseInt(document.getElementById('notification-interval').value, 10);
+  updateToggleButton(notificationEnabled);
+  try {
+    const res = await fetch('/api/instrument-meter/notification-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: notificationEnabled, intervalDays })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '更新失败');
+    showToast(result.message || '设置已更新', 'success');
+    document.getElementById('notification-status').textContent = `已保存：${notificationEnabled ? '开启' : '停用'}，每 ${intervalDays} 天发送一次`;
+  } catch (err) {
+    // 回滚状态
+    notificationEnabled = !notificationEnabled;
+    updateToggleButton(notificationEnabled);
+    showToast('更新失败：' + err.message, 'error');
+  }
+}
+
+async function changeNotificationInterval() {
+  const intervalDays = parseInt(document.getElementById('notification-interval').value, 10);
+  try {
+    const res = await fetch('/api/instrument-meter/notification-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: notificationEnabled, intervalDays })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '更新失败');
+    showToast(result.message || '设置已更新', 'success');
+    document.getElementById('notification-status').textContent = `已保存：${notificationEnabled ? '开启' : '停用'}，每 ${intervalDays} 天发送一次`;
+  } catch (err) {
+    showToast('更新失败：' + err.message, 'error');
+  }
+}
+
 init();
+loadNotificationSettings();
 </script>
 </body>
 </html>

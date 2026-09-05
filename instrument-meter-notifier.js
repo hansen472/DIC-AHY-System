@@ -1,15 +1,16 @@
 /**
- * 仪器/仪表到期周报邮件提醒
+ * 仪器/仪表到期邮件提醒
  *
- * 每周二早上 8:10 自动查询 MIC 数据库中距离当前日期 30/60/90 天
- * 内即将到期的在用仪器/仪表数量，并通过邮件发送汇总通知。
+ * 根据用户配置的时间间隔（30/45/60/90/180 天）自动查询 MIC 数据库中
+ * 即将到期的在用仪器/仪表数量，并通过邮件发送汇总通知。
  *
  * 收件人：lunhan.li@aptar.com
- * 发送时间：每周二 08:10
+ * 发送间隔：可配置（默认 30 天）
  */
 
 const nodemailer = require('nodemailer');
 const { micPool } = require('./db-mic-config');
+const { pool } = require('./db-config');
 
 // SMTP 配置（与 email-notifier 保持一致）
 const SMTP_HOST = process.env.SMTP_HOST || '172.22.44.75';
@@ -17,38 +18,70 @@ const SMTP_PORT = parseInt(process.env.SMTP_PORT || '25', 10);
 const SMTP_FROM = process.env.SMTP_FROM || 'DIC@aptar.com';
 const SMTP_TO = process.env.SMTP_TO || 'lunhan.li@aptar.com';
 
-const MAX_DAYS = 90;
+const MAX_DAYS = 180;
 const THRESHOLDS = [
   { days: 30, label: '30 天内' },
   { days: 60, label: '2 个月内' },
-  { days: 90, label: '3 个月内' }
+  { days: 90, label: '3 个月内' },
+  { days: 180, label: '6 个月内' }
 ];
 
 // 定时器引用，用于避免重复调度
-let weeklyTimer = null;
+let checkTimer = null;
+let checkInterval = null;
+
+// 默认设置（数据库不可用时的回退值）
+let currentSettings = { enabled: true, intervalDays: 30 };
+
+// ========== 设置管理 ==========
 
 /**
- * 计算距离下一个周二 08:10 的毫秒数
+ * 从数据库读取通知设置
  */
-function getNextTuesday810() {
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=周日, 1=周一, 2=周二
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 10, 0, 0);
-
-  let daysUntilTue;
-  if (dayOfWeek === 2) {
-    // 今天是周二：若已过 8:10 则等到下周二，否则今天
-    if (now >= target) {
-      daysUntilTue = 7;
-    } else {
-      daysUntilTue = 0;
+async function loadSettings() {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT enabled, interval_days FROM instrument_meter_notification_settings LIMIT 1'
+    );
+    if (rows.length > 0) {
+      currentSettings = {
+        enabled: !!rows[0].enabled,
+        intervalDays: rows[0].interval_days || 30
+      };
     }
-  } else {
-    daysUntilTue = (2 - dayOfWeek + 7) % 7;
+  } catch (err) {
+    console.error('[instrument-meter-notifier] 读取设置失败:', err.message);
   }
+  return currentSettings;
+}
 
-  target.setDate(target.getDate() + daysUntilTue);
-  return target.getTime() - now.getTime();
+/**
+ * 更新通知设置并重新调度定时器
+ */
+async function updateSettings(enabled, intervalDays) {
+  try {
+    await pool.execute(
+      'UPDATE instrument_meter_notification_settings SET enabled = ?, interval_days = ? WHERE id = 1',
+      [enabled ? 1 : 0, intervalDays]
+    );
+    currentSettings = { enabled, intervalDays };
+    // 重新调度定时器
+    stopScheduler();
+    if (enabled) {
+      startScheduler();
+    }
+    return currentSettings;
+  } catch (err) {
+    console.error('[instrument-meter-notifier] 更新设置失败:', err.message);
+    throw err;
+  }
+}
+
+/**
+ * 获取当前设置（供 API 调用）
+ */
+function getSettings() {
+  return { ...currentSettings };
 }
 
 /**
@@ -128,7 +161,7 @@ async function checkAndNotify() {
       return;
     }
 
-    // 按阈值分桶（30天内 / 60天内 / 90天内，含已过期）
+    // 按阈值分桶（30天内 / 60天内 / 90天内 / 180天内，含已过期）
     const buckets = {};
     THRESHOLDS.forEach(t => { buckets[t.label] = []; });
 
@@ -140,6 +173,8 @@ async function checkAndNotify() {
         buckets['2 个月内'].push(r);
       } else if (days <= 90) {
         buckets['3 个月内'].push(r);
+      } else if (days <= 180) {
+        buckets['6 个月内'].push(r);
       }
     });
 
@@ -209,51 +244,83 @@ async function checkAndNotify() {
 
     const html = `
       <div style="font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; max-width:800px; margin:0 auto;">
-        <h2 style="color:#1e3a8a;">仪器/仪表到期周报提醒（${today}）</h2>
-        <p>以下为距离当前日期 30 / 60 / 90 天内即将到期（含已过期）的在用仪器/仪表汇总：</p>
+        <h2 style="color:#1e3a8a;">仪器/仪表到期提醒（${today}）</h2>
+        <p>以下为距离当前日期 30 / 60 / 90 / 180 天内即将到期（含已过期）的在用仪器/仪表汇总：</p>
         ${summaryTable}
         ${detailSections}
         <p style="color:#718096; font-size:12px; margin-top:24px; border-top:1px solid #e2e8f0; padding-top:12px;">
-          本邮件由系统自动发送（每周二 08:10），请勿回复。
+          本邮件由系统自动发送（每 ${currentSettings.intervalDays} 天），请勿回复。
         </p>
       </div>
     `;
 
-    const subject = `仪器/仪表到期周报提醒（${today}）`;
+    const subject = `仪器/仪表到期提醒（${today}）`;
     await sendEmail(subject, html);
     console.log(`[instrument-meter-notifier] 邮件已发送，共 ${expiring.length} 条到期记录 ` +
-      `[30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length}]`);
+      `[30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length} / 180天:${buckets['6 个月内'].length}]`);
 
     // 写入推送日志（懒加载避免循环依赖）
     const { logPush } = require('./server');
-    const summary = `仪器/仪表到期周报，共 ${expiring.length} 条（30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length}）`;
+    const summary = `仪器/仪表到期提醒，共 ${expiring.length} 条（30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length} / 180天:${buckets['6 个月内'].length}）`;
     await logPush('instrument_meter', 'email', 'success', summary, expiring.length, SMTP_TO, 'system');
   } catch (err) {
     console.error('[instrument-meter-notifier] 检测/邮件发送失败:', err.message);
     // 写入失败日志
     try {
       const { logPush } = require('./server');
-      await logPush('instrument_meter', 'email', 'failed', '仪器/仪表到期周报发送失败', 0, SMTP_TO, 'system', err.message);
+      await logPush('instrument_meter', 'email', 'failed', '仪器/仪表到期提醒发送失败', 0, SMTP_TO, 'system', err.message);
     } catch (_) { /* 日志写入失败不影响主流程 */ }
   }
 }
 
 /**
- * 启动每周二 08:10 定时任务
- *
- * 先通过 setTimeout 等待到下一个周二 08:10，
- * 执行一次后通过 setInterval 每 7 天重复执行。
+ * 停止定时器调度
  */
-function startWeeklyCheck() {
-  const delay = getNextTuesday810();
-  const nextRun = new Date(Date.now() + delay);
-  console.log(`[instrument-meter-notifier] 定时任务将于 ${nextRun.toLocaleString('zh-CN')}（周二 08:10）首次执行`);
+function stopScheduler() {
+  if (checkTimer) {
+    clearTimeout(checkTimer);
+    checkTimer = null;
+  }
+  if (checkInterval) {
+    clearInterval(checkInterval);
+    checkInterval = null;
+  }
+  console.log('[instrument-meter-notifier] 定时任务已停止');
+}
 
-  weeklyTimer = setTimeout(() => {
+/**
+ * 启动定时任务
+ *
+ * 先通过 setTimeout 等待到次日 08:10 首次执行，
+ * 之后按配置的间隔天数重复执行。
+ */
+function startScheduler() {
+  const intervalMs = currentSettings.intervalDays * 24 * 60 * 60 * 1000;
+
+  // 计算到次日 08:10 的延迟
+  const now = new Date();
+  const nextRun = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 10, 0, 0);
+  const delay = nextRun.getTime() - now.getTime();
+
+  console.log(`[instrument-meter-notifier] 定时任务已启动，间隔 ${currentSettings.intervalDays} 天，` +
+    `首次执行时间: ${nextRun.toLocaleString('zh-CN')}`);
+
+  checkTimer = setTimeout(() => {
     checkAndNotify();
-    // 之后每 7 天执行一次（7 × 24 × 60 × 60 × 1000 ms）
-    setInterval(checkAndNotify, 7 * 24 * 60 * 60 * 1000);
+    checkInterval = setInterval(checkAndNotify, intervalMs);
   }, delay);
 }
 
-module.exports = { startWeeklyCheck, checkAndNotify };
+/**
+ * 初始化：读取设置并启动定时任务
+ */
+async function startWeeklyCheck() {
+  await loadSettings();
+  if (currentSettings.enabled) {
+    startScheduler();
+  } else {
+    console.log('[instrument-meter-notifier] 自动邮件通知已停用');
+  }
+}
+
+module.exports = { startWeeklyCheck, checkAndNotify, loadSettings, updateSettings, getSettings, stopScheduler };
