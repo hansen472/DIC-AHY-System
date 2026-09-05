@@ -29,7 +29,7 @@ const { startDailyCheck } = require('./email-notifier');
 const { setupWorkflowRoutes } = require('./workflow-routes');
 const { runBackup, listBackups, startDailyBackup } = require('./backup-service');
 const { queryInstruments, queryByAssetCodes } = require('./instrument-meter-service');
-const { startWeeklyCheck, updateSettings: updateMeterNotificationSettings, getSettings: getMeterNotificationSettings } = require('./instrument-meter-notifier');
+const { startWeeklyCheck, updateSettings: updateMeterNotificationSettings, getSettings: getMeterNotificationSettings, getNextSendTimes: getMeterNextSendTimes, getUsersWithEmails: getMeterUsersWithEmails } = require('./instrument-meter-notifier');
 const { startWeeklyPush } = require('./weekly-overdue-workorder-notifier');
 const { startDailyPush: startDailyOverduePush } = require('./daily-overdue-workorder-notifier');
 const { startDailyPush: startQcMaintenancePush } = require('./qc-maintenance-notifier');
@@ -4790,20 +4790,35 @@ app.delete('/api/instrument-meter/baseline/:date', requirePermission('instrument
 
 /**
  * GET /api/instrument-meter/notification-settings
- * 获取当前邮件通知设置（开关状态 + 间隔天数）
+ * 获取当前邮件通知设置（开关状态 + 间隔天数 + 接收人）
  */
 app.get('/api/instrument-meter/notification-settings', requirePermission('instrument_meter'), (req, res) => {
   const settings = getMeterNotificationSettings();
-  res.json({ success: true, data: settings });
+  const nextTimes = settings.enabled ? getMeterNextSendTimes(settings.intervalDays) : null;
+  res.json({ success: true, data: settings, nextTimes });
+});
+
+/**
+ * GET /api/instrument-meter/notification-users
+ * 查询所有有邮箱的用户（供接收人下拉框使用）
+ */
+app.get('/api/instrument-meter/notification-users', requirePermission('instrument_meter'), async (req, res) => {
+  try {
+    const users = await getMeterUsersWithEmails();
+    res.json({ success: true, data: users });
+  } catch (err) {
+    console.error('查询通知用户列表失败:', err.message);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
 });
 
 /**
  * PUT /api/instrument-meter/notification-settings
  * 更新邮件通知设置
- * Body: { enabled: boolean, intervalDays: number }
+ * Body: { enabled: boolean, intervalDays: number, recipients: string[] }
  */
 app.put('/api/instrument-meter/notification-settings', requirePermission('instrument_meter'), async (req, res) => {
-  const { enabled, intervalDays } = req.body;
+  const { enabled, intervalDays, recipients } = req.body;
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: 'enabled 必须是布尔值' });
   }
@@ -4811,9 +4826,13 @@ app.put('/api/instrument-meter/notification-settings', requirePermission('instru
   if (!validIntervals.includes(intervalDays)) {
     return res.status(400).json({ error: 'intervalDays 必须是 ' + validIntervals.join('/') + ' 之一' });
   }
+  if (!Array.isArray(recipients) || recipients.length === 0) {
+    return res.status(400).json({ error: '至少选择一个接收人' });
+  }
   try {
-    const updated = await updateMeterNotificationSettings(enabled, intervalDays);
-    res.json({ success: true, data: updated, message: `邮件通知已${enabled ? '开启' : '停用'}，间隔 ${intervalDays} 天` });
+    const updated = await updateMeterNotificationSettings(enabled, intervalDays, recipients);
+    const nextTimes = enabled ? getMeterNextSendTimes(intervalDays) : null;
+    res.json({ success: true, data: updated, nextTimes, message: `邮件通知已${enabled ? '开启' : '停用'}，间隔 ${intervalDays} 天` });
   } catch (err) {
     console.error('更新通知设置失败:', err.message);
     res.status(500).json({ error: '更新失败: ' + err.message });

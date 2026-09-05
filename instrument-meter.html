@@ -169,7 +169,7 @@ button:hover { transform: translateY(-1px); }
 
 .notification-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
   flex-wrap: wrap;
 }
@@ -211,6 +211,34 @@ button:hover { transform: translateY(-1px); }
   font-size: 12px;
   color: var(--text-secondary);
   margin-left: auto;
+}
+
+.recipient-select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  min-width: 200px;
+  max-height: 120px;
+}
+
+.recipient-select:focus {
+  border-color: var(--primary);
+}
+
+.recipient-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recipient-group label {
+  font-weight: normal;
+  font-size: 13px;
 }
 
 .card {
@@ -380,16 +408,23 @@ footer-actions {
 
   <div class="card" style="margin-bottom:16px; padding:16px 24px;">
     <div class="notification-bar">
-      <label>邮件通知：</label>
-      <button id="btn-toggle-notification" class="btn-toggle-on" onclick="toggleNotification()">已开启</button>
-      <label for="notification-interval" style="margin-left:8px;">发送间隔：</label>
-      <select id="notification-interval" onchange="changeNotificationInterval()">
-        <option value="30">30 天</option>
-        <option value="45">45 天</option>
-        <option value="60">60 天</option>
-        <option value="90">90 天</option>
-        <option value="180">180 天</option>
-      </select>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <label>邮件通知：</label>
+        <button id="btn-toggle-notification" class="btn-toggle-on" onclick="toggleNotification()">已开启</button>
+        <label for="notification-interval" style="margin-left:8px;">发送间隔：</label>
+        <select id="notification-interval" onchange="changeNotificationInterval()">
+          <option value="30">30 天</option>
+          <option value="45">45 天</option>
+          <option value="60">60 天</option>
+          <option value="90">90 天</option>
+          <option value="180">180 天</option>
+        </select>
+      </div>
+      <div class="recipient-group">
+        <label>接收人（按住 Ctrl/Cmd 多选）：</label>
+        <select id="notification-recipients" class="recipient-select" multiple size="4" onchange="changeNotificationRecipients()">
+        </select>
+      </div>
       <span id="notification-status" class="notification-status"></span>
     </div>
   </div>
@@ -691,6 +726,72 @@ async function deleteBaseline() {
 // ========== 邮件通知设置 ==========
 
 let notificationEnabled = true;
+let notificationUsers = []; // 所有可选用户列表
+
+/**
+ * 加载可选用户列表（有邮箱的启用用户）
+ */
+async function loadNotificationUsers() {
+  try {
+    const res = await fetch('/api/instrument-meter/notification-users');
+    const result = await res.json();
+    if (!res.ok || !result.success) return;
+    notificationUsers = result.data || [];
+    const select = document.getElementById('notification-recipients');
+    select.innerHTML = '';
+    notificationUsers.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.username;
+      opt.textContent = `${u.chinese_name || u.username}（${u.username}）`;
+      select.appendChild(opt);
+    });
+  } catch (err) {
+    console.error('加载通知用户列表失败:', err.message);
+  }
+}
+
+/**
+ * 获取当前选中的接收人用户名数组
+ */
+function getSelectedRecipients() {
+  const select = document.getElementById('notification-recipients');
+  return Array.from(select.selectedOptions).map(o => o.value);
+}
+
+/**
+ * 设置下拉框中选中的接收人
+ */
+function setSelectedRecipients(usernames) {
+  const select = document.getElementById('notification-recipients');
+  Array.from(select.options).forEach(opt => {
+    opt.selected = usernames.includes(opt.value);
+  });
+}
+
+/**
+ * 保存通知设置（通用）
+ */
+async function saveNotificationSettings(showToast_ = true) {
+  const intervalDays = parseInt(document.getElementById('notification-interval').value, 10);
+  const recipients = getSelectedRecipients();
+  if (recipients.length === 0) {
+    showToast('至少选择一个接收人', 'error');
+    return;
+  }
+  try {
+    const res = await fetch('/api/instrument-meter/notification-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: notificationEnabled, intervalDays, recipients })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '更新失败');
+    if (showToast_) showToast(result.message || '设置已更新', 'success');
+    updateNextSendHint(notificationEnabled, intervalDays, result.nextTimes);
+  } catch (err) {
+    showToast('更新失败：' + err.message, 'error');
+  }
+}
 
 async function loadNotificationSettings() {
   try {
@@ -701,6 +802,10 @@ async function loadNotificationSettings() {
     notificationEnabled = settings.enabled;
     updateToggleButton(settings.enabled);
     document.getElementById('notification-interval').value = settings.intervalDays;
+    if (settings.recipients && settings.recipients.length > 0) {
+      setSelectedRecipients(settings.recipients);
+    }
+    updateNextSendHint(settings.enabled, settings.intervalDays, result.nextTimes);
   } catch (err) {
     console.error('加载通知设置失败:', err.message);
   }
@@ -717,46 +822,35 @@ function updateToggleButton(enabled) {
   }
 }
 
+function updateNextSendHint(enabled, intervalDays, nextTimes) {
+  const status = document.getElementById('notification-status');
+  if (!enabled) {
+    status.textContent = '自动邮件通知已停用';
+    return;
+  }
+  if (nextTimes) {
+    status.innerHTML = `下一次发送：${nextTimes.nextSend}，再下一次：${nextTimes.followingSend}`;
+  } else {
+    status.textContent = `每 ${intervalDays} 天发送一次`;
+  }
+}
+
 async function toggleNotification() {
   notificationEnabled = !notificationEnabled;
-  const intervalDays = parseInt(document.getElementById('notification-interval').value, 10);
   updateToggleButton(notificationEnabled);
-  try {
-    const res = await fetch('/api/instrument-meter/notification-settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: notificationEnabled, intervalDays })
-    });
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || '更新失败');
-    showToast(result.message || '设置已更新', 'success');
-    document.getElementById('notification-status').textContent = `已保存：${notificationEnabled ? '开启' : '停用'}，每 ${intervalDays} 天发送一次`;
-  } catch (err) {
-    // 回滚状态
-    notificationEnabled = !notificationEnabled;
-    updateToggleButton(notificationEnabled);
-    showToast('更新失败：' + err.message, 'error');
-  }
+  await saveNotificationSettings();
 }
 
 async function changeNotificationInterval() {
-  const intervalDays = parseInt(document.getElementById('notification-interval').value, 10);
-  try {
-    const res = await fetch('/api/instrument-meter/notification-settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: notificationEnabled, intervalDays })
-    });
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || '更新失败');
-    showToast(result.message || '设置已更新', 'success');
-    document.getElementById('notification-status').textContent = `已保存：${notificationEnabled ? '开启' : '停用'}，每 ${intervalDays} 天发送一次`;
-  } catch (err) {
-    showToast('更新失败：' + err.message, 'error');
-  }
+  await saveNotificationSettings();
+}
+
+async function changeNotificationRecipients() {
+  await saveNotificationSettings();
 }
 
 init();
+loadNotificationUsers();
 loadNotificationSettings();
 </script>
 </body>

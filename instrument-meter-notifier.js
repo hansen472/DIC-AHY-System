@@ -4,7 +4,7 @@
  * 根据用户配置的时间间隔（30/45/60/90/180 天）自动查询 MIC 数据库中
  * 即将到期的在用仪器/仪表数量，并通过邮件发送汇总通知。
  *
- * 收件人：lunhan.li@aptar.com
+ * 收件人：从数据库 users 表中查询，可多选
  * 发送间隔：可配置（默认 30 天）
  */
 
@@ -16,7 +16,6 @@ const { pool } = require('./db-config');
 const SMTP_HOST = process.env.SMTP_HOST || '172.22.44.75';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '25', 10);
 const SMTP_FROM = process.env.SMTP_FROM || 'DIC@aptar.com';
-const SMTP_TO = process.env.SMTP_TO || 'lunhan.li@aptar.com';
 
 const MAX_DAYS = 180;
 const THRESHOLDS = [
@@ -31,7 +30,7 @@ let checkTimer = null;
 let checkInterval = null;
 
 // 默认设置（数据库不可用时的回退值）
-let currentSettings = { enabled: true, intervalDays: 30 };
+let currentSettings = { enabled: true, intervalDays: 30, recipients: ['lunhan.li'] };
 
 // ========== 设置管理 ==========
 
@@ -41,12 +40,14 @@ let currentSettings = { enabled: true, intervalDays: 30 };
 async function loadSettings() {
   try {
     const [rows] = await pool.execute(
-      'SELECT enabled, interval_days FROM instrument_meter_notification_settings LIMIT 1'
+      'SELECT enabled, interval_days, recipients FROM instrument_meter_notification_settings LIMIT 1'
     );
     if (rows.length > 0) {
+      const recipientStr = rows[0].recipients || 'lunhan.li';
       currentSettings = {
         enabled: !!rows[0].enabled,
-        intervalDays: rows[0].interval_days || 30
+        intervalDays: rows[0].interval_days || 30,
+        recipients: recipientStr.split(',').map(s => s.trim()).filter(Boolean)
       };
     }
   } catch (err) {
@@ -58,13 +59,14 @@ async function loadSettings() {
 /**
  * 更新通知设置并重新调度定时器
  */
-async function updateSettings(enabled, intervalDays) {
+async function updateSettings(enabled, intervalDays, recipients) {
   try {
+    const recipientStr = Array.isArray(recipients) ? recipients.join(',') : '';
     await pool.execute(
-      'UPDATE instrument_meter_notification_settings SET enabled = ?, interval_days = ? WHERE id = 1',
-      [enabled ? 1 : 0, intervalDays]
+      'UPDATE instrument_meter_notification_settings SET enabled = ?, interval_days = ?, recipients = ? WHERE id = 1',
+      [enabled ? 1 : 0, intervalDays, recipientStr]
     );
-    currentSettings = { enabled, intervalDays };
+    currentSettings = { enabled, intervalDays, recipients: Array.isArray(recipients) ? recipients : [] };
     // 重新调度定时器
     stopScheduler();
     if (enabled) {
@@ -124,9 +126,37 @@ function escapeHtml(text) {
 }
 
 /**
- * 发送邮件
+ * 根据用户名列表查询对应的邮箱地址
+ * @param {string[]} usernames 用户名数组
+ * @returns {string[]} 有效的邮箱地址数组
  */
-async function sendEmail(subject, htmlBody) {
+async function resolveEmails(usernames) {
+  if (!usernames || usernames.length === 0) return [];
+  const placeholders = usernames.map(() => '?').join(',');
+  const [rows] = await pool.execute(
+    `SELECT username, email FROM users WHERE username IN (${placeholders}) AND status = 1 AND email IS NOT NULL AND email <> ''`,
+    usernames
+  );
+  return rows.map(r => r.email);
+}
+
+/**
+ * 查询所有有邮箱的用户（供前端下拉框使用）
+ */
+async function getUsersWithEmails() {
+  const [rows] = await pool.execute(
+    "SELECT username, chinese_name, email FROM users WHERE status = 1 AND email IS NOT NULL AND email <> '' ORDER BY chinese_name ASC"
+  );
+  return rows;
+}
+
+/**
+ * 发送邮件
+ * @param {string} subject 邮件主题
+ * @param {string} htmlBody 邮件正文
+ * @param {string|string[]} to 收件人邮箱，可以是字符串或数组
+ */
+async function sendEmail(subject, htmlBody, to) {
   const transporter = nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
@@ -137,14 +167,15 @@ async function sendEmail(subject, htmlBody) {
     tls: { rejectUnauthorized: false }
   });
 
+  const toAddress = Array.isArray(to) ? to.join(', ') : to;
   const info = await transporter.sendMail({
     from: SMTP_FROM,
-    to: SMTP_TO,
+    to: toAddress,
     subject,
     html: htmlBody
   });
 
-  console.log(`[instrument-meter-notifier] 邮件已发送: ${info.messageId}`);
+  console.log(`[instrument-meter-notifier] 邮件已发送给 ${toAddress}: ${info.messageId}`);
   return info;
 }
 
@@ -154,6 +185,15 @@ async function sendEmail(subject, htmlBody) {
 async function checkAndNotify() {
   try {
     console.log('[instrument-meter-notifier] 开始检测仪器/仪表到期情况...');
+
+    // 根据配置的用户查询邮箱地址
+    const emails = await resolveEmails(currentSettings.recipients);
+    if (emails.length === 0) {
+      console.log('[instrument-meter-notifier] 未找到有效的收件人邮箱，跳过发送');
+      return;
+    }
+    const toAddress = emails.join(', ');
+
     const expiring = await findExpiringInstruments();
 
     if (expiring.length === 0) {
@@ -255,20 +295,21 @@ async function checkAndNotify() {
     `;
 
     const subject = `仪器/仪表到期提醒（${today}）`;
-    await sendEmail(subject, html);
-    console.log(`[instrument-meter-notifier] 邮件已发送，共 ${expiring.length} 条到期记录 ` +
+    await sendEmail(subject, html, emails);
+    console.log(`[instrument-meter-notifier] 邮件已发送给 ${toAddress}，共 ${expiring.length} 条到期记录 ` +
       `[30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length} / 180天:${buckets['6 个月内'].length}]`);
 
     // 写入推送日志（懒加载避免循环依赖）
     const { logPush } = require('./server');
     const summary = `仪器/仪表到期提醒，共 ${expiring.length} 条（30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length} / 180天:${buckets['6 个月内'].length}）`;
-    await logPush('instrument_meter', 'email', 'success', summary, expiring.length, SMTP_TO, 'system');
+    await logPush('instrument_meter', 'email', 'success', summary, expiring.length, toAddress, 'system');
   } catch (err) {
     console.error('[instrument-meter-notifier] 检测/邮件发送失败:', err.message);
+    const failedTo = (currentSettings.recipients || []).join(', ');
     // 写入失败日志
     try {
       const { logPush } = require('./server');
-      await logPush('instrument_meter', 'email', 'failed', '仪器/仪表到期提醒发送失败', 0, SMTP_TO, 'system', err.message);
+      await logPush('instrument_meter', 'email', 'failed', '仪器/仪表到期提醒发送失败', 0, failedTo, 'system', err.message);
     } catch (_) { /* 日志写入失败不影响主流程 */ }
   }
 }
@@ -323,4 +364,18 @@ async function startWeeklyCheck() {
   }
 }
 
-module.exports = { startWeeklyCheck, checkAndNotify, loadSettings, updateSettings, getSettings, stopScheduler };
+/**
+ * 计算下两次自动发送邮件的时间
+ * 调度规则：次日 08:10 首次执行，之后每隔 intervalDays 天重复
+ */
+function getNextSendTimes(intervalDays) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 10, 0, 0);
+  const second = new Date(first.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+  return {
+    nextSend: first.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    followingSend: second.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  };
+}
+
+module.exports = { startWeeklyCheck, checkAndNotify, loadSettings, updateSettings, getSettings, getNextSendTimes, getUsersWithEmails, stopScheduler };
