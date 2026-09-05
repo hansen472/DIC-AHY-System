@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS instrument_meter_notification_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='仪器/仪表到期邮件通知设置';
 
+-- 对已存在的表增加 recipients 列（如果还没有）
+ALTER TABLE instrument_meter_notification_settings
+  ADD COLUMN IF NOT EXISTS recipients VARCHAR(500) NULL DEFAULT NULL COMMENT '接收人用户名列表，逗号分隔';
+
 -- 插入默认设置（启用，30天间隔，默认接收人 lunhan.li）
 INSERT INTO instrument_meter_notification_settings (enabled, interval_days, recipients)
 VALUES (1, 30, 'lunhan.li')
