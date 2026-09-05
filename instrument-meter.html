@@ -213,32 +213,120 @@ button:hover { transform: translateY(-1px); }
   margin-left: auto;
 }
 
-.recipient-select {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 4px;
+.recipient-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recipient-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--primary-light);
+  color: var(--primary);
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btn-select-recipient {
+  background: var(--primary);
+  color: #fff;
+  padding: 6px 14px;
   font-size: 13px;
-  font-family: inherit;
-  color: var(--text);
+  border-radius: 8px;
+}
+
+/* 弹窗遮罩 */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 900;
+  display: none;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+.modal-dialog {
   background: #fff;
-  outline: none;
-  min-width: 200px;
-  max-height: 120px;
-}
-
-.recipient-select:focus {
-  border-color: var(--primary);
-}
-
-.recipient-group {
+  border-radius: 16px;
+  padding: 24px;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
 
-.recipient-group label {
-  font-weight: normal;
+.modal-dialog h3 {
+  font-size: 16px;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.modal-user-list {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 16px;
+}
+
+.modal-user-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
   font-size: 13px;
+}
+
+.modal-user-item:hover {
+  background: #f1f5f9;
+}
+
+.modal-user-item input[type="checkbox"] {
+  accent-color: var(--primary);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.modal-user-item label {
+  cursor: pointer;
+  flex: 1;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-modal-cancel {
+  background: #e2e8f0;
+  color: var(--text);
+  padding: 7px 18px;
+  font-size: 13px;
+}
+
+.btn-modal-confirm {
+  background: var(--primary);
+  color: #fff;
+  padding: 7px 18px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
 }
 
 .card {
@@ -420,10 +508,10 @@ footer-actions {
           <option value="180">180 天</option>
         </select>
       </div>
-      <div class="recipient-group">
-        <label>接收人（按住 Ctrl/Cmd 多选）：</label>
-        <select id="notification-recipients" class="recipient-select" multiple size="4" onchange="changeNotificationRecipients()">
-        </select>
+      <div class="recipient-display">
+        <label>接收人：</label>
+        <button class="btn-select-recipient" onclick="openRecipientDialog()">选择接收人</button>
+        <span id="recipient-tags"></span>
       </div>
       <span id="notification-status" class="notification-status"></span>
     </div>
@@ -437,6 +525,18 @@ footer-actions {
   </div>
 
   <a class="back-link" href="/nav-sidebar.html">← 返回导航</a>
+</div>
+
+<!-- 接收人选择弹窗 -->
+<div id="recipient-modal" class="modal-overlay" onclick="if(event.target===this)closeRecipientDialog()">
+  <div class="modal-dialog">
+    <h3>选择邮件接收人</h3>
+    <div id="modal-user-list" class="modal-user-list"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeRecipientDialog()">取消</button>
+      <button class="btn-modal-confirm" onclick="confirmRecipientSelection()">确定</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -726,7 +826,8 @@ async function deleteBaseline() {
 // ========== 邮件通知设置 ==========
 
 let notificationEnabled = true;
-let notificationUsers = []; // 所有可选用户列表
+let notificationUsers = [];      // 所有可选用户列表（从 API 加载）
+let selectedRecipients = [];     // 当前已选中的接收人用户名数组
 
 /**
  * 加载可选用户列表（有邮箱的启用用户）
@@ -737,35 +838,64 @@ async function loadNotificationUsers() {
     const result = await res.json();
     if (!res.ok || !result.success) return;
     notificationUsers = result.data || [];
-    const select = document.getElementById('notification-recipients');
-    select.innerHTML = '';
-    notificationUsers.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u.username;
-      opt.textContent = `${u.chinese_name || u.username}（${u.username}）`;
-      select.appendChild(opt);
-    });
   } catch (err) {
     console.error('加载通知用户列表失败:', err.message);
   }
 }
 
 /**
- * 获取当前选中的接收人用户名数组
+ * 渲染已选接收人的标签显示
  */
-function getSelectedRecipients() {
-  const select = document.getElementById('notification-recipients');
-  return Array.from(select.selectedOptions).map(o => o.value);
+function renderRecipientTags() {
+  const container = document.getElementById('recipient-tags');
+  if (selectedRecipients.length === 0) {
+    container.innerHTML = '<span style="font-size:12px;color:var(--text-secondary);">未选择</span>';
+    return;
+  }
+  container.innerHTML = selectedRecipients.map(username => {
+    const user = notificationUsers.find(u => u.username === username);
+    const displayName = user ? `${user.chinese_name || username}（${username}）` : username;
+    return `<span class="recipient-tag">${escapeHtml(displayName)}</span>`;
+  }).join('');
 }
 
 /**
- * 设置下拉框中选中的接收人
+ * 打开接收人选择弹窗
  */
-function setSelectedRecipients(usernames) {
-  const select = document.getElementById('notification-recipients');
-  Array.from(select.options).forEach(opt => {
-    opt.selected = usernames.includes(opt.value);
-  });
+function openRecipientDialog() {
+  const listEl = document.getElementById('modal-user-list');
+  listEl.innerHTML = notificationUsers.map(u => {
+    const checked = selectedRecipients.includes(u.username) ? 'checked' : '';
+    const label = `${u.chinese_name || u.username}（${u.username}）`;
+    return `<div class="modal-user-item">
+      <input type="checkbox" id="rcpt-${escapeHtml(u.username)}" value="${escapeHtml(u.username)}" ${checked}>
+      <label for="rcpt-${escapeHtml(u.username)}">${escapeHtml(label)}</label>
+    </div>`;
+  }).join('');
+  document.getElementById('recipient-modal').classList.add('active');
+}
+
+/**
+ * 关闭接收人选择弹窗
+ */
+function closeRecipientDialog() {
+  document.getElementById('recipient-modal').classList.remove('active');
+}
+
+/**
+ * 确认弹窗中的选择，保存并显示
+ */
+async function confirmRecipientSelection() {
+  const checkboxes = document.querySelectorAll('#modal-user-list input[type="checkbox"]:checked');
+  const newRecipients = Array.from(checkboxes).map(cb => cb.value);
+  if (newRecipients.length === 0) {
+    showToast('至少选择一个接收人', 'error');
+    return;
+  }
+  selectedRecipients = newRecipients;
+  renderRecipientTags();
+  closeRecipientDialog();
+  await saveNotificationSettings();
 }
 
 /**
@@ -773,8 +903,7 @@ function setSelectedRecipients(usernames) {
  */
 async function saveNotificationSettings(showToast_ = true) {
   const intervalDays = parseInt(document.getElementById('notification-interval').value, 10);
-  const recipients = getSelectedRecipients();
-  if (recipients.length === 0) {
+  if (selectedRecipients.length === 0) {
     showToast('至少选择一个接收人', 'error');
     return;
   }
@@ -782,7 +911,7 @@ async function saveNotificationSettings(showToast_ = true) {
     const res = await fetch('/api/instrument-meter/notification-settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: notificationEnabled, intervalDays, recipients })
+      body: JSON.stringify({ enabled: notificationEnabled, intervalDays, recipients: selectedRecipients })
     });
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || '更新失败');
@@ -803,8 +932,9 @@ async function loadNotificationSettings() {
     updateToggleButton(settings.enabled);
     document.getElementById('notification-interval').value = settings.intervalDays;
     if (settings.recipients && settings.recipients.length > 0) {
-      setSelectedRecipients(settings.recipients);
+      selectedRecipients = settings.recipients;
     }
+    renderRecipientTags();
     updateNextSendHint(settings.enabled, settings.intervalDays, result.nextTimes);
   } catch (err) {
     console.error('加载通知设置失败:', err.message);
@@ -845,13 +975,8 @@ async function changeNotificationInterval() {
   await saveNotificationSettings();
 }
 
-async function changeNotificationRecipients() {
-  await saveNotificationSettings();
-}
-
 init();
-loadNotificationUsers();
-loadNotificationSettings();
+loadNotificationUsers().then(() => loadNotificationSettings());
 </script>
 </body>
 </html>
