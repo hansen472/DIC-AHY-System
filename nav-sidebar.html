@@ -17,10 +17,32 @@ body {
 }
 .sidebar {
   width: 250px;
+  min-width: 160px;
+  max-width: 480px;
+  flex: none;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   box-shadow: 2px 0 12px rgba(0,0,0,0.08);
   display: flex; flex-direction: column;
   z-index: 10;
+  position: relative;
+}
+
+/* 拖拽调整宽度手柄 */
+.resize-handle {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: absolute;
+  top: 0;
+  right: -3px;
+  height: 100%;
+  z-index: 20;
+  transition: background 0.15s;
+}
+.resize-handle:hover,
+.resize-handle.active {
+  background: #3b82f6;
+  opacity: 0.5;
 }
 .brand {
   padding: 26px 24px 22px;
@@ -474,6 +496,7 @@ body {
     <div id="current-user"></div>
     <button onclick="logout()">退出登录</button>
   </div>
+  <div class="resize-handle" id="resize-handle"></div>
 </div>
 
 <div class="main">
@@ -488,6 +511,55 @@ body {
 </div>
 
 <script>
+// ── 侧边栏拖拽调整宽度 ──
+(function() {
+  const SIDEBAR_MIN = 160;
+  const SIDEBAR_MAX = 480;
+  const STORAGE_KEY = 'sidebar-width';
+  const sidebar = document.querySelector('.sidebar');
+  const handle = document.getElementById('resize-handle');
+  if (!sidebar || !handle) return;
+
+  // 恢复上次保存的宽度
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    const w = parseInt(saved, 10);
+    if (w >= SIDEBAR_MIN && w <= SIDEBAR_MAX) sidebar.style.width = w + 'px';
+  }
+
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    const delta = e.clientX - startX;
+    let newWidth = startWidth + delta;
+    if (newWidth < SIDEBAR_MIN) newWidth = SIDEBAR_MIN;
+    if (newWidth > SIDEBAR_MAX) newWidth = SIDEBAR_MAX;
+    sidebar.style.width = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    localStorage.setItem(STORAGE_KEY, sidebar.offsetWidth);
+  });
+})();
+
 async function logout() {
   try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
   window.location.href = '/login';
