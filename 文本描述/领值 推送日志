@@ -149,3 +149,13 @@ WHERE DATE(wo.wo_creation_time) = CURDATE()
 
 在”日巡检工单提醒推送“页面中，已经完成增加一列用于显示 responsible_name，但是推送给企业微信的消息内容中， responsible_name 列没有显示出来。现在需要将 responsible_name 列显示在消息内容中。具体显示的位置和daily-overdue-workorder-push.html页面中的 responsible_name 列相同。
 在”日巡检工单提醒推送“页面中，已经完成增加一列用于显示 responsible_name，但是每天定时15：30分自动推送给企业微信的消息内容中， responsible_name 列没有显示出来。现在需要将 responsible_name 列显示在消息内容中。具体显示的位置和daily-overdue-workorder-push.html页面中的 responsible_name 列相同。
+
+在nav-sidebar.html 中的一级菜单下的”领值推送“下的二级菜单”周工单提醒推送“菜单，改为”延时工单提醒（周推送）“菜单。
+在nav-sidebar.html 中的一级菜单下的”领值推送“下的二级菜单”日巡检工单提醒推送“菜单，改为”日巡检工单提醒（日推送）“菜单。
+在nav-sidebar.html 中的一级菜单下的”领值推送“下的二级菜单”QC维护计划推送“菜单，改为”QC维护工单提醒（日推送）“菜单。
+
+在weekly-overdue-workorder-push.html页面中，最上方“设备过期工单推送”改为“延时工单提醒（周推送）”菜单。下一行的小字不变。
+在daily-overdue-workorder-push.html页面中，最上方“每日未完成工单推送”改为“日巡检工单提醒（日推送）”菜单。下一行的小字不变。
+
+在push-logs.html 页面中，更新选择按钮的名字."周工单提醒推送“改为”延时工单提醒（周推送）“，”日工单提醒推送“改为”日巡检工单提醒（日推送）“。”QC维护计划“改为”QC维护工单提醒（日推送）“。
+
