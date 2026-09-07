@@ -218,3 +218,44 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f
 
 未处理请求推送（周推送） 更名为 ”未处理请求推送（日推送）“ （unprocessed-request-push.html以及push-logs.html页面中相应也进行修改） ，并且设置每天早上7：59自动推送。
 
+在nav-sidebar.html 中的一级菜单下的”领值推送“下增加一个二级菜单”新增报修单推送（时时推送）“菜单。
+点击 ”新增报修单推送（时时推送））“ 菜单，进入新增报修单推送（时时推送））页面。界面与现在的日巡检工单提醒以及延时工单提醒页面相同。
+根据以下SQL查询语句，查询出未处理的请求列表，并显示在页面中。
+SELECT 
+    mr.mr_id,
+    mr.mr_name,
+    mr.mr_requester,
+    mr.mr_request_time,
+    mr.mr_failure_time,
+    mr.mr_description,
+    CONCAT(a.asset_code, ' ', a.asset_name) AS asset_info,  -- 资产信息拼接
+    p.priority_name                                        -- 新增：取出优先级名称
+FROM 
+    mr_list mr
+LEFT JOIN 
+    asset_list a ON mr.mr_asset_id = a.asset_id            -- 关联资产表
+LEFT JOIN 
+    mic_priority p ON mr.mr_priority_id = p.priority_id    -- 新增：关联优先级表
+WHERE 
+    mr.mr_id >last_time_mr_id
+
+其实last_time_mr_id 是一个变量，用于存储上一次推送的mr_id，以便本次推送时，只推送mr_id大于last_time_mr_id的记录。
+
+再参考下面的代码，将SQL查询结果生成Markdown格式的内容（注意如果有多条记录，每一条记录都要完整的生成下面的推送内容，分条推送）
+
+  # --- 生成 Markdown ---
+md_text = f"""### 🛠️ 新增报修单通知
+        
+- **报修ID**: mr_id
+- **固定资产名称**: mr_name
+- **报修名称**: mr_name
+- **报修人**: mr_requester
+- **报修时间**: mr_request_time
+- **失效发生时间**: mr_failure_time
+- **问题描述**: mr_description
+- **优先级**:  p.priority_name
+"""
+
+推送链接，先使用下方的测试地址
+
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def

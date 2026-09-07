@@ -34,6 +34,7 @@ const { startWeeklyPush } = require('./weekly-overdue-workorder-notifier');
 const { startDailyPush: startDailyOverduePush } = require('./daily-overdue-workorder-notifier');
 const { startDailyPush: startQcMaintenancePush } = require('./qc-maintenance-notifier');
 const { startDailyPush: startUnprocessedRequestPush } = require('./unprocessed-request-notifier');
+const { startPolling: startNewRepairPolling } = require('./new-repair-notifier');
 const { micPool } = require('./db-mic-config');
 const { setupOcrRoutes } = require('./ocr-routes');
 const nodemailer = require('nodemailer');
@@ -98,6 +99,9 @@ app.get('/qc-maintenance-push.html', requirePermissionPage('instrument_meter'), 
 });
 app.get('/unprocessed-request-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'unprocessed-request-push.html'));
+});
+app.get('/new-repair-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'new-repair-push.html'));
 });
 app.get('/push-logs.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'push-logs.html'));
@@ -5211,12 +5215,122 @@ app.post('/api/unprocessed-request/push', requirePermission('instrument_meter'),
   }
 });
 
+// ========== 新增报修单推送（MIC 数据库 → 企业微信，时时推送） ==========
+
+const NEW_REPAIR_DEFAULT_SQL = `SELECT 
+    mr.mr_id,
+    mr.mr_name,
+    mr.mr_requester,
+    mr.mr_request_time,
+    mr.mr_failure_time,
+    mr.mr_description,
+    CONCAT(a.asset_code, ' ', a.asset_name) AS asset_info,
+    p.priority_name
+FROM 
+    mr_list mr
+LEFT JOIN 
+    asset_list a ON mr.mr_asset_id = a.asset_id
+LEFT JOIN 
+    mic_priority p ON mr.mr_priority_id = p.priority_id
+WHERE 
+    mr.mr_id > last_time_mr_id`;
+
+// 获取新增报修单默认 SQL 及 last_time_mr_id
+app.get('/api/new-repair/sql', requirePermission('instrument_meter'), async (req, res) => {
+  try {
+    await pool.execute(
+      "INSERT IGNORE INTO push_state (push_type, last_mr_id) VALUES ('new_repair', 0)"
+    );
+    const [rows] = await pool.execute(
+      "SELECT last_mr_id FROM push_state WHERE push_type = 'new_repair'"
+    );
+    const lastMrId = rows.length > 0 ? rows[0].last_mr_id : 0;
+    res.json({ success: true, sql: NEW_REPAIR_DEFAULT_SQL, last_time_mr_id: lastMrId });
+  } catch (err) {
+    console.error('获取新增报修单状态失败:', err.message);
+    res.json({ success: true, sql: NEW_REPAIR_DEFAULT_SQL, last_time_mr_id: 0 });
+  }
+});
+
+// 查询新增报修单
+app.post('/api/new-repair', requirePermission('instrument_meter'), async (req, res) => {
+  try {
+    const [stateRows] = await pool.execute(
+      "SELECT last_mr_id FROM push_state WHERE push_type = 'new_repair'"
+    );
+    const lastMrId = stateRows.length > 0 ? stateRows[0].last_mr_id : 0;
+
+    const sql = `SELECT 
+      mr.mr_id, mr.mr_name, mr.mr_requester, mr.mr_request_time,
+      mr.mr_failure_time, mr.mr_description,
+      CONCAT(a.asset_code, ' ', a.asset_name) AS asset_info,
+      p.priority_name
+    FROM mr_list mr
+    LEFT JOIN asset_list a ON mr.mr_asset_id = a.asset_id
+    LEFT JOIN mic_priority p ON mr.mr_priority_id = p.priority_id
+    WHERE mr.mr_id > ?
+    ORDER BY mr.mr_id ASC`;
+
+    const [rows] = await micPool.execute(sql, [lastMrId]);
+    res.json({ success: true, total: rows.length, data: rows, last_time_mr_id: lastMrId });
+  } catch (err) {
+    console.error('查询新增报修单失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+// 新增报修单推送到企业微信
+app.post('/api/new-repair/push', requirePermission('instrument_meter'), async (req, res) => {
+  const { data, total } = req.body;
+  if (!Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: '无数据可推送' });
+  }
+
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+  const clean = (v) => v ? String(v).replace(/\n/g, ' ').trim() : '';
+  const results = [];
+
+  try {
+    for (const item of data) {
+      const markdown = `### 🛠️ 新增报修单通知
+
+- **报修ID**: ${clean(item.mr_id)}
+- **固定资产名称**: ${clean(item.mr_name)}
+- **报修名称**: ${clean(item.mr_name)}
+- **报修人**: ${clean(item.mr_requester)}
+- **报修时间**: ${clean(item.mr_request_time)}
+- **失效发生时间**: ${clean(item.mr_failure_time)}
+- **问题描述**: ${clean(item.mr_description)}
+- **优先级**: ${clean(item.priority_name)}`;
+
+      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
+      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+      results.push({ mr_id: item.mr_id, status: resp.status });
+    }
+
+    // 更新 last_time_mr_id
+    const maxMrId = Math.max(...data.map(r => r.mr_id));
+    await pool.execute('UPDATE push_state SET last_mr_id = ? WHERE push_type = ?', [maxMrId, 'new_repair']);
+
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const contentSummary = `新增报修单推送，共 ${total || data.length} 条`;
+    await logPush('new_repair', 'wechat', 'success', contentSummary, data.length, webhookUrl, pusher);
+    res.json({ success: true, push_count: results.length, last_time_mr_id: maxMrId });
+  } catch (err) {
+    console.error('推送新增报修单失败:', err);
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
+    await logPush('new_repair', 'wechat', 'failed', `推送失败，共 ${data.length} 条`, data.length, webhookUrl, pusher, errMsg);
+    res.status(500).json({ error: '推送失败: ' + errMsg });
+  }
+});
+
 // ========== 推送日志 ==========
 
 /**
  * 写入推送日志
- * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js、qc-maintenance-notifier.js、unprocessed-request-notifier.js 共用
- * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance' | 'unprocessed_request'
+ * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js、qc-maintenance-notifier.js、unprocessed-request-notifier.js、new-repair-notifier.js 共用
+ * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance' | 'unprocessed_request' | 'new_repair'
  * @param {string} pushMethod    'email' | 'wechat'
  * @param {string} pushStatus    'success' | 'failed'
  * @param {string} pushContent   推送内容摘要
@@ -5252,7 +5366,7 @@ app.get('/api/push-logs', requirePermission('instrument_meter'), async (req, res
 
     let whereClause = '';
     const params = [];
-    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder' || source === 'qc_maintenance' || source === 'unprocessed_request')) {
+    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder' || source === 'qc_maintenance' || source === 'unprocessed_request' || source === 'new_repair')) {
       whereClause = 'WHERE source = ?';
       params.push(source);
     }
@@ -6218,6 +6332,9 @@ app.listen(PORT, async () => {
 
   // 启动未处理请求自动推送任务（每天 07:59）
   startUnprocessedRequestPush();
+
+  // 启动新增报修单实时轮询推送任务（每 2 分钟）
+  startNewRepairPolling();
 
   // 启动数据库每日凌晨 2 点自动备份任务
   startDailyBackup();
