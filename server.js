@@ -5250,7 +5250,7 @@ app.get('/api/push-logs', requirePermission('instrument_meter'), async (req, res
 
     let whereClause = '';
     const params = [];
-    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder' || source === 'qc_maintenance')) {
+    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder' || source === 'qc_maintenance' || source === 'unprocessed_request')) {
       whereClause = 'WHERE source = ?';
       params.push(source);
     }

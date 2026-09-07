@@ -198,3 +198,5 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f
 
 
 在企业微信中查看推送消息时，发现消息的背景色是灰色的，请修改成白色的。
+
+在push-logs.html 页面中，点击 ”未处理请求推送（周推送）“的菜单，下面的结果并没有进行筛选。而是显示了全部的推送日志。请修改
