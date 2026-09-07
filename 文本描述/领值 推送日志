@@ -205,3 +205,6 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f
 
 
 查询一下，今天早上 7：57 时推送的延时工单提醒。为什么发送了两遍。一遍主题是”延迟工单列表“，另一遍是”延迟工单列表（自动推送）“。查一下为什么
+
+日巡检工单提醒 的推送内容，格式乱了。本来是正确的，应该是今天改背景色时的修改，导致了格式错误。暂时将手动推送的链接改为下方的测试地址。测试成功后，再改回去。
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
