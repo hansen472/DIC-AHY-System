@@ -95,6 +95,9 @@ app.get('/daily-overdue-workorder-push.html', requirePermissionPage('instrument_
 app.get('/qc-maintenance-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'qc-maintenance-push.html'));
 });
+app.get('/unprocessed-request-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'unprocessed-request-push.html'));
+});
 app.get('/push-logs.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'push-logs.html'));
 });
@@ -5130,12 +5133,89 @@ app.post('/api/qc-maintenance/push', requirePermission('instrument_meter'), asyn
   }
 });
 
+// ========== 未处理请求推送（MIC 数据库 → 企业微信） ==========
+
+const UNPROCESSED_REQUEST_DEFAULT_SQL = `SELECT
+    m.mr_id,
+    m.mr_name,
+    m.mr_requester,
+    m.mr_request_time,
+    m.mr_failure_time,
+    m.mr_description,
+    p.priority_name
+FROM mr_list m
+LEFT JOIN asset_list a
+    ON m.mr_asset_id = a.asset_id
+LEFT JOIN mic_priority p
+    ON m.mr_priority_id = p.priority_id
+WHERE m.mr_status = 0`;
+
+// 获取未处理请求默认 SQL
+app.get('/api/unprocessed-request/sql', requirePermission('instrument_meter'), (req, res) => {
+  res.json({ success: true, sql: UNPROCESSED_REQUEST_DEFAULT_SQL });
+});
+
+// 查询未处理请求
+app.post('/api/unprocessed-request', requirePermission('instrument_meter'), async (req, res) => {
+  const sql = (req.body && req.body.sql) || UNPROCESSED_REQUEST_DEFAULT_SQL;
+  try {
+    const [rows] = await micPool.execute(sql);
+    res.json({ success: true, total: rows.length, data: rows });
+  } catch (err) {
+    console.error('查询未处理请求失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+// 未处理请求推送到企业微信
+app.post('/api/unprocessed-request/push', requirePermission('instrument_meter'), async (req, res) => {
+  const { data, total } = req.body;
+  if (!Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: '无数据可推送' });
+  }
+
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+  const clean = (v) => v ? String(v).replace(/\n/g, ' ').trim() : '';
+  const results = [];
+
+  try {
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i];
+      const markdown = `### \uD83D\uDCCC 未处理的报修单通知
+
+- **报修ID**: ${clean(item.mr_id)}
+- **固定资产名称**: ${clean(item.mr_name)}
+- **报修名称**: ${clean(item.mr_name)}
+- **报修人**: ${clean(item.mr_requester)}
+- **报修时间**: ${clean(item.mr_request_time)}
+- **失效发生时间**: ${clean(item.mr_failure_time)}
+- **问题描述**: ${clean(item.mr_description)}
+- **优先级**: ${clean(item.priority_name)}`;
+
+      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+      results.push({ index: i + 1, status: resp.status, data: resp.data });
+    }
+
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const contentSummary = `未处理请求推送，共 ${total || data.length} 条，${results.length} 条推送`;
+    await logPush('unprocessed_request', 'wechat', 'success', contentSummary, data.length, webhookUrl, pusher);
+    res.json({ success: true, batch_count: results.length, results });
+  } catch (err) {
+    console.error('推送未处理请求失败:', err);
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
+    await logPush('unprocessed_request', 'wechat', 'failed', `推送失败，共 ${data.length} 条`, data.length, webhookUrl, pusher, errMsg);
+    res.status(500).json({ error: '推送失败: ' + errMsg });
+  }
+});
+
 // ========== 推送日志 ==========
 
 /**
  * 写入推送日志
  * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js、qc-maintenance-notifier.js 共用
- * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance'
+ * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance' | 'unprocessed_request'
  * @param {string} pushMethod    'email' | 'wechat'
  * @param {string} pushStatus    'success' | 'failed'
  * @param {string} pushContent   推送内容摘要

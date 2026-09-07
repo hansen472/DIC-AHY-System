@@ -125,6 +125,7 @@ tr:hover td { background: #f9fafb; }
 .source-overdue_workorder { background: #e0e7ff; color: #3730a3; }
 .source-daily_workorder { background: #fef3c7; color: #78350f; }
 .source-qc_maintenance { background: #d1fae5; color: #065f46; }
+.source-unprocessed_request { background: #fce7f3; color: #9d174d; }
 
 .content-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .error-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); }
@@ -170,7 +171,7 @@ tr:hover td { background: #f9fafb; }
   <header>
     <div>
       <h1>推送日志</h1>
-      <p>查看仪器/仪表、延时工单提醒（周推送）、日巡检工单提醒（日推送）和QC维护工单提醒（日推送）的历史记录</p>
+      <p>查看仪器/仪表、延时工单提醒（周推送）、日巡检工单提醒（日推送）、QC维护工单提醒（日推送）和未处理请求推送（周推送）的历史记录</p>
     </div>
     <a href="/nav-sidebar.html" class="btn-back">← 返回导航</a>
   </header>
@@ -188,6 +189,7 @@ tr:hover td { background: #f9fafb; }
       <button class="filter-btn" data-source="overdue_workorder" onclick="setFilter(this, 'overdue_workorder')">延时工单提醒（周推送）</button>
       <button class="filter-btn" data-source="daily_workorder" onclick="setFilter(this, 'daily_workorder')">日巡检工单提醒（日推送）</button>
             <button class="filter-btn" data-source="qc_maintenance" onclick="setFilter(this, 'qc_maintenance')">QC维护工单提醒（日推送）</button>
+      <button class="filter-btn" data-source="unprocessed_request" onclick="setFilter(this, 'unprocessed_request')">未处理请求推送（周推送）</button>
       <button class="refresh-btn" onclick="loadLogs()">刷新</button>
     </div>
   </div>
@@ -262,7 +264,8 @@ function renderTable(logs) {
     'instrument_meter': '仪器 / 仪表',
     'overdue_workorder': '延时工单提醒（周推送）',
     'daily_workorder': '日巡检工单提醒（日推送）',
-        'qc_maintenance': 'QC维护工单提醒（日推送）'
+        'qc_maintenance': 'QC维护工单提醒（日推送）',
+    'unprocessed_request': '未处理请求推送（周推送）'
   };
   const methodLabels = {
     'email': '邮件',

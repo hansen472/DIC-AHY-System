@@ -159,3 +159,39 @@ WHERE DATE(wo.wo_creation_time) = CURDATE()
 
 在push-logs.html 页面中，更新选择按钮的名字."周工单提醒推送“改为”延时工单提醒（周推送）“，”日工单提醒推送“改为”日巡检工单提醒（日推送）“。”QC维护计划“改为”QC维护工单提醒（日推送）“。
 
+在nav-sidebar.html 中的一级菜单下的”领值推送“下增加一个二级菜单”未处理请求推送（周推送）“菜单。
+点击 ”未处理请求推送（周推送）“ 菜单，进入未处理请求推送（周推送）页面。界面与现在的日巡检工单提醒以及延时工单提醒页面相同。
+根据以下SQL查询语句，查询出未处理的请求列表，并显示在页面中。
+SELECT
+    m.mr_id,
+    m.mr_name,
+    m.mr_requester,
+    m.mr_request_time,
+    m.mr_failure_time,
+    m.mr_description,
+    p.priority_name
+FROM mr_list m
+LEFT JOIN asset_list a
+    ON m.mr_asset_id = a.asset_id
+LEFT JOIN mic_priority p
+    ON m.mr_priority_id = p.priority_id
+WHERE m.mr_status = 0;
+
+再参考下面的代码，将SQL查询结果生成Markdown格式的内容（注意如果有多条记录，每一条记录都要完整的生成下面的推送内容，分条推送）。
+
+  # --- 生成 Markdown ---
+md_text = f"""### 📌 未处理的报修单通知
+        
+- **报修ID**: mr_id
+- **固定资产名称**: mr_name
+- **报修名称**: mr_name
+- **报修人**: mr_requester
+- **报修时间**: mr_request_time
+- **失效发生时间**: mr_failure_time
+- **问题描述**: mr_description
+- **优先级**:  p.priority_name
+"""
+
+
+下面是测试链接，用于测试推送功能是否正常
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
