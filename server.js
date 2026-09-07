@@ -33,6 +33,7 @@ const { startWeeklyCheck, updateSettings: updateMeterNotificationSettings, getSe
 const { startWeeklyPush } = require('./weekly-overdue-workorder-notifier');
 const { startDailyPush: startDailyOverduePush } = require('./daily-overdue-workorder-notifier');
 const { startDailyPush: startQcMaintenancePush } = require('./qc-maintenance-notifier');
+const { startDailyPush: startUnprocessedRequestPush } = require('./unprocessed-request-notifier');
 const { micPool } = require('./db-mic-config');
 const { setupOcrRoutes } = require('./ocr-routes');
 const nodemailer = require('nodemailer');
@@ -5214,7 +5215,7 @@ app.post('/api/unprocessed-request/push', requirePermission('instrument_meter'),
 
 /**
  * 写入推送日志
- * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js、qc-maintenance-notifier.js 共用
+ * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js、qc-maintenance-notifier.js、unprocessed-request-notifier.js 共用
  * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance' | 'unprocessed_request'
  * @param {string} pushMethod    'email' | 'wechat'
  * @param {string} pushStatus    'success' | 'failed'
@@ -5236,7 +5237,7 @@ async function logPush(source, pushMethod, pushStatus, pushContent, recordCount,
   }
 }
 
-// 导出给 instrument-meter-notifier.js / weekly-overdue-workorder-notifier.js / daily-overdue-workorder-notifier.js / qc-maintenance-notifier.js 使用
+// 导出给 instrument-meter-notifier.js / weekly-overdue-workorder-notifier.js / daily-overdue-workorder-notifier.js / qc-maintenance-notifier.js / unprocessed-request-notifier.js 使用
 module.exports.logPush = logPush;
 
 /**
@@ -6214,6 +6215,9 @@ app.listen(PORT, async () => {
 
   // 启动 QC 维护计划工单自动推送任务（每天 08:10）
   startQcMaintenancePush();
+
+  // 启动未处理请求自动推送任务（每天 07:59）
+  startUnprocessedRequestPush();
 
   // 启动数据库每日凌晨 2 点自动备份任务
   startDailyBackup();

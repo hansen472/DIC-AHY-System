@@ -213,3 +213,8 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f
 
 再检查一下 延时工单提醒，是不是也同样存在格式问题，先将手动推送的链接改为下方的测试地址。测试成功后，再改回去。
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
+
+已确认恢复了。将推送地址改回正式环境中去。
+
+未处理请求推送（周推送） 更名为 ”未处理请求推送（日推送）“ （unprocessed-request-push.html以及push-logs.html页面中相应也进行修改） ，并且设置每天早上7：59自动推送。
+
