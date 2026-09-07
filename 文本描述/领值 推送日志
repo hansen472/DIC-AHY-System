@@ -195,3 +195,6 @@ md_text = f"""### 📌 未处理的报修单通知
 
 下面是测试链接，用于测试推送功能是否正常
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
+
+
+在企业微信中查看推送消息时，发现消息的背景色是灰色的，请修改成白色的。

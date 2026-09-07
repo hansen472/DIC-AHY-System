@@ -4921,7 +4921,7 @@ app.post('/api/overdue-workorder/push', requirePermission('instrument_meter'), a
       });
 
       const markdown = lines.join('\n');
-      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
 
       const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
       results.push({ batch: batchNo, status: resp.status, data: resp.data });
@@ -5036,7 +5036,7 @@ app.post('/api/daily-overdue-workorder/push', requirePermission('instrument_mete
       });
 
       const markdown = lines.join('\n');
-      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
 
       const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
       results.push({ batch: batchNo, status: resp.status, data: resp.data });
@@ -5114,7 +5114,7 @@ app.post('/api/qc-maintenance/push', requirePermission('instrument_meter'), asyn
       });
 
       const markdown = lines.join('\n');
-      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
 
       const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
       results.push({ batch: batchNo, status: resp.status, data: resp.data });
@@ -5192,7 +5192,7 @@ app.post('/api/unprocessed-request/push', requirePermission('instrument_meter'),
 - **问题描述**: ${clean(item.mr_description)}
 - **优先级**: ${clean(item.priority_name)}`;
 
-      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
       const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
       results.push({ index: i + 1, status: resp.status, data: resp.data });
     }

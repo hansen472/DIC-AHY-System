@@ -102,7 +102,7 @@ async function pushToWechat(data, total) {
     });
 
     const markdown = lines.join('\n');
-    const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+    const payload = { msgtype: 'markdown', markdown: { content: markdown } };
     await axios.post(WEBHOOK_URL, payload, { timeout: 10000 });
   }
 }
