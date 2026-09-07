@@ -5230,8 +5230,9 @@ async function logPush(source, pushMethod, pushStatus, pushContent, recordCount,
       'INSERT INTO push_logs (source, push_method, push_status, push_content, record_count, push_target, pusher, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [source, pushMethod, pushStatus, pushContent || null, recordCount || 0, pushTarget || null, pusher || 'system', errorMessage || null]
     );
+    console.log(`[logPush] 记录成功: source=${source}, status=${pushStatus}, pusher=${pusher || 'system'}`);
   } catch (err) {
-    console.error('推送日志记录失败:', err.message);
+    console.error(`[logPush] 记录失败: source=${source}, status=${pushStatus}, pusher=${pusher || 'system'}, 错误: ${err.message}`);
   }
 }
 
