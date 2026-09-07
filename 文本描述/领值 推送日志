@@ -210,3 +210,6 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
 
 日巡检工单提醒 的推送内容已恢复正常，将其发送地址改回正式环境。
+
+再检查一下 延时工单提醒，是不是也同样存在格式问题，先将手动推送的链接改为下方的测试地址。测试成功后，再改回去。
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
