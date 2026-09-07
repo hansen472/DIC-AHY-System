@@ -208,3 +208,5 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f
 
 日巡检工单提醒 的推送内容，格式乱了。本来是正确的，应该是今天改背景色时的修改，导致了格式错误。暂时将手动推送的链接改为下方的测试地址。测试成功后，再改回去。
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
+
+日巡检工单提醒 的推送内容已恢复正常，将其发送地址改回正式环境。
