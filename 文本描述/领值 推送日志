@@ -259,3 +259,5 @@ md_text = f"""### 🛠️ 新增报修单通知
 推送链接，先使用下方的测试地址
 
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
+
+新增报修单推送（时时推送）设置每10分钟自动运行一次。如果有结果，则推送。

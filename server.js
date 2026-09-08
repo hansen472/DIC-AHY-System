@@ -6333,7 +6333,7 @@ app.listen(PORT, async () => {
   // 启动未处理请求自动推送任务（每天 07:59）
   startUnprocessedRequestPush();
 
-  // 启动新增报修单实时轮询推送任务（每 2 分钟）
+  // 启动新增报修单实时轮询推送任务（每 10 分钟）
   startNewRepairPolling();
 
   // 启动数据库每日凌晨 2 点自动备份任务

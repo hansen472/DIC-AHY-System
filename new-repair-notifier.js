@@ -1,10 +1,10 @@
 /**
  * 新增报修单实时推送（企业微信）
  *
- * 每 2 分钟轮询 MIC 数据库，查询 mr_id > last_time_mr_id 的新增报修单，
+ * 每 10 分钟轮询 MIC 数据库，查询 mr_id > last_time_mr_id 的新增报修单，
  * 逐条推送到企业微信 Webhook，推送后更新 last_time_mr_id。
  *
- * 轮询间隔：2 分钟
+ * 轮询间隔：10 分钟
  */
 
 const axios = require('axios');
@@ -13,7 +13,7 @@ const { pool: mainPool } = require('./db-config');
 
 const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
 const PUSH_TYPE = 'new_repair';
-const POLL_INTERVAL_MS = 2 * 60 * 1000; // 2 分钟
+const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 分钟
 
 let pollTimer = null;
 
@@ -146,10 +146,10 @@ async function checkAndPush() {
 }
 
 /**
- * 启动轮询定时任务（每 2 分钟）
+ * 启动轮询定时任务（每 10 分钟）
  */
 function startPolling() {
-  console.log(`[new-repair-notifier] 轮询任务已启动，每 ${POLL_INTERVAL_MS / 1000} 秒检测一次新增报修单`);
+  console.log(`[new-repair-notifier] 轮询任务已启动，每 ${POLL_INTERVAL_MS / 1000} 秒（10 分钟）检测一次新增报修单`);
   // 首次延迟 30 秒后执行，等待系统就绪
   setTimeout(() => {
     checkAndPush();
