@@ -306,3 +306,4 @@ md_text = f"""### 🛠️ 新增出库单通知
 在new-issue-push.html页面中，查询不到任何数据，在页面中”编辑SQL“按钮，将SQL查询语句修改后查询，也没有结果。请检查原因
 
 在new-issue-push.html页面中，查询不到任何数据，在页面中”编辑SQL“按钮，将SQL查询语句修改后查询，也没有结果。也就是说，在页面中编辑SQL查询语句，并没有生效。请检查原因
+新增出库单通知  中的sql查询语句最后的查询语句，由WHERE i.issue_status = 0 or i.issue_id = 110;更改为WHERE i.issue_status = 0 
