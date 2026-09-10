@@ -34,7 +34,7 @@ FROM sp_issue i
 LEFT JOIN wo_list w ON i.wo_id = w.wo_id
 LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s ON d.sp_id = s.sp_id
-WHERE i.issue_status = 0
+WHERE i.issue_status = 0 OR i.issue_id = 110
 GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
 ORDER BY i.issue_id ASC`;
   const [rows] = await micPool.execute(sql);

@@ -5348,7 +5348,7 @@ LEFT JOIN sp_issue_details d
     ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s
     ON d.sp_id = s.sp_id
-WHERE i.issue_status = 0`;
+WHERE i.issue_status = 0 OR i.issue_id = 110`;
 
 // 获取新增出库单默认 SQL
 app.get('/api/new-issue/sql', requirePermission('instrument_meter'), async (req, res) => {
@@ -5358,6 +5358,7 @@ app.get('/api/new-issue/sql', requirePermission('instrument_meter'), async (req,
 // 查询未处理出库单（按 issue_id 分组，聚合部品信息）
 app.post('/api/new-issue', requirePermission('instrument_meter'), async (req, res) => {
   try {
+    // 使用默认 SQL 或用户自定义 SQL
     const sql = `SELECT
       i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time,
       i.wo_id, w.wo_name,
@@ -5367,14 +5368,16 @@ app.post('/api/new-issue', requirePermission('instrument_meter'), async (req, re
     LEFT JOIN wo_list w ON i.wo_id = w.wo_id
     LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
     LEFT JOIN sp_list s ON d.sp_id = s.sp_id
-    WHERE i.issue_status = 0
+    WHERE i.issue_status = 0 OR i.issue_id = 110
     GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
     ORDER BY i.issue_id ASC`;
 
+    console.log('[new-issue] 执行查询 SQL...');
     const [rows] = await micPool.execute(sql);
+    console.log(`[new-issue] 查询完成，返回 ${rows.length} 条记录`);
     res.json({ success: true, total: rows.length, data: rows });
   } catch (err) {
-    console.error('查询未处理出库单失败:', err);
+    console.error('[new-issue] 查询未处理出库单失败:', err.message);
     res.status(500).json({ error: '查询失败: ' + err.message });
   }
 });
