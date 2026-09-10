@@ -35,6 +35,7 @@ const { startDailyPush: startDailyOverduePush } = require('./daily-overdue-worko
 const { startDailyPush: startQcMaintenancePush } = require('./qc-maintenance-notifier');
 const { startDailyPush: startUnprocessedRequestPush } = require('./unprocessed-request-notifier');
 const { startPolling: startNewRepairPolling } = require('./new-repair-notifier');
+const { startPolling: startNewIssuePolling } = require('./new-issue-notifier');
 const { micPool } = require('./db-mic-config');
 const { setupOcrRoutes } = require('./ocr-routes');
 const nodemailer = require('nodemailer');
@@ -102,6 +103,9 @@ app.get('/unprocessed-request-push.html', requirePermissionPage('instrument_mete
 });
 app.get('/new-repair-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'new-repair-push.html'));
+});
+app.get('/new-issue-push.html', requirePermissionPage('instrument_meter'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'new-issue-push.html'));
 });
 app.get('/push-logs.html', requirePermissionPage('instrument_meter'), (req, res) => {
   res.sendFile(path.join(__dirname, 'push-logs.html'));
@@ -5325,12 +5329,104 @@ app.post('/api/new-repair/push', requirePermission('instrument_meter'), async (r
   }
 });
 
+// ========== 新增出库单推送（MIC 数据库 → 企业微信，时时推送） ==========
+
+const NEW_ISSUE_DEFAULT_SQL = `SELECT
+    i.issue_id,
+    i.issue_creator,
+    i.issue_validator,
+    i.issue_creation_time,
+    i.wo_id,
+    w.wo_name,
+    d.issue_qty,
+    s.sp_code,
+    s.sp_name
+FROM sp_issue i
+LEFT JOIN wo_list w
+    ON i.wo_id = w.wo_id
+LEFT JOIN sp_issue_details d
+    ON i.issue_id = d.issue_id
+LEFT JOIN sp_list s
+    ON d.sp_id = s.sp_id
+WHERE i.issue_status = 0`;
+
+// 获取新增出库单默认 SQL
+app.get('/api/new-issue/sql', requirePermission('instrument_meter'), async (req, res) => {
+  res.json({ success: true, sql: NEW_ISSUE_DEFAULT_SQL });
+});
+
+// 查询未处理出库单（按 issue_id 分组，聚合部品信息）
+app.post('/api/new-issue', requirePermission('instrument_meter'), async (req, res) => {
+  try {
+    const sql = `SELECT
+      i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time,
+      i.wo_id, w.wo_name,
+      GROUP_CONCAT(DISTINCT CONCAT(s.sp_code, ' ', s.sp_name) SEPARATOR ', ') AS sp_names,
+      SUM(d.issue_qty) AS total_qty
+    FROM sp_issue i
+    LEFT JOIN wo_list w ON i.wo_id = w.wo_id
+    LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
+    LEFT JOIN sp_list s ON d.sp_id = s.sp_id
+    WHERE i.issue_status = 0
+    GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
+    ORDER BY i.issue_id ASC`;
+
+    const [rows] = await micPool.execute(sql);
+    res.json({ success: true, total: rows.length, data: rows });
+  } catch (err) {
+    console.error('查询未处理出库单失败:', err);
+    res.status(500).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+// 新增出库单推送到企业微信
+app.post('/api/new-issue/push', requirePermission('instrument_meter'), async (req, res) => {
+  const { data, total } = req.body;
+  if (!Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: '无数据可推送' });
+  }
+
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
+  const clean = (v) => v ? String(v).replace(/\n/g, ' ').trim() : '';
+  const results = [];
+
+  try {
+    for (const item of data) {
+      const markdown = `### 🛠️ 新增出库单通知
+
+- **申请ID**: ${clean(item.issue_id)}
+- **申请人**: ${clean(item.issue_creator)}
+- **提交时间**: ${clean(item.issue_creation_time)}
+- **工单ID**: ${clean(item.wo_id)}
+- **工单名**: ${clean(item.wo_name)}
+- **申请部品名**: ${clean(item.sp_names)}
+- **申请数量**: ${clean(item.total_qty)}
+- **核实人**: ${clean(item.issue_validator)}`;
+
+      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
+      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+      results.push({ issue_id: item.issue_id, status: resp.status });
+    }
+
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const contentSummary = `新增出库单推送，共 ${total || data.length} 条`;
+    await logPush('new_issue', 'wechat', 'success', contentSummary, data.length, webhookUrl, pusher);
+    res.json({ success: true, push_count: results.length });
+  } catch (err) {
+    console.error('推送新增出库单失败:', err);
+    const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
+    const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
+    await logPush('new_issue', 'wechat', 'failed', `推送失败，共 ${data.length} 条`, data.length, webhookUrl, pusher, errMsg);
+    res.status(500).json({ error: '推送失败: ' + errMsg });
+  }
+});
+
 // ========== 推送日志 ==========
 
 /**
  * 写入推送日志
- * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js、qc-maintenance-notifier.js、unprocessed-request-notifier.js、new-repair-notifier.js 共用
- * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance' | 'unprocessed_request' | 'new_repair'
+ * 供 server.js 内部、instrument-meter-notifier.js、weekly-overdue-workorder-notifier.js、daily-overdue-workorder-notifier.js、qc-maintenance-notifier.js、unprocessed-request-notifier.js、new-repair-notifier.js、new-issue-notifier.js 共用
+ * @param {string} source        'instrument_meter' | 'overdue_workorder' | 'daily_workorder' | 'qc_maintenance' | 'unprocessed_request' | 'new_repair' | 'new_issue'
  * @param {string} pushMethod    'email' | 'wechat'
  * @param {string} pushStatus    'success' | 'failed'
  * @param {string} pushContent   推送内容摘要
@@ -5351,7 +5447,7 @@ async function logPush(source, pushMethod, pushStatus, pushContent, recordCount,
   }
 }
 
-// 导出给 instrument-meter-notifier.js / weekly-overdue-workorder-notifier.js / daily-overdue-workorder-notifier.js / qc-maintenance-notifier.js / unprocessed-request-notifier.js 使用
+// 导出给 instrument-meter-notifier.js / weekly-overdue-workorder-notifier.js / daily-overdue-workorder-notifier.js / qc-maintenance-notifier.js / unprocessed-request-notifier.js / new-repair-notifier.js / new-issue-notifier.js 使用
 module.exports.logPush = logPush;
 
 /**
@@ -5366,7 +5462,7 @@ app.get('/api/push-logs', requirePermission('instrument_meter'), async (req, res
 
     let whereClause = '';
     const params = [];
-    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder' || source === 'qc_maintenance' || source === 'unprocessed_request' || source === 'new_repair')) {
+    if (source && (source === 'instrument_meter' || source === 'overdue_workorder' || source === 'daily_workorder' || source === 'qc_maintenance' || source === 'unprocessed_request' || source === 'new_repair' || source === 'new_issue')) {
       whereClause = 'WHERE source = ?';
       params.push(source);
     }
@@ -6335,6 +6431,9 @@ app.listen(PORT, async () => {
 
   // 启动新增报修单实时轮询推送任务（每 10 分钟）
   startNewRepairPolling();
+
+  // 启动新增出库单实时轮询推送任务（每 10 分钟）
+  startNewIssuePolling();
 
   // 启动数据库每日凌晨 2 点自动备份任务
   startDailyBackup();

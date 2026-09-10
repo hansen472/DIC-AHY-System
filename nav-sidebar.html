@@ -341,6 +341,9 @@ body {
         <a href="/new-repair-push.html" class="nav-sub-item" id="nav-new-repair" style="display:none;">
           <span>新增报修单推送（时时推送）</span>
         </a>
+        <a href="/new-issue-push.html" class="nav-sub-item" id="nav-new-issue" style="display:none;">
+          <span>新增出库单推送（时时推送）</span>
+        </a>
         <a href="/push-logs.html" class="nav-sub-item" id="nav-push-logs" style="display:none;">
           <span>推送日志</span>
         </a>
@@ -618,7 +621,7 @@ function initSidebarGroups() {
       if (perms.dashboard) document.getElementById('nav-dashboard').style.display = 'flex';
       if (perms.template_admin) document.getElementById('nav-template-admin').style.display = 'flex';
       if (perms.backup_management) document.getElementById('nav-backup-management').style.display = 'flex';
-      // 领值推送分组：当前包含仪器/仪表、延时工单提醒（周推送）、日巡检工单提醒（日推送）、QC维护工单提醒（日推送）、未处理请求推送（日推送）、新增报修单推送（时时推送）、推送日志
+      // 领值推送分组：当前包含仪器/仪表、延时工单提醒（周推送）、日巡检工单提醒（日推送）、QC维护工单提醒（日推送）、未处理请求推送（日推送）、新增报修单推送（时时推送）、新增出库单推送（时时推送）、推送日志
       const lingzhiGroup = document.getElementById('nav-lingzhi-push-group');
       if (perms.instrument_meter) {
         document.getElementById('nav-instrument-meter').style.display = 'flex';
@@ -627,6 +630,7 @@ function initSidebarGroups() {
         document.getElementById('nav-qc-maintenance').style.display = 'flex';
         document.getElementById('nav-unprocessed-request').style.display = 'flex';
         document.getElementById('nav-new-repair').style.display = 'flex';
+        document.getElementById('nav-new-issue').style.display = 'flex';
         document.getElementById('nav-push-logs').style.display = 'flex';
         lingzhiGroup.style.display = 'block';
       }

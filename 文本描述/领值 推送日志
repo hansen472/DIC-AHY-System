@@ -261,3 +261,43 @@ md_text = f"""### 🛠️ 新增报修单通知
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def
 
 新增报修单推送（时时推送）设置每10分钟自动运行一次。如果有结果，则推送。
+
+在nav-sidebar.html 中的一级菜单下的”领值推送“下增加一个二级菜单”新增出库单推送（时时推送）“菜单。
+点击 ”新增出库单推送（时时推送）“ 菜单，进入新增出库单推送（时时推送）页面。界面与现在的日巡检工单提醒以及延时工单提醒页面相同。
+根据以下SQL查询语句，查询出未处理的请求列表，并显示在页面中。
+SELECT
+    i.issue_id,
+    i.issue_creator,
+    i.issue_validator,
+    i.issue_creation_time,
+    i.wo_id,
+    w.wo_name,
+    d.issue_qty,
+    s.sp_code,
+    s.sp_name
+FROM sp_issue i
+LEFT JOIN wo_list w
+    ON i.wo_id = w.wo_id
+LEFT JOIN sp_issue_details d
+    ON i.issue_id = d.issue_id
+LEFT JOIN sp_list s
+    ON d.sp_id = s.sp_id
+WHERE i.issue_status = 0 or i.issue_id = 110;
+
+再参考下面的代码，将SQL查询结果生成Markdown格式的内容（注意如果有多条记录，每一条记录都要完整的生成下面的推送内容，分条推送）
+
+  # --- 生成 Markdown ---
+md_text = f"""### 🛠️ 新增出库单通知
+        
+- **申请ID**: issue_id
+- **申请人**: issue_creator
+- **提交时间**: issue_creation_time
+- **工单ID**: wo_id
+- **工单名**: wo_name
+- **申请部品名**: sp_name + sp_name
+- **申请数量**: issue_qty
+- **核实人**: issue_validator
+"""
+注意增加相应的日志。
+
+新增出库单通知 并不是增量推送，而是每次根据查询结果推送所有数据即可。
