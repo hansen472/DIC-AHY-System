@@ -5358,8 +5358,8 @@ app.get('/api/new-issue/sql', requirePermission('instrument_meter'), async (req,
 // 查询未处理出库单（按 issue_id 分组，聚合部品信息）
 app.post('/api/new-issue', requirePermission('instrument_meter'), async (req, res) => {
   try {
-    // 使用默认 SQL 或用户自定义 SQL
-    const sql = `SELECT
+    // 支持用户自定义 SQL
+    const defaultSql = `SELECT
       i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time,
       i.wo_id, w.wo_name,
       GROUP_CONCAT(DISTINCT CONCAT(s.sp_code, ' ', s.sp_name) SEPARATOR ', ') AS sp_names,
@@ -5372,6 +5372,7 @@ app.post('/api/new-issue', requirePermission('instrument_meter'), async (req, re
     GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
     ORDER BY i.issue_id ASC`;
 
+    const sql = (req.body && req.body.sql) ? req.body.sql : defaultSql;
     console.log('[new-issue] 执行查询 SQL...');
     const [rows] = await micPool.execute(sql);
     console.log(`[new-issue] 查询完成，返回 ${rows.length} 条记录`);
