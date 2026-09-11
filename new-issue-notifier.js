@@ -27,8 +27,7 @@ async function queryNewIssues() {
     i.issue_creation_time,
     i.wo_id,
     w.wo_name,
-    GROUP_CONCAT(DISTINCT CONCAT(s.sp_code, ' ', s.sp_name) SEPARATOR ', ') AS sp_names,
-    SUM(d.issue_qty) AS total_qty
+    GROUP_CONCAT(CONCAT(s.sp_code, ' ', s.sp_name, ' x', d.issue_qty) SEPARATOR ', ') AS sp_details
 FROM sp_issue i
 LEFT JOIN wo_list w ON i.wo_id = w.wo_id
 LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
@@ -59,8 +58,7 @@ async function pushToWechat(data) {
 - **提交时间**: ${clean(item.issue_creation_time)}
 - **工单ID**: ${clean(item.wo_id)}
 - **工单名**: ${clean(item.wo_name)}
-- **申请部品名**: ${clean(item.sp_names)}
-- **申请数量**: ${clean(item.total_qty)}
+- **申请部品**: ${clean(item.sp_details)}
 - **核实人**: ${clean(item.issue_validator)}`;
 
     const payload = { msgtype: 'markdown', markdown: { content: markdown } };
