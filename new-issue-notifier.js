@@ -88,7 +88,7 @@ function clean(v) {
  */
 async function pushToWechat(data) {
   for (const item of data) {
-    const markdown = `### 🛠️ 新增出库单通知
+    const markdown = `### 📦 新增出库单通知
 
 - **申请ID**: ${clean(item.issue_id)}
 - **申请人**: ${clean(item.issue_creator)}

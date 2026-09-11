@@ -5384,7 +5384,7 @@ app.post('/api/new-issue/push', requirePermission('instrument_meter'), async (re
 
   try {
     for (const item of data) {
-      const markdown = `### 🛠️ 新增出库单通知
+      const markdown = `### 📦 新增出库单通知
 
 - **申请ID**: ${clean(item.issue_id)}
 - **申请人**: ${clean(item.issue_creator)}
