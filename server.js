@@ -5338,9 +5338,8 @@ const NEW_ISSUE_DEFAULT_SQL = `SELECT
     i.issue_creation_time,
     i.wo_id,
     w.wo_name,
-    d.issue_qty,
-    s.sp_code,
-    s.sp_name
+    GROUP_CONCAT(DISTINCT CONCAT(s.sp_code, ' ', s.sp_name) SEPARATOR ', ') AS sp_names,
+    SUM(d.issue_qty) AS total_qty
 FROM sp_issue i
 LEFT JOIN wo_list w
     ON i.wo_id = w.wo_id
@@ -5348,7 +5347,9 @@ LEFT JOIN sp_issue_details d
     ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s
     ON d.sp_id = s.sp_id
-WHERE i.issue_status = 0`;
+WHERE i.issue_status = 0
+GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
+ORDER BY i.issue_id ASC`;
 
 // 获取新增出库单默认 SQL
 app.get('/api/new-issue/sql', requirePermission('instrument_meter'), async (req, res) => {
@@ -5358,21 +5359,7 @@ app.get('/api/new-issue/sql', requirePermission('instrument_meter'), async (req,
 // 查询未处理出库单（按 issue_id 分组，聚合部品信息）
 app.post('/api/new-issue', requirePermission('instrument_meter'), async (req, res) => {
   try {
-    // 支持用户自定义 SQL
-    const defaultSql = `SELECT
-      i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time,
-      i.wo_id, w.wo_name,
-      GROUP_CONCAT(DISTINCT CONCAT(s.sp_code, ' ', s.sp_name) SEPARATOR ', ') AS sp_names,
-      SUM(d.issue_qty) AS total_qty
-    FROM sp_issue i
-    LEFT JOIN wo_list w ON i.wo_id = w.wo_id
-    LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
-    LEFT JOIN sp_list s ON d.sp_id = s.sp_id
-    WHERE i.issue_status = 0
-    GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
-    ORDER BY i.issue_id ASC`;
-
-    const sql = (req.body && req.body.sql) ? req.body.sql : defaultSql;
+    const sql = (req.body && req.body.sql) ? req.body.sql : NEW_ISSUE_DEFAULT_SQL;
     console.log('[new-issue] 执行查询 SQL...');
     const [rows] = await micPool.execute(sql);
     console.log(`[new-issue] 查询完成，返回 ${rows.length} 条记录`);

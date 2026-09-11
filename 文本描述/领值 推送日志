@@ -307,3 +307,25 @@ md_text = f"""### 🛠️ 新增出库单通知
 
 在new-issue-push.html页面中，查询不到任何数据，在页面中”编辑SQL“按钮，将SQL查询语句修改后查询，也没有结果。也就是说，在页面中编辑SQL查询语句，并没有生效。请检查原因
 新增出库单通知  中的sql查询语句最后的查询语句，由WHERE i.issue_status = 0 or i.issue_id = 110;更改为WHERE i.issue_status = 0 
+
+新增出库单通知  中的sql查询语句中，有一种情况是  sp_issue_detail中会查询出多条记录（一个工单有多个部品），导致推送内容重复。而且在页面中当有多条记录时，工单名，申请部品，申请数量会显示为空。
+现在希望可以将多条记录中issue_id相同时合并成一条记录，显示在推送内容中。 在前台的页面中也可以完整的显示出全部数据。
+
+SELECT
+    i.issue_id,
+    i.issue_creator,
+    i.issue_validator,
+    i.issue_creation_time,
+    i.wo_id,
+    w.wo_name,
+    d.issue_qty,
+    s.sp_code,
+    s.sp_name
+FROM sp_issue i
+LEFT JOIN wo_list w
+    ON i.wo_id = w.wo_id
+LEFT JOIN sp_issue_details d
+    ON i.issue_id = d.issue_id
+LEFT JOIN sp_list s
+    ON d.sp_id = s.sp_id
+WHERE i.issue_status = 0
