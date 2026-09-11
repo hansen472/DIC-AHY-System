@@ -59,17 +59,18 @@ async function queryNewIssues(lastIssueId) {
   const sql = `SELECT
     i.issue_id,
     i.issue_creator,
-    i.issue_validator,
     i.issue_creation_time,
     i.wo_id,
     w.wo_name,
+    ae.employee_name AS submitted_to_name,
     GROUP_CONCAT(CONCAT(s.sp_code, ' ', s.sp_name, ' x', d.issue_qty) SEPARATOR ', ') AS sp_details
 FROM sp_issue i
 LEFT JOIN wo_list w ON i.wo_id = w.wo_id
+LEFT JOIN admin_employee ae ON i.issue_submitted_to = ae.user_id
 LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s ON d.sp_id = s.sp_id
 WHERE i.issue_status = 0 AND i.issue_id > ?
-GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
+GROUP BY i.issue_id, i.issue_creator, i.issue_creation_time, i.wo_id, w.wo_name, ae.employee_name
 ORDER BY i.issue_id ASC`;
   const [rows] = await micPool.execute(sql, [lastIssueId]);
   return rows;
@@ -95,7 +96,7 @@ async function pushToWechat(data) {
 - **工单ID**: ${clean(item.wo_id)}
 - **工单名**: ${clean(item.wo_name)}
 - **申请部品**: ${clean(item.sp_details)}
-- **核实人**: ${clean(item.issue_validator)}`;
+- **核实人**: ${clean(item.submitted_to_name)}`;
 
     const payload = { msgtype: 'markdown', markdown: { content: markdown } };
     await axios.post(WEBHOOK_URL, payload, { timeout: 10000 });

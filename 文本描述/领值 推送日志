@@ -334,3 +334,8 @@ WHERE i.issue_status = 0
 
 再做一个微调整 ，现在将 sp_name 合并成一条记录，显示在推送内容中。并且将数量也合并了。
 要求：不要合并数量，将原始的数量 显示在推送中。
+
+新增出库单通知 的查询语句做以下调整：
+不再使issue_validator 。用以下的值代替
+从sp_issue表中查询issue_submitted_to的值，此值为员工编号，以此值连接admin_employee表中的字段 user_id 并相应取出employee_name，作为核实人。
+

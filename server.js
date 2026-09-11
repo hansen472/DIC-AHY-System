@@ -5334,20 +5334,22 @@ app.post('/api/new-repair/push', requirePermission('instrument_meter'), async (r
 const NEW_ISSUE_DEFAULT_SQL = `SELECT
     i.issue_id,
     i.issue_creator,
-    i.issue_validator,
     i.issue_creation_time,
     i.wo_id,
     w.wo_name,
+    ae.employee_name AS submitted_to_name,
     GROUP_CONCAT(CONCAT(s.sp_code, ' ', s.sp_name, ' x', d.issue_qty) SEPARATOR ', ') AS sp_details
 FROM sp_issue i
 LEFT JOIN wo_list w
     ON i.wo_id = w.wo_id
+LEFT JOIN admin_employee ae
+    ON i.issue_submitted_to = ae.user_id
 LEFT JOIN sp_issue_details d
     ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s
     ON d.sp_id = s.sp_id
 WHERE i.issue_status = 0
-GROUP BY i.issue_id, i.issue_creator, i.issue_validator, i.issue_creation_time, i.wo_id, w.wo_name
+GROUP BY i.issue_id, i.issue_creator, i.issue_creation_time, i.wo_id, w.wo_name, ae.employee_name
 ORDER BY i.issue_id ASC`;
 
 // 获取新增出库单默认 SQL
@@ -5390,7 +5392,7 @@ app.post('/api/new-issue/push', requirePermission('instrument_meter'), async (re
 - **工单ID**: ${clean(item.wo_id)}
 - **工单名**: ${clean(item.wo_name)}
 - **申请部品**: ${clean(item.sp_details)}
-- **核实人**: ${clean(item.issue_validator)}`;
+- **核实人**: ${clean(item.submitted_to_name)}`;
 
       const payload = { msgtype: 'markdown', markdown: { content: markdown } };
       const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });

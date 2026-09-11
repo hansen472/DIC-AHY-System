@@ -227,7 +227,7 @@ function renderTable() {
       <td>${escapeHtml(row.wo_id || '-')}</td>
       <td class="content-cell" title="${escapeHtml(row.wo_name || '')}">${escapeHtml(row.wo_name || '-')}</td>
       <td class="content-cell" title="${escapeHtml(row.sp_details || '')}">${escapeHtml(row.sp_details || '-')}</td>
-      <td>${escapeHtml(row.issue_validator || '-')}</td>
+      <td>${escapeHtml(row.submitted_to_name || '-')}</td>
     </tr>`;
   });
 
