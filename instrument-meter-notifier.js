@@ -29,6 +29,9 @@ const THRESHOLDS = [
 let checkTimer = null;
 let checkInterval = null;
 
+// 发送锁：防止 checkAndNotify 并发执行
+let isSending = false;
+
 // 默认设置（数据库不可用时的回退值）
 let currentSettings = { enabled: true, intervalDays: 30, recipients: ['lunhan.li'] };
 
@@ -183,6 +186,11 @@ async function sendEmail(subject, htmlBody, to) {
  * 执行一次检测并发送邮件
  */
 async function checkAndNotify() {
+  if (isSending) {
+    console.log('[instrument-meter-notifier] 上一次发送尚未完成，跳过本次');
+    return;
+  }
+  isSending = true;
   try {
     console.log('[instrument-meter-notifier] 开始检测仪器/仪表到期情况...');
 
@@ -311,6 +319,8 @@ async function checkAndNotify() {
       const { logPush } = require('./server');
       await logPush('instrument_meter', 'email', 'failed', '仪器/仪表到期提醒发送失败', 0, failedTo, 'system', err.message);
     } catch (_) { /* 日志写入失败不影响主流程 */ }
+  } finally {
+    isSending = false;
   }
 }
 
@@ -336,6 +346,9 @@ function stopScheduler() {
  * 之后按配置的间隔天数重复执行。
  */
 function startScheduler() {
+  // 防止重复调度：先停止已有的定时器
+  stopScheduler();
+
   const intervalMs = currentSettings.intervalDays * 24 * 60 * 60 * 1000;
 
   // 计算到次日 08:10 的延迟
@@ -355,7 +368,15 @@ function startScheduler() {
 /**
  * 初始化：读取设置并启动定时任务
  */
+// 防止同一进程内重复初始化
+let schedulerStarted = false;
+
 async function startWeeklyCheck() {
+  if (schedulerStarted) {
+    console.log('[instrument-meter-notifier] 定时任务已在运行中，跳过重复启动');
+    return;
+  }
+  schedulerStarted = true;
   await loadSettings();
   if (currentSettings.enabled) {
     startScheduler();
