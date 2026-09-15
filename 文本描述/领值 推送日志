@@ -342,3 +342,8 @@ WHERE i.issue_status = 0
 将unprocessed-request-push.html页面中的推送链接修改为(后台自动推送，以及前台的手动推送都更改)
 正式环境
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
+
+
+将new-repair-push.html页面中的推送链接修改为(后台自动推送，以及前台的手动推送都更改)
+正式环境
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
