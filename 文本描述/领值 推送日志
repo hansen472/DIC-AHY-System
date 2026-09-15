@@ -339,3 +339,6 @@ WHERE i.issue_status = 0
 不再使issue_validator 。用以下的值代替
 从sp_issue表中查询issue_submitted_to的值，此值为员工编号，以此值连接admin_employee表中的字段 user_id 并相应取出employee_name，作为核实人。
 
+将unprocessed-request-push.html页面中的推送链接修改为(后台自动推送，以及前台的手动推送都更改)
+正式环境
+https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
