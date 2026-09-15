@@ -1,61 +1,25 @@
 /**
  * 新增出库单实时推送（企业微信）
  *
- * 每 10 分钟轮询 MIC 数据库，查询 issue_id > last_issue_id 的新增出库单，
- * 按 issue_id 分组合并部品信息后，逐条推送到企业微信 Webhook，推送后更新 last_issue_id。
+ * 每 10 分钟轮询 MIC 数据库，查询 issue_status = 0 的未处理出库单，
+ * 按 issue_id 分组合并部品信息后，逐条推送到企业微信 Webhook。
  *
  * 轮询间隔：10 分钟
  */
 
 const axios = require('axios');
 const { micPool } = require('./db-mic-config');
-const { pool: mainPool } = require('./db-config');
 
 const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
-const PUSH_TYPE = 'new_issue';
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 分钟
 
 let pollTimer = null;
 
 /**
- * 获取上次推送的最大 issue_id
- */
-async function getLastIssueId() {
-  try {
-    await mainPool.execute(
-      "INSERT IGNORE INTO push_state (push_type, last_mr_id) VALUES (?, 0)",
-      [PUSH_TYPE]
-    );
-    const [rows] = await mainPool.execute(
-      'SELECT last_mr_id FROM push_state WHERE push_type = ?',
-      [PUSH_TYPE]
-    );
-    return rows.length > 0 ? rows[0].last_mr_id : 0;
-  } catch (err) {
-    console.error('[new-issue-notifier] 获取 last_issue_id 失败:', err.message);
-    return 0;
-  }
-}
-
-/**
- * 更新 last_issue_id
- */
-async function updateLastIssueId(issueId) {
-  try {
-    await mainPool.execute(
-      'UPDATE push_state SET last_mr_id = ? WHERE push_type = ?',
-      [issueId, PUSH_TYPE]
-    );
-  } catch (err) {
-    console.error('[new-issue-notifier] 更新 last_issue_id 失败:', err.message);
-  }
-}
-
-/**
- * 查询新增出库单（issue_id > lastIssueId）
+ * 查询未处理出库单（issue_status = 0）
  * 按 issue_id 分组，聚合部品信息
  */
-async function queryNewIssues(lastIssueId) {
+async function queryNewIssues() {
   const sql = `SELECT
     i.issue_id,
     i.issue_creator,
@@ -69,10 +33,10 @@ LEFT JOIN wo_list w ON i.wo_id = w.wo_id
 LEFT JOIN admin_employee ae ON i.issue_submitted_to = ae.user_id
 LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s ON d.sp_id = s.sp_id
-WHERE i.issue_status = 0 AND i.issue_id > ?
+WHERE i.issue_status = 0
 GROUP BY i.issue_id, i.issue_creator, i.issue_creation_time, i.wo_id, w.wo_name, ae.employee_name
 ORDER BY i.issue_id ASC`;
-  const [rows] = await micPool.execute(sql, [lastIssueId]);
+  const [rows] = await micPool.execute(sql);
   return rows;
 }
 
@@ -111,26 +75,21 @@ async function checkAndPush() {
   try { logPush = require('./server').logPush; } catch (_) { /* server 尚未就绪 */ }
 
   try {
-    const lastIssueId = await getLastIssueId();
-    const data = await queryNewIssues(lastIssueId);
+    const data = await queryNewIssues();
 
     if (data.length === 0) {
-      // 无新增，静默跳过
+      // 无未处理请求，静默跳过
       return;
     }
 
-    console.log(`[new-issue-notifier] 发现 ${data.length} 条新增出库单（last_issue_id=${lastIssueId}）`);
+    console.log(`[new-issue-notifier] 发现 ${data.length} 条未处理出库单`);
 
     await pushToWechat(data);
 
-    // 更新 last_issue_id 为本批次最大 issue_id
-    const maxIssueId = Math.max(...data.map(r => r.issue_id));
-    await updateLastIssueId(maxIssueId);
-
-    console.log(`[new-issue-notifier] 推送完成，共 ${data.length} 条，last_issue_id 更新为 ${maxIssueId}`);
+    console.log(`[new-issue-notifier] 推送完成，共 ${data.length} 条`);
 
     if (logPush) {
-      const summary = `自动推送：新增出库单 ${data.length} 条（issue_id ${lastIssueId}→${maxIssueId}）`;
+      const summary = `自动推送：未处理出库单 ${data.length} 条`;
       await logPush('new_issue', 'wechat', 'success', summary, data.length, WEBHOOK_URL, 'system');
     }
   } catch (err) {
