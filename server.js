@@ -131,6 +131,9 @@ app.get('/deviation-report-detail.html', requirePermissionPage('coa_report'), (r
 app.get('/logs.html', requirePermissionPage('logs'), (req, res) => {
   res.sendFile(path.join(__dirname, 'logs.html'));
 });
+app.get('/production-record-print-log.html', requirePermissionPage('logs'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'production-record-print-log.html'));
+});
 app.get('/nav.html', requireAuthPage, (req, res) => {
   res.sendFile(path.join(__dirname, 'nav.html'));
 });
@@ -4587,6 +4590,63 @@ app.get('/api/operation-logs/export', requirePermission('operation_logs'), async
   }
 });
 
+// ========== 生产记录打印数据库日志 API ==========
+
+/**
+ * GET /api/production-record-print-logs
+ * 查询生产记录打印数据库查询日志
+ */
+app.get('/api/production-record-print-logs', requirePermission('logs'), async (req, res) => {
+  try {
+    const isAdmin = req.session.username === 'admin';
+    let sql = 'SELECT id, query_time, username, query_condition, query_type, source_table, result_count, result_fields, field_mapping, ip_address FROM production_record_print_log';
+    const params = [];
+
+    if (!isAdmin) {
+      sql += ' WHERE username = ?';
+      params.push(req.session.username);
+    }
+
+    sql += ' ORDER BY query_time DESC LIMIT 500';
+
+    const [rows] = await pool.execute(sql, params);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error('查询生产记录打印日志失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
+/**
+ * GET /api/production-record-print-logs/:id
+ * 查询单条日志详情（含完整查询结果）
+ */
+app.get('/api/production-record-print-logs/:id', requirePermission('logs'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const isAdmin = req.session.username === 'admin';
+    let sql = 'SELECT * FROM production_record_print_log';
+    const params = [];
+
+    if (isAdmin) {
+      sql += ' WHERE id = ?';
+    } else {
+      sql += ' WHERE id = ? AND username = ?';
+      params.push(req.session.username);
+    }
+    params.unshift(id);
+
+    const [rows] = await pool.execute(sql, params);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: '日志不存在' });
+    }
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    console.error('查询日志详情失败:', err);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
 /**
  * GET /api/backups
  * 查询数据库备份记录
@@ -5739,6 +5799,20 @@ app.get('/api/coa-reports', requirePermission('coa_report'), async (req, res) =>
  * 安全设计：前端不再直接调用 Dify，而是通过本后端查询 MSSQL。
  * 数据库连接信息只存在于服务端，前端看不到、改不了。
  */
+// 生产记录打印查询：数据库字段 → 网页显示字段 映射关系
+const PRODUCTION_QUERY_FIELD_MAPPING = {
+  source_table: 'Make_Task',
+  fields: {
+    'p_name':   { alias: 'mingcheng', display: '名称' },
+    'p_content1': { alias: 'pici',    display: '批次' },
+    'p_brand':  { alias: 'xinghao',   display: '型号' },
+    'p_size':   { alias: 'guige',     display: '规格' },
+    'p_content3': { alias: 'peifang', display: '配方' },
+    'content':  { alias: 'beizhu',    display: '备注' },
+    'num':      { alias: 'num',       display: '单据编号' }
+  }
+};
+
 app.post('/api/search', requirePermission('print'), async (req, res) => {
   const { querydata } = req.body;
   if (!querydata || typeof querydata !== 'string') {
@@ -5747,6 +5821,28 @@ app.post('/api/search', requirePermission('print'), async (req, res) => {
 
   try {
     const records = await fetchMssqlData(querydata);
+
+    // 异步记录生产记录打印数据库查询日志（不阻塞响应）
+    const queryType = getQueryType(querydata);
+    const clientIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress || '';
+    const resultFields = records.length > 0 ? Object.keys(records[0]) : [];
+    pool.execute(
+      `INSERT INTO production_record_print_log
+        (username, query_condition, query_type, source_table, result_count, result_data, result_fields, field_mapping, ip_address)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.session.username,
+        querydata,
+        queryType,
+        PRODUCTION_QUERY_FIELD_MAPPING.source_table,
+        records.length,
+        JSON.stringify(records),
+        JSON.stringify(resultFields),
+        JSON.stringify(PRODUCTION_QUERY_FIELD_MAPPING),
+        clientIp
+      ]
+    ).catch(err => console.error('生产记录打印日志写入失败:', err.message));
+
     res.json({ success: true, data: records });
   } catch (err) {
     console.error('查询失败:', err);

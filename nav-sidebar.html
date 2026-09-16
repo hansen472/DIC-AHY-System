@@ -298,6 +298,9 @@ body {
         <a href="/supplier-qualification-logs.html" class="nav-sub-item" id="nav-logs-supplier-qualification" style="display:none;">
           <span>供应商资质日志</span>
         </a>
+        <a href="/production-record-print-log.html" class="nav-sub-item" id="nav-logs-production-record-print" style="display:none;">
+          <span>生产记录打印数据库日志</span>
+        </a>
       </div>
     </div>
 
@@ -674,11 +677,12 @@ function initSidebarGroups() {
         console.error('加载待办数量失败:', e);
       }
 
-      // 日志查询分组：包含打印记录查询、操作日志和供应商资质日志
+      // 日志查询分组：包含打印记录查询、操作日志、供应商资质日志和生产记录打印数据库日志
       const logsGroup = document.getElementById('nav-logs-group');
       if (perms.logs)      document.getElementById('nav-logs-print').style.display = 'flex';
       if (perms.operation_logs) document.getElementById('nav-logs-operation').style.display = 'flex';
       if (perms.supplier_qualifications) document.getElementById('nav-logs-supplier-qualification').style.display = 'flex';
+      if (perms.logs) document.getElementById('nav-logs-production-record-print').style.display = 'flex';
       if (perms.logs || perms.operation_logs || perms.supplier_qualifications) {
         logsGroup.style.display = 'block';
       }

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生产记录打印数据库日志</title>
+<link rel="icon" href="http://10.5.53.30/images/Favicon.png">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "SimSun", sans-serif; background: #f5f7fa; padding: 20px; color: #333; }
+.container { max-width: 1400px; margin: 0 auto; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header h1 { font-size: 20px; color: #2c3e50; }
+.header .meta { display: flex; align-items: center; gap: 10px; }
+.header span { font-size: 13px; color: #4a5568; }
+button { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+.btn-secondary { background: #e2e8f0; color: #333; }
+.btn-primary { background: #2b6cb0; color: #fff; }
+.section { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+th { background: #f7fafc; font-weight: 600; color: #4a5568; }
+tr:hover td { background: #f7fafc; }
+.empty { text-align: center; color: #a0aec0; padding: 40px 0; }
+.td-wrap { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-loading { color: #2b6cb0; font-size: 13px; }
+.status-error { color: #c53030; font-size: 13px; }
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: #ebf4ff; }
+
+/* 字段映射面板 */
+.mapping-section { margin-bottom: 20px; }
+.mapping-section h3 { font-size: 15px; color: #2c3e50; margin-bottom: 12px; }
+.mapping-table { width: auto; min-width: 500px; font-size: 13px; }
+.mapping-table th { background: #edf2f7; padding: 8px 14px; }
+.mapping-table td { padding: 8px 14px; font-family: "Consolas", "Microsoft YaHei", monospace; }
+.mapping-toggle { margin-bottom: 12px; }
+.mapping-toggle button { font-size: 12px; padding: 5px 12px; }
+.mapping-toggle button.active { background: #2b6cb0; color: #fff; }
+
+/* 详情弹窗 */
+.modal-overlay {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  justify-content: center; align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal-box {
+  background: #fff; border-radius: 12px; padding: 28px;
+  max-width: 900px; width: 90%; max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+.modal-box h2 { font-size: 17px; color: #2c3e50; margin-bottom: 16px; }
+.modal-close { float: right; background: none; border: none; font-size: 20px; cursor: pointer; color: #718096; padding: 0; }
+.modal-close:hover { color: #2c3e50; opacity: 1; }
+.detail-grid { display: grid; grid-template-columns: 120px 1fr; gap: 8px 16px; font-size: 13px; margin-bottom: 16px; }
+.detail-grid .label { color: #718096; font-weight: 600; }
+.detail-grid .value { color: #2d3748; word-break: break-all; }
+.result-table { font-size: 12px; overflow-x: auto; }
+.result-table th { white-space: nowrap; background: #edf2f7; }
+.result-table td { white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>生产记录打印数据库日志</h1>
+    <div class="meta">
+      <span id="current-user"></span>
+      <button class="btn-secondary" onclick="window.location.href='/'">关闭</button>
+    </div>
+  </div>
+
+  <!-- 字段映射面板 -->
+  <div class="section mapping-section">
+    <div class="mapping-toggle">
+      <button class="btn-secondary active" id="btn-show-mapping" onclick="toggleMapping()">显示字段映射</button>
+    </div>
+    <div id="mapping-panel">
+      <h3>数据库字段 → 网页显示字段 映射关系</h3>
+      <p style="font-size:12px; color:#718096; margin-bottom:10px;">
+        源表名：<strong>Make_Task</strong>（MSSQL / ERP1 数据库）
+      </p>
+      <table class="mapping-table">
+        <thead>
+          <tr>
+            <th>数据库原始字段名</th>
+            <th>查询结果别名（alias）</th>
+            <th>网页显示字段名</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>p_name</td><td>mingcheng</td><td>名称</td></tr>
+          <tr><td>p_content1</td><td>pici</td><td>批次</td></tr>
+          <tr><td>p_brand</td><td>xinghao</td><td>型号</td></tr>
+          <tr><td>p_size</td><td>guige</td><td>规格</td></tr>
+          <tr><td>p_content3</td><td>peifang</td><td>配方</td></tr>
+          <tr><td>content</td><td>beizhu</td><td>备注</td></tr>
+          <tr><td>num</td><td>num</td><td>单据编号</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 日志列表 -->
+  <div class="section">
+    <div id="log-status" class="status-loading">加载中...</div>
+    <div style="overflow-x:auto; margin-top:12px;">
+      <table id="log-table" style="display:none;">
+        <thead>
+          <tr>
+            <th style="width:50px;">序号</th>
+            <th style="width:160px;">查询时间</th>
+            <th>查询用户</th>
+            <th>查询条件</th>
+            <th>查询类型</th>
+            <th>源表名</th>
+            <th style="width:80px;">结果条数</th>
+            <th>结果字段</th>
+            <th style="width:120px;">IP地址</th>
+          </tr>
+        </thead>
+        <tbody id="log-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 详情弹窗 -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <h2>查询日志详情</h2>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+// 字段映射（与后端 PRODUCTION_QUERY_FIELD_MAPPING 保持一致）
+const FIELD_MAPPING = {
+  'mingcheng': '名称',
+  'pici':      '批次',
+  'xinghao':   '型号',
+  'guige':     '规格',
+  'peifang':   '配方',
+  'beizhu':    '备注',
+  'num':       '单据编号'
+};
+
+(async function init() {
+  const statusEl = document.getElementById('log-status');
+
+  try {
+    const sessionRes = await fetch('/api/session');
+    if (!sessionRes.ok) {
+      if (sessionRes.status === 401) { alert('登录已过期，请重新登录'); window.location.href = '/login'; return; }
+      throw new Error('获取用户信息失败');
+    }
+    const sessionData = await sessionRes.json();
+    if (sessionData.success && sessionData.username) {
+      document.getElementById('current-user').textContent = '当前用户：' + sessionData.username;
+    }
+  } catch (e) { console.error(e); }
+
+  try {
+    const res = await fetch('/api/production-record-print-logs');
+    if (!res.ok) {
+      if (res.status === 401) { alert('登录已过期，请重新登录'); window.location.href = '/login'; return; }
+      throw new Error('查询失败：' + res.status);
+    }
+    const data = await res.json();
+    const tbody = document.getElementById('log-tbody');
+
+    if (!data.success || !data.data || data.data.length === 0) {
+      statusEl.textContent = '';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无查询日志</td></tr>';
+      document.getElementById('log-table').style.display = 'table';
+      return;
+    }
+
+    tbody.innerHTML = data.data.map((row, idx) => {
+      let resultFields = '';
+      try {
+        const fields = JSON.parse(row.result_fields);
+        resultFields = fields.map(f => FIELD_MAPPING[f] || f).join('、');
+      } catch (e) {
+        resultFields = row.result_fields || '';
+      }
+
+      const queryTypeLabel = row.query_type === 'SCRW' ? '单据编号查询' : '批次号查询';
+
+      return `
+        <tr class="clickable-row" onclick="viewDetail(${row.id})">
+          <td>${idx + 1}</td>
+          <td>${formatTime(row.query_time)}</td>
+          <td>${row.username || ''}</td>
+          <td>${escapeHtml(row.query_condition)}</td>
+          <td>${queryTypeLabel}</td>
+          <td>${row.source_table || ''}</td>
+          <td>${row.result_count ?? 0}</td>
+          <td class="td-wrap" title="${escapeHtml(resultFields)}">${resultFields}</td>
+          <td>${row.ip_address || ''}</td>
+        </tr>
+      `;
+    }).join('');
+
+    statusEl.textContent = `共 ${data.data.length} 条记录（点击行可查看完整结果）`;
+    document.getElementById('log-table').style.display = 'table';
+  } catch (err) {
+    console.error(err);
+    statusEl.className = 'status-error';
+    statusEl.textContent = '加载失败：' + err.message;
+  }
+})();
+
+async function viewDetail(id) {
+  const modal = document.getElementById('detail-modal');
+  const content = document.getElementById('modal-content');
+  content.innerHTML = '<p style="color:#718096;">加载中...</p>';
+  modal.classList.add('active');
+
+  try {
+    const res = await fetch('/api/production-record-print-logs/' + id);
+    if (!res.ok) throw new Error('查询详情失败');
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || '查询失败');
+
+    const row = json.data;
+    let fieldMappingHtml = '';
+    try {
+      const mapping = JSON.parse(row.field_mapping);
+      if (mapping && mapping.fields) {
+        fieldMappingHtml = '<table style="font-size:12px; margin-top:8px;"><thead><tr><th>数据库字段</th><th>别名</th><th>显示名</th></tr></thead><tbody>';
+        for (const [dbField, info] of Object.entries(mapping.fields)) {
+          fieldMappingHtml += `<tr><td>${dbField}</td><td>${info.alias}</td><td>${info.display}</td></tr>`;
+        }
+        fieldMappingHtml += '</tbody></table>';
+      }
+    } catch (e) {}
+
+    let resultDataHtml = '<p style="color:#a0aec0;">无查询结果</p>';
+    try {
+      const resultData = JSON.parse(row.result_data);
+      if (Array.isArray(resultData) && resultData.length > 0) {
+        const headers = Object.keys(resultData[0]);
+        const headerLabels = headers.map(h => FIELD_MAPPING[h] || h);
+        resultDataHtml = '<div class="result-table"><table><thead><tr>' +
+          headerLabels.map(h => `<th>${h}</th>`).join('') +
+          '</tr></thead><tbody>' +
+          resultData.map(r => '<tr>' + headers.map(h => `<td title="${escapeHtml(String(r[h] ?? ''))}">${escapeHtml(String(r[h] ?? ''))}</td>`).join('') + '</tr>').join('') +
+          '</tbody></table></div>';
+      }
+    } catch (e) {}
+
+    const queryTypeLabel = row.query_type === 'SCRW' ? '单据编号查询（SCRW前缀）' : '批次号查询';
+
+    content.innerHTML = `
+      <div class="detail-grid">
+        <div class="label">查询时间</div><div class="value">${formatTime(row.query_time)}</div>
+        <div class="label">查询用户</div><div class="value">${row.username}</div>
+        <div class="label">查询条件</div><div class="value">${escapeHtml(row.query_condition)}</div>
+        <div class="label">查询类型</div><div class="value">${queryTypeLabel}</div>
+        <div class="label">源数据库表</div><div class="value">${row.source_table}</div>
+        <div class="label">结果条数</div><div class="value">${row.result_count}</div>
+        <div class="label">IP地址</div><div class="value">${row.ip_address || ''}</div>
+      </div>
+      <h3 style="font-size:14px; color:#2c3e50; margin:16px 0 8px;">字段映射关系</h3>
+      ${fieldMappingHtml || '<p style="color:#a0aec0;">无映射信息</p>'}
+      <h3 style="font-size:14px; color:#2c3e50; margin:16px 0 8px;">查询结果（${row.result_count} 条）</h3>
+      ${resultDataHtml}
+    `;
+  } catch (err) {
+    content.innerHTML = `<p style="color:#c53030;">加载失败：${err.message}</p>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.remove('active');
+}
+
+document.getElementById('detail-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+function toggleMapping() {
+  const panel = document.getElementById('mapping-panel');
+  const btn = document.getElementById('btn-show-mapping');
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? 'block' : 'none';
+  btn.classList.toggle('active', isHidden);
+  btn.textContent = isHidden ? '显示字段映射' : '隐藏字段映射';
+}
+
+function formatTime(dt) {
+  if (!dt) return '';
+  const d = new Date(dt);
+  if (isNaN(d)) return dt;
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
