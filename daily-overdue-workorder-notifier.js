@@ -9,6 +9,9 @@
 
 const axios = require('axios');
 const { micPool } = require('./db-mic-config');
+const { pool } = require('./db-config');
+const { createLogPush } = require('./services/log.service');
+const logPush = createLogPush(pool);
 
 const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd';
 
@@ -105,10 +108,6 @@ async function pushToWechat(data, total) {
  * 执行一次检测并推送
  */
 async function checkAndPush() {
-  // 懒加载 logPush，避免与 server.js 的循环依赖
-  let logPush;
-  try { logPush = require('./server').logPush; } catch (_) { /* server 尚未就绪 */ }
-
   try {
     console.log('[daily-overdue-workorder-notifier] 开始检测当天未完成工单...');
     const data = await queryDailyWorkorders();

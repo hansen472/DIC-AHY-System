@@ -9,6 +9,9 @@
 
 const axios = require('axios');
 const { micPool } = require('./db-mic-config');
+const { pool } = require('./db-config');
+const { createLogPush } = require('./services/log.service');
+const logPush = createLogPush(pool);
 
 const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 分钟
@@ -71,9 +74,6 @@ async function pushToWechat(data) {
  * 执行一次检测并推送
  */
 async function checkAndPush() {
-  let logPush;
-  try { logPush = require('./server').logPush; } catch (_) { /* server 尚未就绪 */ }
-
   try {
     const data = await queryNewIssues();
 

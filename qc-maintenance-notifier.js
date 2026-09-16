@@ -9,6 +9,9 @@
 
 const axios = require('axios');
 const { micPool } = require('./db-mic-config');
+const { pool } = require('./db-config');
+const { createLogPush } = require('./services/log.service');
+const logPush = createLogPush(pool);
 
 const WEBHOOK_URL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=53a94f71-37c6-4505-95fe-754ff0b2209c';
 
@@ -111,10 +114,6 @@ async function pushToWechat(data, total) {
  * 执行一次检测并推送
  */
 async function checkAndPush() {
-  // 懒加载 logPush，避免与 server.js 的循环依赖
-  let logPush;
-  try { logPush = require('./server').logPush; } catch (_) { /* server 尚未就绪 */ }
-
   try {
     console.log('[qc-maintenance-notifier] 开始检测 QC 维护计划待执行工单...');
     const data = await queryQcMaintenance();

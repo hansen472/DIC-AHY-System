@@ -11,6 +11,8 @@
 const nodemailer = require('nodemailer');
 const { micPool } = require('./db-mic-config');
 const { pool } = require('./db-config');
+const { createLogPush } = require('./services/log.service');
+const logPush = createLogPush(pool);
 
 // SMTP 配置（与 email-notifier 保持一致）
 const SMTP_HOST = process.env.SMTP_HOST || '172.22.44.75';
@@ -307,8 +309,7 @@ async function checkAndNotify() {
     console.log(`[instrument-meter-notifier] 邮件已发送给 ${toAddress}，共 ${expiring.length} 条到期记录 ` +
       `[30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length} / 180天:${buckets['6 个月内'].length}]`);
 
-    // 写入推送日志（懒加载避免循环依赖）
-    const { logPush } = require('./server');
+    // 写入推送日志
     const summary = `仪器/仪表到期提醒，共 ${expiring.length} 条（30天:${buckets['30 天内'].length} / 60天:${buckets['2 个月内'].length} / 90天:${buckets['3 个月内'].length} / 180天:${buckets['6 个月内'].length}）`;
     await logPush('instrument_meter', 'email', 'success', summary, expiring.length, toAddress, 'system');
   } catch (err) {
@@ -316,7 +317,6 @@ async function checkAndNotify() {
     const failedTo = (currentSettings.recipients || []).join(', ');
     // 写入失败日志
     try {
-      const { logPush } = require('./server');
       await logPush('instrument_meter', 'email', 'failed', '仪器/仪表到期提醒发送失败', 0, failedTo, 'system', err.message);
     } catch (_) { /* 日志写入失败不影响主流程 */ }
   } finally {
