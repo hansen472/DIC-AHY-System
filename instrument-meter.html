@@ -478,7 +478,7 @@ footer-actions {
       </div>
       <button class="btn-query" onclick="loadData()">查询</button>
       <button class="btn-baseline" onclick="saveBaseline()">新建基准日</button>
-      <button class="btn-export" onclick="exportData()">导出</button>
+      <button class="btn-export" id="btn-export" onclick="exportData()">导出</button>
       <button class="btn-back" onclick="window.location.href='/nav-sidebar.html'">返回导航</button>
     </div>
   </header>
@@ -618,6 +618,8 @@ async function loadData() {
     currentRows = result.data || [];
     document.getElementById('record-count').textContent = result.count || 0;
     sortState = { key: '下次检验日期', asc: true };
+    currentBaselineDate = '';
+    updateExportButton();
     renderTable();
   } catch (err) {
     container.innerHTML = `<div class="empty">查询失败：${escapeHtml(err.message)}</div>`;
@@ -696,12 +698,14 @@ function sortBy(key) {
   renderTable();
 }
 
+// 根据当前视图（到期查询 / 基准日）切换导出按钮文案，明确导出的数据口径
+function updateExportButton() {
+  const btn = document.getElementById('btn-export');
+  if (!btn) return;
+  btn.textContent = currentBaselineDate ? `导出基准日 ${currentBaselineDate} 数据` : '导出';
+}
+
 function exportData() {
-  const expireDate = document.getElementById('expire-date').value;
-  if (!expireDate) {
-    showToast('请选择到期日期', 'error');
-    return;
-  }
   if (currentRows.length === 0) {
     showToast('当前没有可导出的数据', 'error');
     return;
@@ -709,6 +713,19 @@ function exportData() {
   // 将当前排序方式传递给导出接口，确保导出顺序与页面显示一致
   const sortKey = encodeURIComponent(sortState.key);
   const sortAsc = sortState.asc ? '1' : '0';
+
+  // 基准日视图：按基准日保存的编码导出（与页面所见一致）
+  if (currentBaselineDate) {
+    window.location.href = `/api/instrument-meter/export?baselineDate=${encodeURIComponent(currentBaselineDate)}&sortKey=${sortKey}&sortAsc=${sortAsc}`;
+    return;
+  }
+
+  // 到期查询视图：按到期日期导出
+  const expireDate = document.getElementById('expire-date').value;
+  if (!expireDate) {
+    showToast('请选择到期日期', 'error');
+    return;
+  }
   window.location.href = `/api/instrument-meter/export?expireDate=${encodeURIComponent(expireDate)}&sortKey=${sortKey}&sortAsc=${sortAsc}`;
 }
 
@@ -779,7 +796,11 @@ async function loadBaselineData() {
   document.getElementById('btn-delete-baseline').disabled = !date;
 
   if (!date) {
+    // 退出基准日视图，回到到期查询视图
     infoSpan.textContent = '';
+    currentBaselineDate = '';
+    updateExportButton();
+    loadData();
     return;
   }
 
@@ -794,6 +815,8 @@ async function loadBaselineData() {
     currentRows = result.data || [];
     document.getElementById('record-count').textContent = result.count || 0;
     sortState = { key: '下次检验日期', asc: true };
+    currentBaselineDate = date;
+    updateExportButton();
     renderTable();
     infoSpan.textContent = `基准日 ${date}，已保存 ${result.savedCodes || 0} 条编码，查询到 ${result.count || 0} 条当前数据`;
   } catch (err) {
@@ -817,7 +840,10 @@ async function deleteBaseline() {
     select.value = '';
     document.getElementById('btn-delete-baseline').disabled = true;
     document.getElementById('baseline-info').textContent = '';
+    currentBaselineDate = '';
+    updateExportButton();
     await loadBaselines();
+    loadData();
   } catch (err) {
     showToast('删除失败：' + err.message, 'error');
   }

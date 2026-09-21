@@ -568,7 +568,17 @@ const doc = new Document({
 });
 
 const outPath = path.join(__dirname, '..', 'Vue3-SPA改造方案.docx');
-Packer.toBuffer(doc).then(buffer => {
-  fs.writeFileSync(outPath, buffer);
-  console.log('文档已生成：' + outPath + '（' + buffer.length + ' 字节）');
-});
+Packer.toBuffer(doc)
+  .then(buffer => {
+    try {
+      fs.writeFileSync(outPath, buffer);
+      console.log('文档已生成：' + outPath + '（' + buffer.length + ' 字节）');
+    } catch (err) {
+      console.error('写入文档文件失败:', err.message);
+      process.exit(1);
+    }
+  })
+  .catch(err => {
+    console.error('文档生成失败:', err);
+    process.exit(1);
+  });

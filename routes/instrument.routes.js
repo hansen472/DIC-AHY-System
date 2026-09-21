@@ -17,6 +17,47 @@ module.exports = function setupInstrumentRoutes(deps) {
   const router = express.Router();
   const { requirePermission } = auth;
 
+  // ========== 仪器/仪表导出公共逻辑 ==========
+
+  const INSTRUMENT_EXPORT_COLUMNS = [
+    '序号', '仪器/仪表名称', '资产状态', '仪器/仪表编码', '本次检验日期', '下次检验日期',
+    '安装位置', '型号/规格', '制造商', '出厂编号', '测量范围',
+    '精度等级', '所在位置', '送检周期（月）'
+  ];
+
+  // 按页面当前排序方式排序，确保导出顺序与页面显示一致
+  function sortInstrumentRows(rows, sortKey, sortAsc) {
+    if (!sortKey) return rows;
+    const decodedKey = decodeURIComponent(sortKey);
+    const isAsc = sortAsc !== '0';
+    rows.sort((a, b) => {
+      let va = a[decodedKey];
+      let vb = b[decodedKey];
+      if (va === null || va === undefined) va = '';
+      if (vb === null || vb === undefined) vb = '';
+      let cmp = 0;
+      if (decodedKey === '序号' || decodedKey === '送检周期（月）') {
+        cmp = Number(va) - Number(vb);
+      } else {
+        cmp = String(va).localeCompare(String(vb), 'zh-CN');
+      }
+      return isAsc ? cmp : -cmp;
+    });
+    return rows;
+  }
+
+  function buildInstrumentCsv(rows) {
+    const csvRows = rows.map(row =>
+      INSTRUMENT_EXPORT_COLUMNS.map(h => {
+        const val = row[h];
+        if (val === null || val === undefined) return '';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      }).join(',')
+    );
+    return '\uFEFF' + [INSTRUMENT_EXPORT_COLUMNS.join(','), ...csvRows].join('\n');
+  }
+
   // ========== 仪器/仪表查询与导出 ==========
 
   // GET /api/instrument-meter
@@ -35,51 +76,44 @@ module.exports = function setupInstrumentRoutes(deps) {
   });
 
   // GET /api/instrument-meter/export
+  // 两种导出口径：
+  //   1) baselineDate=YYYY-MM-DD：导出指定基准日保存编码对应的当前数据（与基准日视图一致）
+  //   2) expireDate=YYYY-MM-DD：导出在该到期日期前需要送检的数据（默认，与查询视图一致）
   router.get('/api/instrument-meter/export', requirePermission('instrument_meter'), async (req, res) => {
-    const { expireDate, sortKey, sortAsc } = req.query;
-    if (!expireDate || !/^\d{4}-\d{2}-\d{2}$/.test(expireDate)) {
-      return res.status(400).json({ error: '缺少或无效的到期日期，格式应为 YYYY-MM-DD' });
-    }
+    const { expireDate, baselineDate, sortKey, sortAsc } = req.query;
     try {
-      const rows = await queryInstruments(expireDate);
+      let rows;
+      let filename;
+
+      if (baselineDate) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(baselineDate)) {
+          return res.status(400).json({ error: '无效的基准日日期，格式应为 YYYY-MM-DD' });
+        }
+        const [codeRows] = await pool.execute(
+          'SELECT asset_code FROM instrument_meter_baselines WHERE baseline_date = ?',
+          [baselineDate]
+        );
+        if (codeRows.length === 0) {
+          return res.status(404).json({ error: '该基准日不存在或没有保存任何仪器/仪表编码' });
+        }
+        const codes = codeRows.map(r => r.asset_code);
+        rows = await queryByAssetCodes(codes);
+        filename = `instrument-meter-baseline-${baselineDate}.csv`;
+      } else {
+        if (!expireDate || !/^\d{4}-\d{2}-\d{2}$/.test(expireDate)) {
+          return res.status(400).json({ error: '缺少或无效的到期日期，格式应为 YYYY-MM-DD' });
+        }
+        rows = await queryInstruments(expireDate);
+        filename = `instrument-meter-${expireDate}.csv`;
+      }
+
       if (rows.length === 0) {
         return res.status(404).json({ error: '没有可导出的数据' });
       }
 
-      if (sortKey) {
-        const decodedKey = decodeURIComponent(sortKey);
-        const isAsc = sortAsc !== '0';
-        rows.sort((a, b) => {
-          let va = a[decodedKey];
-          let vb = b[decodedKey];
-          if (va === null || va === undefined) va = '';
-          if (vb === null || vb === undefined) vb = '';
-          let cmp = 0;
-          if (decodedKey === '序号' || decodedKey === '送检周期（月）') {
-            cmp = Number(va) - Number(vb);
-          } else {
-            cmp = String(va).localeCompare(String(vb), 'zh-CN');
-          }
-          return isAsc ? cmp : -cmp;
-        });
-      }
+      sortInstrumentRows(rows, sortKey, sortAsc);
+      const csv = buildInstrumentCsv(rows);
 
-      const exportColumns = [
-        '序号', '仪器/仪表名称', '资产状态', '仪器/仪表编码', '本次检验日期', '下次检验日期',
-        '安装位置', '型号/规格', '制造商', '出厂编号', '测量范围',
-        '精度等级', '所在位置', '送检周期（月）'
-      ];
-      const csvRows = rows.map(row =>
-        exportColumns.map(h => {
-          const val = row[h];
-          if (val === null || val === undefined) return '';
-          const str = String(val).replace(/"/g, '""');
-          return `"${str}"`;
-        }).join(',')
-      );
-      const csv = '\uFEFF' + [exportColumns.join(','), ...csvRows].join('\n');
-
-      const filename = `instrument-meter-${expireDate}.csv`;
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(csv);
