@@ -13,7 +13,7 @@ module.exports = function setupPagesRoutes(auth) {
   // 数据驱动：[路径, 中间件, 文件名]
   const pageRoutes = [
     // 生产记录
-    ['/index.html',                    requirePermissionPage('print'),                    'index.html'],
+    ['/model-print.html',              requirePermissionPage('print'),                    'model-print.html'],
     ['/select-print-record.html',      requirePermissionPage('print'),                    'select-print-record.html'],
     ['/entry-print-record.html',       requirePermissionPage('print'),                    'entry-print-record.html'],
     // 备份管理

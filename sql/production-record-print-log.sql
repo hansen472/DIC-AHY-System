@@ -1,6 +1,6 @@
 -- ============================================
 -- 生产记录打印数据库日志表
--- 记录 index.html 页面中每次查询 Make_Task 表的完整日志
+-- 记录 model-print.html 页面中每次查询 Make_Task 表的完整日志
 -- 执行方式: sudo mysql -u root -p pdf_print_db < sql/production-record-print-log.sql
 -- ============================================
 
