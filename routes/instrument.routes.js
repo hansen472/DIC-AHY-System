@@ -704,8 +704,10 @@ WHERE
     i.issue_creation_time,
     i.wo_id,
     w.wo_name,
-    ae.employee_name AS submitted_to_name,
-    GROUP_CONCAT(CONCAT(s.sp_code, ' ', s.sp_name, ' x', d.issue_qty) SEPARATOR ', ') AS sp_details
+    s.sp_code,
+    s.sp_name,
+    d.issue_qty,
+    ae.employee_name AS submitted_to_name
 FROM sp_issue i
 LEFT JOIN wo_list w
     ON i.wo_id = w.wo_id
@@ -715,9 +717,8 @@ LEFT JOIN sp_issue_details d
     ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s
     ON d.sp_id = s.sp_id
-WHERE i.issue_status = 0
-GROUP BY i.issue_id, i.issue_creator, i.issue_creation_time, i.wo_id, w.wo_name, ae.employee_name
-ORDER BY i.issue_id ASC`;
+WHERE i.issue_status = 5
+ORDER BY i.issue_id ASC, d.issue_id ASC`;
 
   router.get('/api/new-issue/sql', requirePermission('instrument_meter'), async (req, res) => {
     res.json({ success: true, sql: NEW_ISSUE_DEFAULT_SQL });
@@ -746,21 +747,29 @@ ORDER BY i.issue_id ASC`;
     const clean = (v) => v ? String(v).replace(/\n/g, ' ').trim() : '';
     const results = [];
 
-    try {
-      for (const item of data) {
-        const markdown = `### 📦 新增出库单通知
+    const buildRow = (item) => {
+      const parts = [
+        clean(item.issue_id),
+        clean(item.issue_creator),
+        clean(item.issue_creation_time),
+        clean(item.wo_id),
+        clean(item.wo_name),
+        [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' '),
+        clean(item.issue_qty),
+        clean(item.submitted_to_name)
+      ];
+      return '| ' + parts.join(' | ') + ' |';
+    };
 
-- **申请ID**: ${clean(item.issue_id)}
-- **申请人**: ${clean(item.issue_creator)}
-- **提交时间**: ${clean(item.issue_creation_time)}
-- **工单ID**: ${clean(item.wo_id)}
-- **工单名**: ${clean(item.wo_name)}
-- **申请部品**: ${clean(item.sp_details)}
-- **核实人**: ${clean(item.submitted_to_name)}`;
-        const payload = { msgtype: 'markdown', markdown: { content: markdown } };
-        const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
-        results.push({ issue_id: item.issue_id, status: resp.status });
-      }
+    const TABLE_HEADER = `| 申请ID | 申请人 | 提交时间 | 工单ID | 工单名 | 申请部品名 | 申请数量 | 核实人 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |`;
+
+    try {
+      const rows = data.map(buildRow).join('\n');
+      const markdown = `### 📦 新增出库单通知\n\n共 ${data.length} 条记录\n` + TABLE_HEADER + '\n' + rows;
+      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
+      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+      results.push({ count: data.length, status: resp.status });
 
       const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
       const contentSummary = `新增出库单推送，共 ${total || data.length} 条`;

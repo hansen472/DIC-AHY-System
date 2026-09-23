@@ -215,10 +215,11 @@ function renderTable() {
 
   let html = `<table>
     <thead><tr>
-      <th>#</th><th>申请ID</th><th>申请人</th><th>提交时间</th><th>工单ID</th><th>工单名</th><th>申请部品</th><th>核实人</th>
+      <th>#</th><th>申请ID</th><th>申请人</th><th>提交时间</th><th>工单ID</th><th>工单名</th><th>申请部品名</th><th>申请数量</th><th>核实人</th>
     </tr></thead><tbody>`;
 
   tableData.forEach((row, i) => {
+    const spName = [row.sp_code, row.sp_name].filter(Boolean).join(' ');
     html += `<tr>
       <td>${i + 1}</td>
       <td>${escapeHtml(row.issue_id || '')}</td>
@@ -226,7 +227,8 @@ function renderTable() {
       <td>${formatDate(row.issue_creation_time)}</td>
       <td>${escapeHtml(row.wo_id || '-')}</td>
       <td class="content-cell" title="${escapeHtml(row.wo_name || '')}">${escapeHtml(row.wo_name || '-')}</td>
-      <td class="content-cell" title="${escapeHtml(row.sp_details || '')}">${escapeHtml(row.sp_details || '-')}</td>
+      <td class="content-cell" title="${escapeHtml(spName || '')}">${escapeHtml(spName || '-')}</td>
+      <td>${escapeHtml(row.issue_qty != null ? row.issue_qty : '-')}</td>
       <td>${escapeHtml(row.submitted_to_name || '-')}</td>
     </tr>`;
   });

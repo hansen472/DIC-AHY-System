@@ -347,3 +347,10 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889
 将new-repair-push.html页面中的推送链接修改为(后台自动推送，以及前台的手动推送都更改)
 正式环境
 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e66d4f79-906d-4ab9-89e1-889c282002bd
+
+新增出库单通知（new-issue-push.html）将前后台的sql 查询语句WHERE i.issue_status = 0 更改为WHERE i.issue_status = 5
+并且sp_issue_detail中会查询出多条记录（一个工单有多个部品），现在是将名称和数量 合并成一条记录，显示在推送内容中。现在希望将
+
+最后推送到企业微信显示时是以列表的形式显示，每条记录占一行。
+每个记录中，显示申请ID，申请人，提交时间，工单ID，工单名，申请部品名，申请数量，核实人。
+如果工单中包含多个部品，每个部品的申请数量会显示在不同的行中。

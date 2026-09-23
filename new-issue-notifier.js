@@ -1,8 +1,8 @@
 /**
  * 新增出库单实时推送（企业微信）
  *
- * 每 10 分钟轮询 MIC 数据库，查询 issue_status = 0 的未处理出库单，
- * 按 issue_id 分组合并部品信息后，逐条推送到企业微信 Webhook。
+ * 每 10 分钟轮询 MIC 数据库，查询 issue_status = 5 的未处理出库单，
+ * 每个部品单独成行，合并为一条 markdown 表格消息推送到企业微信 Webhook。
  *
  * 轮询间隔：10 分钟
  */
@@ -19,8 +19,8 @@ const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 分钟
 let pollTimer = null;
 
 /**
- * 查询未处理出库单（issue_status = 0）
- * 按 issue_id 分组，聚合部品信息
+ * 查询未处理出库单（issue_status = 5）
+ * 每个 issue 与部品组合一行
  */
 async function queryNewIssues() {
   const sql = `SELECT
@@ -29,16 +29,17 @@ async function queryNewIssues() {
     i.issue_creation_time,
     i.wo_id,
     w.wo_name,
-    ae.employee_name AS submitted_to_name,
-    GROUP_CONCAT(CONCAT(s.sp_code, ' ', s.sp_name, ' x', d.issue_qty) SEPARATOR ', ') AS sp_details
+    s.sp_code,
+    s.sp_name,
+    d.issue_qty,
+    ae.employee_name AS submitted_to_name
 FROM sp_issue i
 LEFT JOIN wo_list w ON i.wo_id = w.wo_id
 LEFT JOIN admin_employee ae ON i.issue_submitted_to = ae.user_id
 LEFT JOIN sp_issue_details d ON i.issue_id = d.issue_id
 LEFT JOIN sp_list s ON d.sp_id = s.sp_id
-WHERE i.issue_status = 0
-GROUP BY i.issue_id, i.issue_creator, i.issue_creation_time, i.wo_id, w.wo_name, ae.employee_name
-ORDER BY i.issue_id ASC`;
+WHERE i.issue_status = 5
+ORDER BY i.issue_id ASC, d.issue_id ASC`;
   const [rows] = await micPool.execute(sql);
   return rows;
 }
@@ -51,23 +52,34 @@ function clean(v) {
 }
 
 /**
- * 逐条推送新增出库单到企业微信
+ * 构造单行 markdown 表格记录
+ */
+function buildRow(item) {
+  const parts = [
+    clean(item.issue_id),
+    clean(item.issue_creator),
+    clean(item.issue_creation_time),
+    clean(item.wo_id),
+    clean(item.wo_name),
+    [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' '),
+    clean(item.issue_qty),
+    clean(item.submitted_to_name)
+  ];
+  return '| ' + parts.join(' | ') + ' |';
+}
+
+const TABLE_HEADER = `| 申请ID | 申请人 | 提交时间 | 工单ID | 工单名 | 申请部品名 | 申请数量 | 核实人 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |`;
+
+/**
+ * 合并所有记录为一条 markdown 表格消息推送到企业微信
  */
 async function pushToWechat(data) {
-  for (const item of data) {
-    const markdown = `### 📦 新增出库单通知
-
-- **申请ID**: ${clean(item.issue_id)}
-- **申请人**: ${clean(item.issue_creator)}
-- **提交时间**: ${clean(item.issue_creation_time)}
-- **工单ID**: ${clean(item.wo_id)}
-- **工单名**: ${clean(item.wo_name)}
-- **申请部品**: ${clean(item.sp_details)}
-- **核实人**: ${clean(item.submitted_to_name)}`;
-
-    const payload = { msgtype: 'markdown', markdown: { content: markdown } };
-    await axios.post(WEBHOOK_URL, payload, { timeout: 10000 });
-  }
+  const header = `### 📦 新增出库单通知\n\n共 ${data.length} 条记录\n`;
+  const rows = data.map(buildRow).join('\n');
+  const markdown = header + TABLE_HEADER + '\n' + rows;
+  const payload = { msgtype: 'markdown', markdown: { content: markdown } };
+  await axios.post(WEBHOOK_URL, payload, { timeout: 10000 });
 }
 
 /**
