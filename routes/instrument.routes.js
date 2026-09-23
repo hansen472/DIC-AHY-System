@@ -744,30 +744,36 @@ ORDER BY i.issue_id ASC, d.issue_id ASC`;
     }
 
     const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=7f6b079d-6edd-42bf-a91f-99f774af6def';
-    const clean = (v) => v ? String(v).replace(/\n/g, ' ').trim() : '';
+    const clean = (v) => v ? String(v).replace(/\|/g, ' ').replace(/\n/g, ' ').trim() : '';
     const results = [];
-
-    const buildRow = (item) => {
-      const parts = [
-        clean(item.issue_id),
-        clean(item.issue_creator),
-        clean(item.issue_creation_time),
-        clean(item.wo_id),
-        clean(item.wo_name),
-        [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' '),
-        clean(item.issue_qty),
-        clean(item.submitted_to_name)
-      ];
-      return '| ' + parts.join(' | ') + ' |';
-    };
 
     const TABLE_HEADER = `| 申请ID | 申请人 | 提交时间 | 工单ID | 工单名 | 申请部品名 | 申请数量 | 核实人 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |`;
 
     try {
-      const rows = data.map(buildRow).join('\n');
-      const markdown = `### 📦 新增出库单通知\n\n共 ${data.length} 条记录\n` + TABLE_HEADER + '\n' + rows;
-      const payload = { msgtype: 'markdown', markdown: { content: markdown } };
+      const lines = [
+        '### 📦 新增出库单通知',
+        `#### 共 ${data.length} 条记录`,
+        TABLE_HEADER
+      ];
+
+      data.forEach(item => {
+        const spName = [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' ');
+        const parts = [
+          clean(item.issue_id),
+          clean(item.issue_creator),
+          clean(item.issue_creation_time),
+          clean(item.wo_id),
+          clean(item.wo_name),
+          spName,
+          clean(item.issue_qty),
+          clean(item.submitted_to_name)
+        ];
+        lines.push('| ' + parts.join(' | ') + ' |');
+      });
+
+      const markdown = lines.join('\n');
+      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
       const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
       results.push({ count: data.length, status: resp.status });
 

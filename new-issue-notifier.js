@@ -45,40 +45,42 @@ ORDER BY i.issue_id ASC, d.issue_id ASC`;
 }
 
 /**
- * 清理字符串
+ * 清理字符串，防止破坏 Markdown 表格格式
  */
 function clean(v) {
-  return v ? String(v).replace(/\n/g, ' ').trim() : '';
-}
-
-/**
- * 构造单行 markdown 表格记录
- */
-function buildRow(item) {
-  const parts = [
-    clean(item.issue_id),
-    clean(item.issue_creator),
-    clean(item.issue_creation_time),
-    clean(item.wo_id),
-    clean(item.wo_name),
-    [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' '),
-    clean(item.issue_qty),
-    clean(item.submitted_to_name)
-  ];
-  return '| ' + parts.join(' | ') + ' |';
+  return v ? String(v).replace(/\|/g, ' ').replace(/\n/g, ' ').trim() : '';
 }
 
 const TABLE_HEADER = `| 申请ID | 申请人 | 提交时间 | 工单ID | 工单名 | 申请部品名 | 申请数量 | 核实人 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |`;
 
 /**
- * 合并所有记录为一条 markdown 表格消息推送到企业微信
+ * 合并所有记录为一条 markdown_v2 表格消息推送到企业微信
  */
 async function pushToWechat(data) {
-  const header = `### 📦 新增出库单通知\n\n共 ${data.length} 条记录\n`;
-  const rows = data.map(buildRow).join('\n');
-  const markdown = header + TABLE_HEADER + '\n' + rows;
-  const payload = { msgtype: 'markdown', markdown: { content: markdown } };
+  const lines = [
+    '### 📦 新增出库单通知',
+    `#### 共 ${data.length} 条记录`,
+    TABLE_HEADER
+  ];
+
+  data.forEach(item => {
+    const spName = [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' ');
+    const parts = [
+      clean(item.issue_id),
+      clean(item.issue_creator),
+      clean(item.issue_creation_time),
+      clean(item.wo_id),
+      clean(item.wo_name),
+      spName,
+      clean(item.issue_qty),
+      clean(item.submitted_to_name)
+    ];
+    lines.push('| ' + parts.join(' | ') + ' |');
+  });
+
+  const markdown = lines.join('\n');
+  const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
   await axios.post(WEBHOOK_URL, payload, { timeout: 10000 });
 }
 
