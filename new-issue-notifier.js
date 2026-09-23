@@ -56,32 +56,43 @@ const TABLE_HEADER = `| 申请ID | 申请人 | 提交时间 | 工单ID | 工单�
 
 /**
  * 合并所有记录为一条 markdown_v2 表格消息推送到企业微信
+ * 每个 issue 一条消息：上方文字列表 + 下方部品表格
  */
 async function pushToWechat(data) {
-  const lines = [
-    '### 📦 新增出库单通知',
-    `#### 共 ${data.length} 条记录`,
-    TABLE_HEADER
-  ];
-
+  // 按 issue_id 分组（同一 issue 多部品合并到一条消息）
+  const groups = {};
   data.forEach(item => {
-    const spName = [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' ');
-    const parts = [
-      clean(item.issue_id),
-      clean(item.issue_creator),
-      clean(item.issue_creation_time),
-      clean(item.wo_id),
-      clean(item.wo_name),
-      spName,
-      clean(item.issue_qty),
-      clean(item.submitted_to_name)
-    ];
-    lines.push('| ' + parts.join(' | ') + ' |');
+    const key = String(item.issue_id);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
   });
 
-  const markdown = lines.join('\n');
-  const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
-  await axios.post(WEBHOOK_URL, payload, { timeout: 10000 });
+  for (const issueId of Object.keys(groups)) {
+    const items = groups[issueId];
+    const first = items[0];
+
+    const lines = [
+      '### 📦 新增出库单通知',
+      `- **申请ID**: ${clean(first.issue_id)}`,
+      `- **申请人**: ${clean(first.issue_creator)}`,
+      `- **提交时间**: ${clean(first.issue_creation_time)}`,
+      `- **工单ID**: ${clean(first.wo_id)}`,
+      `- **工单名**: ${clean(first.wo_name)}`,
+      `- **核实人**: ${clean(first.submitted_to_name)}`,
+      '',
+      '| 申请部品名 | 申请数量 |',
+      '| :--- | :--- |'
+    ];
+
+    items.forEach(item => {
+      const spName = [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' ');
+      lines.push(`| ${spName} | ${clean(item.issue_qty)} |`);
+    });
+
+    const markdown = lines.join('\n');
+    const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+    await axios.post(WEBHOOK_URL, payload, { timeout: 10000 });
+  }
 }
 
 /**

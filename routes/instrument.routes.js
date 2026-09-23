@@ -747,35 +747,42 @@ ORDER BY i.issue_id ASC, d.issue_id ASC`;
     const clean = (v) => v ? String(v).replace(/\|/g, ' ').replace(/\n/g, ' ').trim() : '';
     const results = [];
 
-    const TABLE_HEADER = `| 申请ID | 申请人 | 提交时间 | 工单ID | 工单名 | 申请部品名 | 申请数量 | 核实人 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |`;
+    // 按 issue_id 分组（同一 issue 多部品合并到一条消息）
+    const groups = {};
+    data.forEach(item => {
+      const key = String(item.issue_id);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    });
 
     try {
-      const lines = [
-        '### 📦 新增出库单通知',
-        `#### 共 ${data.length} 条记录`,
-        TABLE_HEADER
-      ];
+      for (const issueId of Object.keys(groups)) {
+        const items = groups[issueId];
+        const first = items[0];
 
-      data.forEach(item => {
-        const spName = [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' ');
-        const parts = [
-          clean(item.issue_id),
-          clean(item.issue_creator),
-          clean(item.issue_creation_time),
-          clean(item.wo_id),
-          clean(item.wo_name),
-          spName,
-          clean(item.issue_qty),
-          clean(item.submitted_to_name)
+        const lines = [
+          '### 📦 新增出库单通知',
+          `- **申请ID**: ${clean(first.issue_id)}`,
+          `- **申请人**: ${clean(first.issue_creator)}`,
+          `- **提交时间**: ${clean(first.issue_creation_time)}`,
+          `- **工单ID**: ${clean(first.wo_id)}`,
+          `- **工单名**: ${clean(first.wo_name)}`,
+          `- **核实人**: ${clean(first.submitted_to_name)}`,
+          '',
+          '| 申请部品名 | 申请数量 |',
+          '| :--- | :--- |'
         ];
-        lines.push('| ' + parts.join(' | ') + ' |');
-      });
 
-      const markdown = lines.join('\n');
-      const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
-      const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
-      results.push({ count: data.length, status: resp.status });
+        items.forEach(item => {
+          const spName = [clean(item.sp_code), clean(item.sp_name)].filter(Boolean).join(' ');
+          lines.push(`| ${spName} | ${clean(item.issue_qty)} |`);
+        });
+
+        const markdown = lines.join('\n');
+        const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
+        const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
+        results.push({ issue_id: issueId, status: resp.status });
+      }
 
       const pusher = (req.session && req.session.username) ? req.session.username : 'unknown';
       const contentSummary = `新增出库单推送，共 ${total || data.length} 条`;
