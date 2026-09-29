@@ -500,7 +500,7 @@ ORDER BY w.wo_schedule_time`;
           lines.push(`| ${mpName} | ${responsible} | ${scheduleTime} | ${mpCode} | ${asset} | ${emoji} ${status} |`);
         });
         const markdown = lines.join('\n');
-        const payload = { msgtype: 'markdown', markdown: { content: markdown } };
+        const payload = { msgtype: 'markdown_v2', markdown_v2: { content: markdown } };
         const resp = await axios.post(webhookUrl, payload, { timeout: 10000 });
         results.push({ batch: batchNo, status: resp.status, data: resp.data });
       }
