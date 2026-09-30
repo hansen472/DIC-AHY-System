@@ -1142,24 +1142,41 @@ class WorkflowEngine {
   }
 
   async scanOverdueTasks() {
-    const [rows] = await pool.execute(
-      `SELECT t.*, i.business_key, d.module_key
-       FROM workflow_tasks t
-       JOIN workflow_instances i ON t.instance_id = i.id
-       JOIN workflow_definitions d ON i.definition_id = d.id
-       WHERE t.status = 'pending' AND t.due_time IS NOT NULL
-         AND t.due_time < NOW() AND t.is_reminded = 0`
-    );
-    for (const task of rows) {
-      try {
-        await this.sendReminder(task);
-        await pool.execute(
-          'UPDATE workflow_tasks SET is_reminded = 1 WHERE id = ?',
-          [task.id]
-        );
-      } catch (e) {
-        console.error(`发送审批提醒失败 task=${task.id}:`, e.message);
+    // 集群去重：通过 MySQL 命名锁防止多实例同时扫描
+    // 单实例部署下锁总是能拿到，行为不变；多实例下只有拿到锁的实例执行
+    const conn = await pool.getConnection();
+    let gotLock = false;
+    try {
+      const [lockRows] = await conn.query(
+        "SELECT GET_LOCK('workflow_scan_overdue', 0) AS got"
+      );
+      gotLock = lockRows[0].got === 1;
+      if (!gotLock) return; // 其他实例正在扫描，本实例跳过
+
+      const [rows] = await pool.execute(
+        `SELECT t.*, i.business_key, d.module_key
+         FROM workflow_tasks t
+         JOIN workflow_instances i ON t.instance_id = i.id
+         JOIN workflow_definitions d ON i.definition_id = d.id
+         WHERE t.status = 'pending' AND t.due_time IS NOT NULL
+           AND t.due_time < NOW() AND t.is_reminded = 0`
+      );
+      for (const task of rows) {
+        try {
+          await this.sendReminder(task);
+          await pool.execute(
+            'UPDATE workflow_tasks SET is_reminded = 1 WHERE id = ?',
+            [task.id]
+          );
+        } catch (e) {
+          console.error(`发送审批提醒失败 task=${task.id}:`, e.message);
+        }
       }
+    } finally {
+      if (gotLock) {
+        try { await conn.query("SELECT RELEASE_LOCK('workflow_scan_overdue')"); } catch (_) {}
+      }
+      conn.release();
     }
   }
 }
