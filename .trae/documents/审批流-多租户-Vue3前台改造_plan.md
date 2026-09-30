@@ -5,8 +5,8 @@
 | 阶段 | 状态 | 备注 |
 |---|---|---|
 | **A 审批流稳定性加固** | ✅ 完成 | A1 version 列 + A2 乐观锁 + A3 GET_LOCK 集群锁 + A4 单测，详见下文 |
-| **B 多租户 company_id 全链路贯通** | 🟡 进行中 | B1/B2/B3/B4 已完成，B5 进行中（本文档更新） |
-| **C 引擎节点补课** | ⬜ 待开始 | cc/parallel/timer/form_data_json |
+| **B 多租户 company_id 全链路贯通** | ✅ 完成 | B1 session 二元组（is_super_admin+companyId）+ B2 表结构 + B3 引擎 23 SQL 全过滤 + B4 路由贯通 + B5 单测 20/20 + 文档更新 |
+| **C 引擎节点补课** | ✅ 完成 | C1 form_data_json + C2 cc 节点 + C3 parallel fork/join + C4 timer 节点 + C5 设计器配置入口 + C6 综合场景单测 35/35 |
 | **D GMP 合规地基** | ⬜ 待开始 | 审计阻断 + 电子签名 |
 | **E Vue3 SPA 脚手架** | ⬜ 待开始 | Vite + Element Plus + Pinia |
 | **F Vue3 页面分批迁移** | ⬜ 待开始 | 42 页 6 批次 |
@@ -60,6 +60,46 @@
 **B5 待办**
 - 任务层关键方法（completeTask / recallInstance / transferTask）越权防护单测尚缺（目前 20 个测试主要覆盖 listInstances/getInstance/startInstance/getInstanceHistory，任务层仅靠 SQL 审查保证）
 - 计划文档进度更新（本文档）
+
+### C 阶段产出（C1-C6 全部完成，35/35 单测通过）
+
+**数据库迁移（3 份）**
+- `sql/alter-workflow-add-form-data.sql`（C1）：`workflow_tasks` + `workflow_task_history` 加 `form_data_json LONGTEXT NULL`，存储结构化审批表单数据快照（GMP ALCOA+）
+- `sql/alter-workflow-add-cc-table.sql`（C2）：新增 `workflow_cc` 表（`instance_id`/`node_id`/`receiver_username`/`message`/`read_at`/`company_id`），与 workflow_tasks 同口径多租户隔离
+- `sql/alter-workflow-add-timer-table.sql`（C4）：新增 `workflow_timers` 表（`instance_id`/`node_id`/`fire_at`/`processed_at`/`company_id`），到期由扫描器触发推进
+
+**引擎改造（[workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js)）**
+- `advance` BFS 增 4 类节点处理：
+  - `cc`：调 `createCcRecords` 写 workflow_cc，继续 outgoing
+  - `parallel`（fork）：直接推所有 outgoing 到 BFS 队列，不创建任务
+  - `join`：调 `isBranchFinished` 检查所有 incoming 的 approval 节点 pending 数 = 0 才前进；否则不入 queue 等下次 advance
+  - `timer`：调 `createTimerRecord` 写 workflow_timers 后停止 BFS，等 `scanTimers` 推进
+- 新增 7 方法：`createCcRecords` / `listCcByReceiver` / `markCcRead` / `isBranchFinished` / `createTimerRecord` / `scanTimers` / `processTimer`
+- `current_node_ids` UPDATE 改为合并 `SELECT DISTINCT node_id FROM workflow_tasks WHERE status='pending'`，防 join/timer 等待时覆盖清空其他分支
+- 加 `hasScheduledTimer` 守卫：本次 advance 排定过 timer 时即使 `allActiveApprovalNodes=[]` 也不判定流程结束（修复真实 bug）
+- `completeTask` 接收 `formData` 参数，对象→JSON.stringify、字符串→原样、null→NULL，同步落 tasks + history 满足审计快照
+- `scanTimers` 复用 `GET_LOCK('workflow_timer_scan', 5)` 集群锁，与 `scanOverdueTasks` 一致；`processTimer` 用 `UPDATE processed_at=NOW() WHERE processed_at IS NULL` 防重复
+
+**路由层（[workflow-routes.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-routes.js)）**
+- 新增 `GET /api/workflow-cc/my`：查询当前用户 cc 知会列表（`onlyUnread=1` 过滤未读）
+- 新增 `POST /api/workflow-cc/:id/read`：标记已读（`read_at IS NULL` 才能标记，重复标记 404）
+- `/api/workflow-tasks/:id/complete` 解构 `formData` 透传给引擎
+
+**设计器入口（[workflow-designer.html](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-designer.html)）**
+- palette 工具栏新增 4 项：并行分支/汇合/知会/定时器
+- NODE_COLORS 补 4 色（紫/淡紫/橙/青）
+- `addNode` 默认 config：cc→`{receivers:[], message:''}`、timer→`{duration:86400, fireAtVar:''}`
+- `typeLabel` 补中文名
+- `renderProperties` +4 类型属性面板：cc（receivers/message）、timer（duration/fireAtVar 单选切换）、parallel/join（只读说明卡片）
+- `updateSelectedNode` 写回 cc/timer 配置
+
+**单元测试（[test/workflow-engine.test.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/test/workflow-engine.test.js)）**
+- 新增 4 个 mock 工厂 + 12 个测试：
+  - C1 (3): formData 对象/字符串/null 落库
+  - C2 (4): cc 不入审批链、`${vars.xxx}` 变量插值、listCcByReceiver/markCcRead 子公司限定 c.company_id
+  - C3 (3): parallel fork 创建多分支待办、join 等待未完成分支保留 current_node_ids、join 通过到 end
+  - C4 (4): createTimerRecord 按 duration/fireAtVar、scanTimers 未拿锁跳过、processTimer 已处理防重复
+  - C6 (1): advance 走到 timer 节点暂停不结束流程（同时验证 hasScheduledTimer 修复）
 
 ---
 
@@ -128,9 +168,9 @@
 - [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js) `resolveAssignee`：`[部门经理]` 解析加 company_id 边界。
 - 前端（旧 HTML 临时最小改动）：导航栏显示当前公司名；超管可见公司切换（写 session `viewAsCompanyId`，作为可选项，非首期必需）。
 
-### 阶段 C 引擎节点补课 ⬜ 待开始
+### 阶段 C 引擎节点补课 ✅ 已完成
 - [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js)：新增节点类型
-  - `cc`：生成只读知会记录（不入审批链，可复用 history 表或新增 `workflow_cc` 表，二选一，倾向新增表语义清晰）。
+  - `cc`：生成只读知会记录（不入审批链，新增 `workflow_cc` 表语义清晰）。
   - `parallel`：fork 生成多分支待办、join 等所有分支完成才前进（配合 `current_node_ids` JSON）。
   - `timer`：到期由（已加 GET_LOCK 的）定时扫描生成下一节点任务，支撑 CAPA 有效性核查。
 - 表单数据：`workflow_tasks` 加 `form_data_json LONGTEXT NULL`；引擎 complete 时接收并校验/落库。

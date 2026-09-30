@@ -561,6 +561,7 @@ class WorkflowEngine {
     const activeApprovalNodes = [];
     const reachedEnd = [];
     const visited = new Set();
+    let hasScheduledTimer = false;  // C4：本次 advance 是否产生 timer 记录（用于避免误判流程结束）
 
     while (queue.length) {
       const nid = queue.shift();
@@ -588,24 +589,81 @@ class WorkflowEngine {
         }
       } else if (node.type === 'approval') {
         activeApprovalNodes.push(nid);
+      } else if (node.type === 'cc') {
+        // C2：cc 节点不入审批链，直接生成知会记录后跟随出边继续前进
+        await this.createCcRecords(connection, instanceId, node, vars, tenantCtx);
+        queue.push(...graph.outgoing.get(nid).map(e => e.target));
+      } else if (node.type === 'parallel') {
+        // C3：fork 节点不创建任务，把所有出边目标推入 queue 让 BFS 继续遍历
+        // 配合 join 节点实现并行审批：fork → 多个 approval 分支 → join 汇合
+        queue.push(...graph.outgoing.get(nid).map(e => e.target));
+      } else if (node.type === 'timer') {
+        // C4：timer 节点不入审批链，写入 workflow_timers 记录等待扫描器触发推进
+        // 节点 config:
+        //   - duration: 秒数（如 86400 = 1 天）→ fire_at = NOW() + duration
+        //   - fireAtVar: 变量名（如 'verify_at'）→ fire_at = vars[fireAtVar]
+        //                变量必须是 ISO 时间字符串或 Date 对象
+        // advance 不继续 outgoing，等待 scanTimers 到期后单独推进
+        await this.createTimerRecord(connection, instanceId, node, vars, tenantCtx);
+        hasScheduledTimer = true;
+        // 不入 queue，BFS 自然结束（实例 current_node_ids 不会被覆盖清空，由后续合并 pending 维持）
+      } else if (node.type === 'join') {
+        // C3：join 节点，需所有上游 approval 分支都已 finished（无 pending 任务）才前进
+        // 用于 fork → 多分支并行 → join 汇合的场景
+        // 任何分支未完成时，不入 queue（BFS 自然结束，等待下次 completeTask 触发 advance）
+        const incomingEdges = graph.incoming.get(nid) || [];
+        const upstreamApprovalNodeIds = incomingEdges
+          .map(e => e.source)
+          .map(srcId => graph.nodeMap.get(srcId))
+          .filter(n => n && n.type === 'approval')
+          .map(n => n.id);
+        let allFinished = true;
+        for (const upNodeId of upstreamApprovalNodeIds) {
+          const finished = await this.isBranchFinished(connection, instanceId, upNodeId, tenantCtx);
+          if (!finished) {
+            allFinished = false;
+            break;
+          }
+        }
+        if (allFinished) {
+          // 所有上游分支结束，继续前进
+          queue.push(...graph.outgoing.get(nid).map(e => e.target));
+        } else {
+          // 仍在等待其他分支，不前进；当前 activeApprovalNodes 中的节点会保持运行
+          console.log(`[WorkflowEngine] join 节点 ${nid} 等待上游分支完成`);
+        }
       } else if (node.type === 'end') {
         reachedEnd.push(nid);
       }
     }
 
+    // C3：合并"本次 BFS 新增的活跃 approval 节点"+"实例中其他仍 pending 任务的节点"
+    // 避免 join 等待时覆盖清空其他并行分支的 current_node_ids
+    const tfPending = buildTenantFilter(tenantCtx, 'workflow_tasks');
+    const [pendingRows] = await connection.execute(
+      `SELECT DISTINCT node_id FROM workflow_tasks
+       WHERE instance_id = ? AND status = 'pending'${tfPending.clause}`,
+      [instanceId, ...tfPending.params]
+    );
+    const allActiveApprovalNodes = Array.from(new Set([
+      ...activeApprovalNodes,
+      ...pendingRows.map(r => r.node_id)
+    ]));
+
     await connection.execute(
       'UPDATE workflow_instances SET current_node_ids = ? WHERE id = ?',
-      [safeJson(activeApprovalNodes), instanceId]
+      [safeJson(allActiveApprovalNodes), instanceId]
     );
 
-    // 创建审批任务
+    // 创建审批任务（仅本次 BFS 新增的活跃节点，避免对其他分支重复创建）
     for (const nid of activeApprovalNodes) {
       const node = graph.nodeMap.get(nid);
       await this.createNodeTasks(connection, instanceId, node, vars, tenantCtx);
     }
 
     // 如果没有待审批节点，说明流程到达终点
-    if (activeApprovalNodes.length === 0) {
+    // C4：本次 advance 若排定了 timer，不能判定结束（流程暂停等待 scanTimers 推进）
+    if (allActiveApprovalNodes.length === 0 && !hasScheduledTimer) {
       const finalStatus = reachedEnd.length > 0 ? 'completed' : 'rejected';
       await connection.execute(
         'UPDATE workflow_instances SET status = ? WHERE id = ?',
@@ -643,6 +701,224 @@ class WorkflowEngine {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [instanceId, node.id, node.name || node.id, assignee, 'pending', dueTime, companyId]
       );
+    }
+  }
+
+  // C2：生成 cc 知会记录（不入审批链，不创建任务）
+  // 节点配置：
+  //   - cfg.receivers: Array<string>  接收人列表（支持 [部门经理]/[变量:xxx]/普通用户名，复用 resolveAssignee）
+  //   - cfg.message: string           知会内容模板（支持 ${vars.xxx} ${payload.xxx} 简单变量插值）
+  async createCcRecords(connection, instanceId, node, vars = {}, tenantCtx) {
+    const cfg = node.config || {};
+    const rawReceivers = Array.isArray(cfg.receivers) ? cfg.receivers.filter(Boolean) : [];
+    const receivers = [];
+    for (const raw of rawReceivers) {
+      const resolved = await this.resolveAssignee(connection, instanceId, raw, vars);
+      if (resolved) receivers.push(resolved);
+    }
+    if (receivers.length === 0) {
+      console.warn(`[WorkflowEngine] cc 节点 ${node.id} 无有效接收人，跳过知会`);
+      return;
+    }
+
+    // 简单变量插值：${vars.xxx}（审批人前置节点提交的流程变量）
+    const messageTemplate = cfg.message || '';
+    const message = messageTemplate.replace(/\$\{vars\.([a-zA-Z0-9_]+)\}/g, (_, key) => {
+      return vars[key] != null ? String(vars[key]) : '';
+    });
+
+    const companyId = buildTenantInsertValue(tenantCtx);
+    const nodeName = node.name || node.id;
+    for (const receiver of receivers) {
+      await connection.execute(
+        `INSERT INTO workflow_cc (instance_id, node_id, node_name, receiver_username, message, created_at, company_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [instanceId, node.id, nodeName, receiver, message, now(), companyId]
+      );
+    }
+    console.log(`[WorkflowEngine] cc 节点 ${node.id} 知会 ${receivers.length} 人`);
+  }
+
+  // C3：判断某节点是否所有任务都已结束（无 pending 任务）
+  // 用于 join 节点检查上游并行分支是否完成
+  async isBranchFinished(connection, instanceId, nodeId, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 'workflow_tasks');
+    const [rows] = await connection.execute(
+      `SELECT COUNT(*) AS cnt FROM workflow_tasks
+       WHERE instance_id = ? AND node_id = ? AND status = 'pending'${tf.clause}`,
+      [instanceId, nodeId, ...tf.params]
+    );
+    return rows[0].cnt === 0;
+  }
+
+  // C4：创建 timer 记录（advance 走到 timer 节点时调用）
+  // 计算 fire_at 并写入 workflow_timers，等待 scanTimers 到期后推进
+  async createTimerRecord(connection, instanceId, node, vars = {}, tenantCtx) {
+    const cfg = node.config || {};
+    let fireAt = null;
+
+    if (cfg.fireAtVar) {
+      // 从流程变量取时间（变量由前置节点表单写入）
+      const raw = vars[cfg.fireAtVar];
+      if (raw instanceof Date) {
+        fireAt = raw;
+      } else if (typeof raw === 'string' || typeof raw === 'number') {
+        const d = new Date(raw);
+        fireAt = isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    if (!fireAt && cfg.duration != null) {
+      // 按秒数计算
+      const dur = parseInt(cfg.duration, 10);
+      if (Number.isFinite(dur) && dur >= 0) {
+        fireAt = new Date(Date.now() + dur * 1000);
+      }
+    }
+
+    if (!fireAt) {
+      // 兜底：duration 未配置或 fireAtVar 无效 → 立即触发（duration=0）
+      console.warn(`[WorkflowEngine] timer 节点 ${node.id} 无有效 duration/fireAtVar，立即触发`);
+      fireAt = new Date();
+    }
+
+    const companyId = buildTenantInsertValue(tenantCtx);
+    const nodeName = node.name || node.id;
+    await connection.execute(
+      `INSERT INTO workflow_timers (instance_id, node_id, node_name, fire_at, created_at, company_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [instanceId, node.id, nodeName, fireAt, now(), companyId]
+    );
+    console.log(`[WorkflowEngine] timer 节点 ${node.id} 排定于 ${fireAt.toISOString()} 触发`);
+  }
+
+  // C4：扫描到期 timer 并触发流程推进
+  // 与 scanOverdueTasks 一致，用 GET_LOCK('workflow_timer_scan', N) 防集群重复
+  // 由 server.js cron 周期调用（建议 1 分钟一次）
+  async scanTimers() {
+    const fs = require('fs');
+    let conn;
+    try {
+      conn = await pool.getConnection();
+    } catch (e) {
+      console.error('获取连接失败:', e.message);
+      return { processed: 0, error: 'conn_failed' };
+    }
+
+    try {
+      // 集群锁：5 秒内同一 lock 名只有一个实例能进入
+      const [lockRows] = await conn.query("SELECT GET_LOCK('workflow_timer_scan', 5) AS lk");
+      if (!lockRows[0] || lockRows[0].lk !== 1) {
+        return { processed: 0, reason: 'lock_busy' };
+      }
+
+      // 查所有到期未处理的 timer
+      const [timers] = await conn.execute(
+        `SELECT id, instance_id, node_id, node_name, company_id
+         FROM workflow_timers
+         WHERE processed_at IS NULL AND fire_at <= NOW()
+         ORDER BY fire_at ASC
+         LIMIT 100`
+      );
+
+      let processed = 0;
+      for (const t of timers) {
+        try {
+          await this.processTimer(t.id, t);
+          processed++;
+        } catch (e) {
+          console.error(`处理 timer #${t.id} 失败:`, e.message);
+        }
+      }
+      return { processed, total: timers.length };
+    } finally {
+      try { await conn.query("RELEASE_LOCK('workflow_timer_scan')"); } catch (e) {}
+      try { conn.release(); } catch (e) {}
+    }
+  }
+
+  // C4：处理单个到期 timer
+  // 标记 processed_at 防重复，加载实例+定义，调 advance 推进到 timer 的下一节点
+  async processTimer(timerId, timerRow = null) {
+    let conn;
+    try {
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+
+      // 加载 timer 记录（如未传）
+      if (!timerRow) {
+        const [rows] = await conn.execute(
+          'SELECT id, instance_id, node_id, node_name, company_id FROM workflow_timers WHERE id = ?',
+          [timerId]
+        );
+        if (rows.length === 0) {
+          await conn.rollback();
+          return false;
+        }
+        timerRow = rows[0];
+      }
+
+      // 标记 processed_at 防重复处理（即使本次推进失败也不重试，避免无限循环）
+      const [upd] = await conn.execute(
+        'UPDATE workflow_timers SET processed_at = NOW() WHERE id = ? AND processed_at IS NULL',
+        [timerId]
+      );
+      if (upd.affectedRows === 0) {
+        // 已被其他实例处理
+        await conn.rollback();
+        return false;
+      }
+
+      // 构造 tenantCtx（公司隔离）
+      const tenantCtx = timerRow.company_id
+        ? { isSuperAdmin: false, companyId: timerRow.company_id }
+        : { isSuperAdmin: true, companyId: null };
+
+      // 加载实例
+      const [instRows] = await conn.execute(
+        'SELECT id, definition_id, status, current_node_ids, payload_json FROM workflow_instances WHERE id = ?',
+        [timerRow.instance_id]
+      );
+      if (instRows.length === 0) {
+        await conn.rollback();
+        return false;
+      }
+      const inst = instRows[0];
+      if (inst.status !== 'running') {
+        // 实例已结束（可能被撤回或驳回），不推进
+        await conn.commit();
+        return true;
+      }
+
+      // 加载流程定义
+      const [defRows] = await conn.execute(
+        'SELECT * FROM workflow_definitions WHERE id = ?',
+        [inst.definition_id]
+      );
+      if (defRows.length === 0) {
+        await conn.rollback();
+        return false;
+      }
+      const def = defRows[0];
+      const graph = buildGraph(def);
+
+      // 加载流程变量
+      const vars = await this.loadInstanceVars(conn, inst.id);
+
+      // 推进到 timer 节点的下一节点（绕过 timer 本身）
+      const outgoing = graph.outgoing.get(timerRow.node_id) || [];
+      const nextNodeIds = outgoing.map(e => e.target);
+
+      await this.advance(conn, inst.id, def, nextNodeIds, parseJson(inst.payload_json, {}), vars, tenantCtx);
+
+      await conn.commit();
+      console.log(`[WorkflowEngine] timer #${timerId} 已推进实例 ${inst.id} 到 ${JSON.stringify(nextNodeIds)}`);
+      return true;
+    } catch (e) {
+      try { await conn && conn.rollback(); } catch (_) {}
+      throw e;
+    } finally {
+      try { conn && conn.release(); } catch (_) {}
     }
   }
 
@@ -702,9 +978,22 @@ class WorkflowEngine {
     return task;
   }
 
-  async completeTask(taskId, { action, comment = '', completed_by, variables = {} }, tenantCtx) {
+  async completeTask(taskId, { action, comment = '', completed_by, variables = {}, formData = null }, tenantCtx) {
     if (!['approve', 'reject'].includes(action)) {
       throw new Error('action 必须是 approve 或 reject');
+    }
+
+    // C1：表单数据规范化（结构化 JSON，落 tasks + history 满足 GMP 审计快照）
+    // - null/undefined → null（不落表单数据，向后兼容旧调用）
+    // - 对象/数组 → JSON 字符串
+    // - 字符串 → 视为已序列化 JSON 字符串原样保存（不强制 JSON.parse 后再 stringify，避免无谓开销）
+    let formDataJson = null;
+    if (formData != null) {
+      if (typeof formData === 'string') {
+        formDataJson = formData;
+      } else {
+        formDataJson = safeJson(formData);
+      }
     }
 
     const tf = buildTenantFilter(tenantCtx, 't');
@@ -747,20 +1036,21 @@ class WorkflowEngine {
       await this.saveInstanceVars(connection, instanceId, vars, tenantCtx);
 
       // 更新当前任务（乐观锁：必须 version 匹配，防止并发双审；同时 company_id 过滤防越权）
+      // C1：同步落 form_data_json 到 tasks，便于待办页查看当前任务填写过的表单数据
       const [updateResult] = await connection.execute(
         `UPDATE workflow_tasks
-         SET status = ?, action = ?, comment = ?, completed_at = ?, version = version + 1
+         SET status = ?, action = ?, comment = ?, completed_at = ?, form_data_json = ?, version = version + 1
          WHERE id = ? AND version = ?${tfTask.clause}`,
-        [action === 'approve' ? 'completed' : 'rejected', action, comment, now(), taskId, task.version, ...tfTask.params]
+        [action === 'approve' ? 'completed' : 'rejected', action, comment, now(), formDataJson, taskId, task.version, ...tfTask.params]
       );
       if (updateResult.affectedRows === 0) {
         throw new Error('任务已被他人处理，请刷新后重试');
       }
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [taskId, instanceId, task.node_id, task.node_name, completed_by, action, comment, now(), companyId]
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id, form_data_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [taskId, instanceId, task.node_id, task.node_name, completed_by, action, comment, now(), companyId, formDataJson]
       );
 
       // 通知业务模块：单个任务已完成（节点表单数据随 variables 传递，供业务表同步）
@@ -789,8 +1079,8 @@ class WorkflowEngine {
       );
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
-         SELECT id, instance_id, node_id, node_name, assignee_username, 'cancel', '节点已达成结论，任务取消', ?, workflow_tasks.company_id
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id, form_data_json)
+         SELECT id, instance_id, node_id, node_name, assignee_username, 'cancel', '节点已达成结论，任务取消', ?, workflow_tasks.company_id, NULL
          FROM workflow_tasks
          WHERE instance_id = ? AND node_id = ? AND status = 'cancelled'${tfTask.clause}`,
         [now(), instanceId, node.id, ...tfTask.params]
@@ -913,9 +1203,9 @@ class WorkflowEngine {
       );
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [taskId, task.instance_id, task.node_id, task.node_name, transferred_by, 'transfer', `转交给 ${new_assignee}`, now(), companyId]
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id, form_data_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [taskId, task.instance_id, task.node_id, task.node_name, transferred_by, 'transfer', `转交给 ${new_assignee}`, now(), companyId, null]
       );
 
       await connection.execute(
@@ -972,8 +1262,8 @@ class WorkflowEngine {
       );
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
-         SELECT id, instance_id, node_id, node_name, ?, 'recall', ?, ?, workflow_tasks.company_id
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id, form_data_json)
+         SELECT id, instance_id, node_id, node_name, ?, 'recall', ?, ?, workflow_tasks.company_id, NULL
          FROM workflow_tasks
          WHERE instance_id = ? AND status = 'cancelled'${tfTask.clause}`,
         [recalled_by, comment, now(), instanceId, ...tfTask.params]
@@ -1136,6 +1426,35 @@ class WorkflowEngine {
       [instanceId, ...tf.params]
     );
     return rows;
+  }
+
+  // C2：查询当前用户的 cc 知会列表（未读 + 已读合并返回，按 created_at 倒序）
+  async listCcByReceiver(username, { onlyUnread = false, limit = 100 } = {}, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 'c');
+    let sql = `SELECT c.*, i.business_key, i.payload_json
+               FROM workflow_cc c
+               JOIN workflow_instances i ON c.instance_id = i.id
+               WHERE c.receiver_username = ?${tf.clause}`;
+    const params = [username, ...tf.params];
+    if (onlyUnread) {
+      sql += ' AND c.read_at IS NULL';
+    }
+    sql += ' ORDER BY c.created_at DESC LIMIT ?';
+    params.push(parseInt(limit, 10) || 100);
+    const [rows] = await pool.execute(sql, params);
+    return rows.map(r => ({ ...r, payload: parseJson(r.payload_json, {}) }));
+  }
+
+  // C2：标记 cc 知会已读（要求本租户，防越权）
+  async markCcRead(ccId, username, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 'c');
+    const [result] = await pool.execute(
+      `UPDATE workflow_cc
+       SET read_at = ?
+       WHERE id = ? AND receiver_username = ?${tf.clause} AND read_at IS NULL`,
+      [now(), ccId, username, ...tf.params]
+    );
+    return result.affectedRows > 0;
   }
 
   async getTasksByAssignee(assignee, status = 'pending', tenantCtx) {

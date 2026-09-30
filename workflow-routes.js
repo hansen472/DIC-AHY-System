@@ -181,13 +181,14 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername,
   app.post('/api/workflow-tasks/:id/complete', requireAuth, async (req, res) => {
     try {
       const taskId = parseInt(req.params.id, 10);
-      const { action, comment, variables } = req.body;
+      const { action, comment, variables, formData } = req.body;
       console.log(`[审批任务] 用户 ${getUsername(req)} 处理任务 ${taskId}, action=${action}`);
       const result = await engine.completeTask(taskId, {
         action,
         comment,
         completed_by: getUsername(req),
-        variables
+        variables,
+        formData
       }, getTenantContext(req));
       console.log(`[审批任务] 任务 ${taskId} 处理结果:`, result);
       res.json({ success: true, data: result });
@@ -255,6 +256,36 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername,
     } catch (err) {
       console.error('查询我的待办失败:', err);
       res.status(500).json({ error: '查询失败' });
+    }
+  });
+
+  // C2：知会中心——查询我的 cc 知会列表
+  // GET /api/workflow-cc/my?onlyUnread=1&limit=100
+  app.get('/api/workflow-cc/my', requireAuth, async (req, res) => {
+    try {
+      const rows = await engine.listCcByReceiver(getUsername(req), {
+        onlyUnread: req.query.onlyUnread === '1',
+        limit: req.query.limit
+      }, getTenantContext(req));
+      res.json({ success: true, data: rows });
+    } catch (err) {
+      console.error('查询我的知会失败:', err);
+      res.status(500).json({ error: '查询失败' });
+    }
+  });
+
+  // C2：标记 cc 知会已读
+  // POST /api/workflow-cc/:id/read
+  app.post('/api/workflow-cc/:id/read', requireAuth, async (req, res) => {
+    try {
+      const ccId = parseInt(req.params.id, 10);
+      if (isNaN(ccId)) return res.status(400).json({ error: '参数错误' });
+      const ok = await engine.markCcRead(ccId, getUsername(req), getTenantContext(req));
+      if (!ok) return res.status(404).json({ error: '知会不存在或已读' });
+      res.json({ success: true, message: '已标记为已读' });
+    } catch (err) {
+      console.error('标记知会已读失败:', err);
+      res.status(500).json({ error: '处理失败' });
     }
   });
 

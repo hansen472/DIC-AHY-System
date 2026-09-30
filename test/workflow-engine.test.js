@@ -525,6 +525,797 @@ async function test20_getInstanceHistory_子公司限定h_company_id() {
   console.log('  PASS: 子公司 getInstanceHistory 限定 h.company_id');
 }
 
+// ==================== C1: 表单数据 form_data_json 落库 ====================
+
+// completeTask 路径专用 mock pool 工厂：
+// 构造一个 approve → 流程结束 的最简场景：
+//   流程图: start → approval(approvalMode=any) → end
+//   任务: status=pending, instance_status=running, assignee=user_a, version=1
+// 返回 calls 列表，断言 SQL 是否含 form_data_json
+function createCompleteTaskMockPoolV2() {
+  const calls = [];
+
+  const taskRow = {
+    id: 100, instance_id: 50, definition_id: 1,
+    node_id: 'approval', node_name: '审批', assignee_username: 'user_a',
+    status: 'pending', version: 1, instance_status: 'running',
+    business_key: 'capa:1', payload_json: '{}',
+    current_node_ids: '["approval"]', module_key: 'capa'
+  };
+  const defRow = {
+    id: 1, module_key: 'capa', name: 'CAPA审批', version: 1, is_active: 1,
+    condition: '', priority: 0,
+    nodes_json: JSON.stringify([
+      { id: 'start', type: 'start' },
+      { id: 'approval', type: 'approval', config: { approvalMode: 'any', assignees: ['user_a'] } },
+      { id: 'end', type: 'end' }
+    ]),
+    edges_json: JSON.stringify([
+      { source: 'start', target: 'approval' },
+      { source: 'approval', target: 'end', label: 'approve' }
+    ])
+  };
+  const instanceRow = { id: 50, status: 'running', current_node_ids: '["approval"]', payload_json: '{}', business_key: 'capa:1' };
+  const nodeResultRow = { status: 'completed', action: 'approve', created_at: new Date().toISOString() };
+
+  const mockPool = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'execute', sql, params });
+      if (sql.includes('FROM workflow_definitions') && sql.includes('WHERE id = ?')) return [[defRow], []];
+      if (sql.includes('FROM workflow_instance_vars WHERE instance_id = ?')) return [[], []];
+      if (sql.includes('FROM workflow_instances i') && sql.includes('WHERE i.id = ?')) return [[instanceRow], []];
+      return [[], []];
+    },
+    getConnection: async () => {
+      const conn = {
+        beginTransaction: async () => calls.push({ fn: 'beginTransaction' }),
+        commit: async () => calls.push({ fn: 'commit' }),
+        rollback: async () => calls.push({ fn: 'rollback' }),
+        release: () => calls.push({ fn: 'release' }),
+        execute: async (sql, params = []) => {
+          calls.push({ fn: 'conn.execute', sql, params });
+          // SELECT task FOR UPDATE（多行 SQL，用拆分 includes 匹配）
+          if (sql.includes('FROM workflow_tasks t') && sql.includes('JOIN workflow_instances i') && sql.includes('FOR UPDATE')) return [[taskRow], []];
+          if (sql.includes('UPDATE workflow_tasks') && sql.includes('version = version + 1')) return [{ affectedRows: 1 }, []];
+          if (sql.includes('INSERT INTO workflow_task_history') && !sql.includes('SELECT')) return [{ insertId: 1 }, []];
+          if (sql.includes('INSERT INTO workflow_task_history') && sql.includes('SELECT')) return [{ affectedRows: 0 }, []];
+          if (sql.includes("UPDATE workflow_tasks") && sql.includes("status = 'cancelled'")) return [{ affectedRows: 0 }, []];
+          if (sql.includes('UPDATE workflow_instances SET status = ?')) return [{ affectedRows: 1 }, []];
+          if (sql.includes('FROM workflow_tasks') && sql.includes('WHERE instance_id = ?') && sql.includes('AND node_id = ?')) return [[nodeResultRow], []];
+          // getInstance: SELECT i.*, d.module_key, ... FROM workflow_instances i JOIN workflow_definitions d ON i.definition_id = d.id WHERE i.id = ?
+          if (sql.includes('FROM workflow_instances i') && sql.includes('JOIN workflow_definitions d') && sql.includes('WHERE i.id = ?')) {
+            return [[{ ...instanceRow, module_key: 'capa', def_nodes_json: defRow.nodes_json, def_edges_json: defRow.edges_json }], []];
+          }
+          if (sql.includes('FROM workflow_instances WHERE id = ?')) return [[instanceRow], []];
+          return [[], []];
+        },
+      };
+      calls.push({ fn: 'getConnection' });
+      return conn;
+    },
+  };
+
+  return { mockPool, calls };
+}
+
+async function test21_completeTask_对象formData落tasks和history() {
+  // 场景：审批人提交 formData 对象 { rca: '原因A', measure: '措施B' }
+  // 期望：
+  //   1. UPDATE workflow_tasks 的 SQL 含 form_data_json 列，params 含 JSON 字符串
+  //   2. INSERT INTO workflow_task_history 的 SQL 含 form_data_json 列，params 含 JSON 字符串
+  const { mockPool, calls } = createCompleteTaskMockPoolV2();
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const formData = { rca: '原因A', measure: '措施B' };
+  await engine.completeTask(100, {
+    action: 'approve',
+    comment: '同意',
+    completed_by: 'user_a',
+    formData
+  }, { isSuperAdmin: true, companyId: null });
+
+  // 找到 UPDATE workflow_tasks SET ... form_data_json
+  const updateCall = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_tasks') && c.sql.includes('version = version + 1'));
+  assert(updateCall, '应执行 UPDATE workflow_tasks');
+  assert(/form_data_json/.test(updateCall.sql), 'UPDATE tasks SQL 应含 form_data_json 列');
+  // formData 在 params 中的位置：[status, action, comment, completed_at, formDataJson, taskId, version]
+  // 即 params[4]
+  assert.strictEqual(updateCall.params[4], JSON.stringify(formData),
+    'UPDATE tasks 的 form_data_json 参数应为对象 JSON 序列化字符串');
+
+  // 找到主路径 INSERT INTO workflow_task_history (VALUES ?, ?, ...)
+  const insertCall = calls.find(c =>
+    c.fn === 'conn.execute' &&
+    c.sql.includes('INSERT INTO workflow_task_history') &&
+    !c.sql.includes('SELECT') &&
+    c.sql.includes('VALUES')
+  );
+  assert(insertCall, '应执行主路径 INSERT INTO workflow_task_history');
+  assert(/form_data_json/.test(insertCall.sql), 'INSERT history SQL 应含 form_data_json 列');
+  // history INSERT params: [taskId, instanceId, node_id, node_name, completed_by, action, comment, now, companyId, formDataJson]
+  const lastParam = insertCall.params[insertCall.params.length - 1];
+  assert.strictEqual(lastParam, JSON.stringify(formData),
+    'INSERT history 的 form_data_json 参数应为对象 JSON 字符串');
+
+  console.log('  PASS: completeTask 对象 formData 落 tasks 和 history（JSON 字符串）');
+}
+
+async function test22_completeTask_nullFormData向后兼容() {
+  // 场景：旧前端不传 formData（默认 null）
+  // 期望：UPDATE/INSERT 的 form_data_json 参数为 null（向后兼容，不破坏旧调用）
+  const { mockPool, calls } = createCompleteTaskMockPoolV2();
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  await engine.completeTask(100, {
+    action: 'approve',
+    comment: '同意',
+    completed_by: 'user_a'
+    // 故意不传 formData
+  }, { isSuperAdmin: true, companyId: null });
+
+  const updateCall = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_tasks') && c.sql.includes('version = version + 1'));
+  assert(updateCall, '应执行 UPDATE workflow_tasks');
+  assert.strictEqual(updateCall.params[4], null,
+    '不传 formData 时 form_data_json 应为 null（向后兼容）');
+
+  const insertCall = calls.find(c =>
+    c.fn === 'conn.execute' &&
+    c.sql.includes('INSERT INTO workflow_task_history') &&
+    !c.sql.includes('SELECT') &&
+    c.sql.includes('VALUES')
+  );
+  const lastParam = insertCall.params[insertCall.params.length - 1];
+  assert.strictEqual(lastParam, null,
+    'INSERT history 的 form_data_json 也应为 null（向后兼容）');
+
+  console.log('  PASS: completeTask 不传 formData 时 form_data_json=null 向后兼容');
+}
+
+async function test23_completeTask_字符串formData原样保存() {
+  // 场景：调用方传字符串（已序列化的 JSON），引擎应原样保存不再 JSON.stringify
+  // 这样避免双引号转义（"\"rca\"" 等）
+  const { mockPool, calls } = createCompleteTaskMockPoolV2();
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const formDataStr = '{"rca":"原因A","measure":"措施B"}';
+  await engine.completeTask(100, {
+    action: 'approve',
+    comment: '同意',
+    completed_by: 'user_a',
+    formData: formDataStr
+  }, { isSuperAdmin: true, companyId: null });
+
+  const updateCall = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_tasks') && c.sql.includes('version = version + 1'));
+  assert.strictEqual(updateCall.params[4], formDataStr,
+    '字符串 formData 应原样保存（不再 stringify）');
+
+  const insertCall = calls.find(c =>
+    c.fn === 'conn.execute' &&
+    c.sql.includes('INSERT INTO workflow_task_history') &&
+    !c.sql.includes('SELECT') &&
+    c.sql.includes('VALUES')
+  );
+  const lastParam = insertCall.params[insertCall.params.length - 1];
+  assert.strictEqual(lastParam, formDataStr,
+    'INSERT history 的字符串 formData 也应原样保存');
+
+  console.log('  PASS: completeTask 字符串 formData 原样保存（不再 JSON.stringify）');
+}
+
+// ==================== C2: cc 节点（只读知会，不入审批链） ====================
+
+// advance 路径专用 mock 工厂：start → cc(receivers=[user_a, user_b]) → end
+// 期望：INSERT workflow_cc 2 次（user_a / user_b），不创建 workflow_tasks，
+//      流程实例最终 status='completed'（不阻塞）
+function createCcAdvanceMockPool() {
+  const calls = [];
+
+  const defRow = {
+    id: 1, module_key: 'capa', name: 'CAPA审批', version: 1, is_active: 1,
+    condition: '', priority: 0,
+    nodes_json: JSON.stringify([
+      { id: 'start', type: 'start' },
+      { id: 'cc1', type: 'cc', name: '知会QA', config: { receivers: ['user_a', 'user_b'], message: 'CAPA 已启动' } },
+      { id: 'end', type: 'end' }
+    ]),
+    edges_json: JSON.stringify([
+      { source: 'start', target: 'cc1' },
+      { source: 'cc1', target: 'end' }
+    ])
+  };
+
+  const mockPool = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'execute', sql, params });
+      // getActiveDefinition SELECT
+      if (sql.includes('FROM workflow_definitions') && sql.includes('module_key = ?') && sql.includes('is_active = 1')) {
+        return [[defRow], []];
+      }
+      // getInstance SELECT (in completeTask path): SELECT i.*, d.module_key, ... FROM workflow_instances i JOIN workflow_definitions d
+      if (sql.includes('FROM workflow_instances i') && sql.includes('JOIN workflow_definitions d') && sql.includes('WHERE i.id = ?')) {
+        return [[{ id: 50, status: 'completed', current_node_ids: '[]', payload_json: '{}', business_key: 'capa:1', module_key: 'capa', def_nodes_json: defRow.nodes_json, def_edges_json: defRow.edges_json }], []];
+      }
+      return [[], []];
+    },
+    getConnection: async () => {
+      const conn = {
+        beginTransaction: async () => calls.push({ fn: 'beginTransaction' }),
+        commit: async () => calls.push({ fn: 'commit' }),
+        rollback: async () => calls.push({ fn: 'rollback' }),
+        release: () => calls.push({ fn: 'release' }),
+        execute: async (sql, params = []) => {
+          calls.push({ fn: 'conn.execute', sql, params });
+          if (sql.includes('INSERT INTO workflow_instances')) return [{ insertId: 50 }, []];
+          if (sql.includes('INSERT INTO workflow_cc')) {
+            // 记录每次插入的 receiver_username（第 4 个参数，索引 3）
+            return [{ insertId: calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_cc')).length }, []];
+          }
+          if (sql.includes('UPDATE workflow_instances SET current_node_ids')) return [{ affectedRows: 1 }, []];
+          if (sql.includes('UPDATE workflow_instances SET status = ?')) return [{ affectedRows: 1 }, []];
+          if (sql.includes('SELECT * FROM workflow_instances WHERE id = ?')) return [[{ id: 50, status: 'completed', current_node_ids: '[]', payload_json: '{}', business_key: 'capa:1' }], []];
+          if (sql.includes('SELECT created_by FROM workflow_instances WHERE id = ?')) return [[{ created_by: 'admin' }], []];
+          return [[], []];
+        },
+      };
+      calls.push({ fn: 'getConnection' });
+      return conn;
+    },
+  };
+
+  return { mockPool, calls };
+}
+
+async function test24_cc节点_不入审批链直接生成知会记录() {
+  // 场景：流程图 start → cc(receivers=['user_a','user_b']) → end
+  // 期望：
+  //   1. advance 期间调用 INSERT INTO workflow_cc 两次
+  //   2. 不调用 INSERT INTO workflow_tasks
+  //   3. 流程实例最终 status='completed'（cc 不阻塞流程前进）
+  const { mockPool, calls } = createCcAdvanceMockPool();
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const result = await engine.startInstance({
+    module_key: 'capa',
+    business_key: 'capa:1',
+    payload: {},
+    created_by: 'admin'
+  }, { isSuperAdmin: true, companyId: null });
+
+  // 断言1: 至少 2 次 INSERT INTO workflow_cc
+  const ccInserts = calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_cc'));
+  assert.strictEqual(ccInserts.length, 2, '应为 2 个 receiver 各 INSERT 1 次 workflow_cc');
+
+  // 断言2: receiver_username 应是 user_a 和 user_b（params[3]）
+  const receivers = ccInserts.map(c => c.params[3]).sort();
+  assert.deepStrictEqual(receivers, ['user_a', 'user_b'], 'receiver_username 应匹配配置');
+
+  // 断言3: 不创建 workflow_tasks（cc 节点不入审批链）
+  const taskInserts = calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_tasks'));
+  assert.strictEqual(taskInserts.length, 0, 'cc 节点不应创建 workflow_tasks');
+
+  // 断言4: 流程实例最终状态为 completed（cc 不阻塞流程前进）
+  const statusUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET status = ?'));
+  assert(statusUpdate, '应执行 UPDATE workflow_instances SET status');
+  assert.strictEqual(statusUpdate.params[0], 'completed', '流程应结束 status=completed');
+
+  console.log('  PASS: cc 节点不入审批链、生成 2 条知会记录、不阻塞流程前进');
+}
+
+async function test25_cc节点_message变量插值() {
+  // 场景：cc 节点 message 含 ${vars.rca}，前置流程变量 vars.rca='设备故障'
+  //       期望知会记录的 message 已替换为 '设备故障'
+  const { mockPool, calls } = createCcAdvanceMockPool();
+  // 替换定义：cc 节点 message 含变量插值
+  const defRow = {
+    id: 1, module_key: 'capa', name: 'CAPA', version: 1, is_active: 1,
+    condition: '', priority: 0,
+    nodes_json: JSON.stringify([
+      { id: 'start', type: 'start' },
+      // 用 vars 注入需通过流程定义起始就含 vars；这里直接测试 createCcRecords 的插值
+      { id: 'cc1', type: 'cc', name: '知会', config: { receivers: ['user_a'], message: '原因: ${vars.rca}' } },
+      { id: 'end', type: 'end' }
+    ]),
+    edges_json: JSON.stringify([{ source: 'start', target: 'cc1' }, { source: 'cc1', target: 'end' }])
+  };
+  mockPool.execute = async (sql) => {
+    calls.push({ fn: 'execute', sql, params: [] });
+    if (sql.includes('FROM workflow_definitions') && sql.includes('module_key = ?')) return [[defRow], []];
+    return [[], []];
+  };
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  // 直接调用 createCcRecords 测试插值
+  const fakeConn = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'conn.execute', sql, params });
+      return [{ insertId: 1 }, []];
+    }
+  };
+  await engine.createCcRecords(fakeConn, 99, {
+    id: 'cc1', type: 'cc', name: '知会',
+    config: { receivers: ['user_a'], message: '原因: ${vars.rca}, 措施: ${vars.measure}' }
+  }, { rca: '设备故障', measure: '更换轴承' }, { isSuperAdmin: true, companyId: null });
+
+  const ccInsert = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_cc'));
+  assert(ccInsert, '应 INSERT workflow_cc');
+  // params[4] 是 message
+  assert.strictEqual(ccInsert.params[4], '原因: 设备故障, 措施: 更换轴承',
+    'message 应正确插值 ${vars.xxx}');
+
+  console.log('  PASS: cc 节点 message 的 ${vars.xxx} 变量插值');
+}
+
+async function test26_listCcByReceiver_子公司限定c_company_id() {
+  // 场景：子公司用户查我的知会，SQL 应含 c.company_id 过滤
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  await engine.listCcByReceiver('user_a', {}, { isSuperAdmin: false, companyId: 5 });
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('FROM workflow_cc c'));
+  assert(execCall, '应执行 listCcByReceiver 查询');
+  assert(/c\.company_id IS NULL OR c\.company_id = \?/.test(execCall.sql),
+    'SQL 应含 c.company_id 过滤');
+  assert.strictEqual(execCall.params[0], 'user_a');
+  assert.strictEqual(execCall.params[1], 5);
+
+  console.log('  PASS: listCcByReceiver 子公司限定 c.company_id');
+}
+
+async function test27_markCcRead_子公司限定c_company_id() {
+  // 场景：子公司用户标记已读，UPDATE 应含 c.company_id 过滤防越权
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  // 让 execute 返回 affectedRows=0（mock 默认空数组 [rows=[]]，需用对象）
+  mockPool.execute = async (sql, params = []) => {
+    calls.push({ fn: 'execute', sql, params });
+    return [{ affectedRows: 0 }, []];
+  };
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const ok = await engine.markCcRead(88, 'user_a', { isSuperAdmin: false, companyId: 5 });
+  assert.strictEqual(ok, false, 'mock 返回 0 行影响，应返回 false');
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('UPDATE workflow_cc'));
+  assert(execCall, '应执行 UPDATE workflow_cc');
+  assert(/c\.company_id IS NULL OR c\.company_id = \?/.test(execCall.sql),
+    'UPDATE 应含 c.company_id 过滤');
+  assert.ok(execCall.params.includes(88), '参数应含 ccId=88');
+  assert.ok(execCall.params.includes('user_a'), '参数应含 username');
+  assert.ok(execCall.params.includes(5), '参数应含 companyId=5');
+
+  console.log('  PASS: markCcRead 子公司限定 c.company_id（防越权）');
+}
+
+// ==================== C3: parallel fork / join 并行分支 ====================
+
+// 流程定义：start → parallel(fork) → [approval_A(ass=user_a), approval_B(ass=user_b)] → join → end
+function buildParallelDef() {
+  return {
+    id: 1, module_key: 'capa', name: 'CAPA并行审批', version: 1, is_active: 1,
+    condition: '', priority: 0,
+    nodes_json: JSON.stringify([
+      { id: 'start', type: 'start' },
+      { id: 'fork1', type: 'parallel', name: '并行分支' },
+      { id: 'approvalA', type: 'approval', name: 'QA审批', config: { approvalMode: 'all', assignees: ['user_a'] } },
+      { id: 'approvalB', type: 'approval', name: '生产审批', config: { approvalMode: 'all', assignees: ['user_b'] } },
+      { id: 'join1', type: 'join', name: '汇合' },
+      { id: 'end', type: 'end' }
+    ]),
+    edges_json: JSON.stringify([
+      { source: 'start', target: 'fork1' },
+      { source: 'fork1', target: 'approvalA' },
+      { source: 'fork1', target: 'approvalB' },
+      { source: 'approvalA', target: 'join1', label: 'approve' },
+      { source: 'approvalB', target: 'join1', label: 'approve' },
+      { source: 'join1', target: 'end' }
+    ])
+  };
+}
+
+// 通用 advance 路径 mock：通过 finishedMap 控制 isBranchFinished 返回，
+// pendingMap 控制 SELECT DISTINCT pending 任务的 node_id 列表
+function createParallelMockPool({ finishedMap = {}, pendingNodeIds = [] } = {}) {
+  const calls = [];
+  const defRow = buildParallelDef();
+
+  const mockConn = {
+    beginTransaction: async () => calls.push({ fn: 'beginTransaction' }),
+    commit: async () => calls.push({ fn: 'commit' }),
+    rollback: async () => calls.push({ fn: 'rollback' }),
+    release: () => calls.push({ fn: 'release' }),
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'conn.execute', sql, params });
+      // isBranchFinished: SELECT COUNT(*) AS cnt FROM workflow_tasks WHERE instance_id=? AND node_id=? AND status='pending'
+      if (sql.includes('SELECT COUNT(*) AS cnt FROM workflow_tasks') && sql.includes('AND node_id = ?')) {
+        const nodeId = params[1];
+        const cnt = finishedMap[nodeId] ? 0 : 1;
+        return [[{ cnt }], []];
+      }
+      // SELECT DISTINCT node_id FROM workflow_tasks WHERE instance_id=? AND status='pending'
+      if (sql.includes('SELECT DISTINCT node_id FROM workflow_tasks') && sql.includes("status = 'pending'")) {
+        return [pendingNodeIds.map(n => ({ node_id: n })), []];
+      }
+      // SELECT created_by FROM workflow_instances WHERE id = ?  (resolveAssignee 兜底，但 assignees=普通用户名不会触发)
+      if (sql.includes('SELECT created_by FROM workflow_instances WHERE id = ?')) {
+        return [[{ created_by: 'admin' }], []];
+      }
+      // INSERT INTO workflow_tasks (createNodeTasks)
+      if (sql.includes('INSERT INTO workflow_tasks')) {
+        return [{ insertId: calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_tasks')).length + 100 }, []];
+      }
+      // UPDATE workflow_instances SET current_node_ids = ?
+      if (sql.includes('UPDATE workflow_instances SET current_node_ids')) return [{ affectedRows: 1 }, []];
+      // UPDATE workflow_instances SET status = ?
+      if (sql.includes('UPDATE workflow_instances SET status = ?')) return [{ affectedRows: 1 }, []];
+      return [[], []];
+    },
+  };
+
+  const mockPool = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'execute', sql, params });
+      // getActiveDefinition / getDefinition SELECT
+      if (sql.includes('FROM workflow_definitions')) return [[defRow], []];
+      return [[], []];
+    },
+    getConnection: async () => {
+      calls.push({ fn: 'getConnection' });
+      return mockConn;
+    },
+  };
+
+  return { mockPool, calls };
+}
+
+async function test28_parallel_fork创建多分支待办() {
+  // 场景：advance(conn, instanceId, def, ['fork1'], {}) 从 fork1 节点开始推进
+  // 期望：
+  //   1. fork1 节点不创建任务（type=parallel 仅推进入边目标）
+  //   2. approvalA 和 approvalB 各创建 1 个 workflow_tasks（user_a / user_b）
+  //   3. current_node_ids 包含 approvalA 和 approvalB
+  //   4. 流程实例不结束（无 reachedEnd）
+  const { mockPool, calls } = createParallelMockPool({ finishedMap: {}, pendingNodeIds: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+  const def = buildParallelDef();
+
+  // 直接调用 advance
+  const fakeConn = mockPool.getConnection._fakeConn || null;
+  // 通过 pool.getConnection 拿 conn
+  const conn = await mockPool.getConnection();
+
+  await engine.advance(conn, 50, def, ['fork1'], {}, {}, { isSuperAdmin: true, companyId: null });
+
+  // 断言1: INSERT INTO workflow_tasks 2 次
+  const taskInserts = calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_tasks'));
+  assert.strictEqual(taskInserts.length, 2, '应创建 2 个 workflow_tasks（approvalA 和 approvalB）');
+
+  // 断言2: assignee 应是 user_a 和 user_b（params 第 4 个，索引 3）
+  const assignees = taskInserts.map(c => c.params[3]).sort();
+  assert.deepStrictEqual(assignees, ['user_a', 'user_b'], 'assignee 应匹配两个分支节点配置');
+
+  // 断言3: node_id 应是 approvalA 和 approvalB（params 第 2 个，索引 1）
+  const nodeIds = taskInserts.map(c => c.params[1]).sort();
+  assert.deepStrictEqual(nodeIds, ['approvalA', 'approvalB'], 'node_id 应是 approvalA 和 approvalB');
+
+  // 断言4: current_node_ids UPDATE 调用，参数含 approvalA 和 approvalB
+  const curUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET current_node_ids'));
+  assert(curUpdate, '应执行 UPDATE current_node_ids');
+  const curArr = JSON.parse(curUpdate.params[0]);
+  assert.ok(curArr.includes('approvalA') && curArr.includes('approvalB'), 'current_node_ids 应含两个分支节点');
+
+  // 断言5: 不应执行 UPDATE workflow_instances SET status（流程未结束）
+  const statusUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET status = ?'));
+  assert(!statusUpdate, '流程不应结束');
+
+  console.log('  PASS: parallel fork 创建多分支 workflow_tasks，current_node_ids 含两分支');
+}
+
+async function test29_join_等待未完成分支() {
+  // 场景：分支A 完成、分支B 仍有 pending 任务
+  //       completeTask 推进到 join1（advance 从 ['join1'] 开始）
+  // 期望：
+  //   1. join1 不前进到 end（allFinished=false）
+  //   2. 不创建新 workflow_tasks
+  //   3. current_node_ids 合并含 approvalB（pendingNodeIds 提供）
+  //   4. 流程不结束
+  const { mockPool, calls } = createParallelMockPool({
+    finishedMap: { approvalA: true, approvalB: false }, // A 已完成，B 未完成
+    pendingNodeIds: ['approvalB']  // SELECT DISTINCT pending 返回 approvalB
+  });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+  const def = buildParallelDef();
+  const conn = await mockPool.getConnection();
+
+  await engine.advance(conn, 50, def, ['join1'], {}, {}, { isSuperAdmin: true, companyId: null });
+
+  // 断言1: 不创建 workflow_tasks（join 不通过，无新 approval 节点）
+  const taskInserts = calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_tasks'));
+  assert.strictEqual(taskInserts.length, 0, 'join 未通过不应创建新任务');
+
+  // 断言2: current_node_ids UPDATE 参数应含 approvalB（从 pendingMap 合并）
+  const curUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET current_node_ids'));
+  assert(curUpdate, '应执行 UPDATE current_node_ids');
+  const curArr = JSON.parse(curUpdate.params[0]);
+  assert.ok(curArr.includes('approvalB'), 'join 等待时 current_node_ids 应保留 approvalB');
+
+  // 断言3: 不应执行 UPDATE workflow_instances SET status（流程不结束）
+  const statusUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET status = ?'));
+  assert(!statusUpdate, 'join 等待时流程不应结束');
+
+  // 断言4: 应调用 isBranchFinished 2 次（approvalA 和 approvalB）
+  const branchChecks = calls.filter(c =>
+    c.fn === 'conn.execute' && c.sql.includes('SELECT COUNT(*) AS cnt FROM workflow_tasks')
+  );
+  assert.strictEqual(branchChecks.length, 2, '应调用 isBranchFinished 2 次（A 和 B）');
+
+  console.log('  PASS: join 节点等待未完成分支，保留 current_node_ids，流程不结束');
+}
+
+async function test30_join_通过后前进到end() {
+  // 场景：所有分支已完成（finishedMap 全为 true）
+  //       completeTask 推进到 join1（advance 从 ['join1'] 开始）
+  // 期望：
+  //   1. join1 前进到 end
+  //   2. 不创建新 workflow_tasks（end 节点不创建任务）
+  //   3. current_node_ids 为空（无 active approval 节点）
+  //   4. 流程结束 status='completed'
+  const { mockPool, calls } = createParallelMockPool({
+    finishedMap: { approvalA: true, approvalB: true },
+    pendingNodeIds: []
+  });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+  const def = buildParallelDef();
+  const conn = await mockPool.getConnection();
+
+  await engine.advance(conn, 50, def, ['join1'], {}, {}, { isSuperAdmin: true, companyId: null });
+
+  // 断言1: 不创建新任务
+  const taskInserts = calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_tasks'));
+  assert.strictEqual(taskInserts.length, 0, 'join 通过后 end 节点不应创建任务');
+
+  // 断言2: current_node_ids 为空数组
+  const curUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET current_node_ids'));
+  assert(curUpdate, '应执行 UPDATE current_node_ids');
+  assert.deepStrictEqual(JSON.parse(curUpdate.params[0]), [], 'current_node_ids 应为空数组');
+
+  // 断言3: 流程结束 status='completed'
+  const statusUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET status = ?'));
+  assert(statusUpdate, '应执行 UPDATE workflow_instances SET status');
+  assert.strictEqual(statusUpdate.params[0], 'completed', '流程应结束 status=completed');
+
+  console.log('  PASS: join 通过后前进到 end，流程结束 status=completed');
+}
+
+// ==================== C4: timer 节点（到期扫描推进） ====================
+
+async function test31_createTimerRecord_按duration计算fire_at() {
+  // 场景：timer 节点 config.duration=86400（1 天）
+  // 期望：INSERT workflow_timers 时 fire_at 约等于 NOW()+86400s
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const fakeConn = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'conn.execute', sql, params });
+      return [{ insertId: 1 }, []];
+    }
+  };
+  const before = Date.now();
+  await engine.createTimerRecord(fakeConn, 99, {
+    id: 'timer1', type: 'timer', name: '到期核查',
+    config: { duration: 86400 }
+  }, {}, { isSuperAdmin: false, companyId: 5 });
+  const after = Date.now();
+
+  const insertCall = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_timers'));
+  assert(insertCall, '应执行 INSERT INTO workflow_timers');
+
+  // params[3] = fire_at（第 4 个参数，索引 3）
+  const fireAt = insertCall.params[3];
+  assert(fireAt instanceof Date, 'fire_at 应是 Date 对象');
+  const expectedMin = before + 86400 * 1000;
+  const expectedMax = after + 86400 * 1000;
+  assert.ok(fireAt.getTime() >= expectedMin && fireAt.getTime() <= expectedMax,
+    `fire_at 应约等于 NOW()+86400s，实际 ${fireAt.toISOString()}`);
+
+  // params[5] = companyId（子公司写入）
+  assert.strictEqual(insertCall.params[5], 5, '子公司 companyId 应写入 5');
+
+  console.log('  PASS: createTimerRecord 按 duration 计算 fire_at');
+}
+
+async function test32_createTimerRecord_从fireAtVar取时间() {
+  // 场景：timer 节点 config.fireAtVar='verify_at'
+  //       vars.verify_at = '2026-12-31T23:59:59Z'
+  // 期望：fire_at 从变量取，精确等于 new Date('2026-12-31T23:59:59Z')
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const fakeConn = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'conn.execute', sql, params });
+      return [{ insertId: 1 }, []];
+    }
+  };
+  const verifyAtStr = '2026-12-31T23:59:59Z';
+  await engine.createTimerRecord(fakeConn, 99, {
+    id: 'timer1', type: 'timer', name: '到期核查',
+    config: { fireAtVar: 'verify_at' }
+  }, { verify_at: verifyAtStr }, { isSuperAdmin: true, companyId: null });
+
+  const insertCall = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_timers'));
+  const fireAt = insertCall.params[3];
+  assert(fireAt instanceof Date);
+  assert.strictEqual(fireAt.getTime(), new Date(verifyAtStr).getTime(),
+    'fire_at 应从 vars.verify_at 取值');
+
+  // params[5] = companyId（超管写 null）
+  assert.strictEqual(insertCall.params[5], null, '超管 companyId 应写入 null');
+
+  console.log('  PASS: createTimerRecord 从 fireAtVar 取时间');
+}
+
+async function test33_scanTimers_未拿锁时跳过() {
+  // 场景：mock GET_LOCK 返回 0（其他实例已持锁）
+  // 期望：scanTimers 返回 {processed:0, reason:'lock_busy'}，不查 timer 不调 processTimer
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  // 覆盖 getConnection 让 conn 也带 query 方法（scanTimers 在 conn 上调 GET_LOCK）
+  mockPool.getConnection = async () => {
+    const conn = {
+      beginTransaction: async () => calls.push({ fn: 'beginTransaction' }),
+      commit: async () => calls.push({ fn: 'commit' }),
+      rollback: async () => calls.push({ fn: 'rollback' }),
+      release: () => calls.push({ fn: 'release' }),
+      query: async (sql) => {
+        calls.push({ fn: 'conn.query', sql });
+        if (sql.includes("GET_LOCK('workflow_timer_scan'")) {
+          return [[{ lk: 0 }], []];
+        }
+        return [[], []];
+      },
+      execute: async (sql, params = []) => {
+        calls.push({ fn: 'conn.execute', sql, params });
+        return [[], []];
+      },
+    };
+    calls.push({ fn: 'getConnection' });
+    return conn;
+  };
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const result = await engine.scanTimers();
+  assert.strictEqual(result.processed, 0);
+  assert.strictEqual(result.reason, 'lock_busy');
+
+  // 不应查 timer 列表
+  const scanCall = calls.find(c => c.fn === 'conn.execute' && c.sql && c.sql.includes('FROM workflow_timers'));
+  assert(!scanCall, '未拿锁时不应查 workflow_timers');
+
+  console.log('  PASS: scanTimers 未拿锁时静默跳过');
+}
+
+async function test34_processTimer_已处理不重复() {
+  // 场景：timer 已被处理（UPDATE processed_at affectedRows=0）
+  // 期望：processTimer 返回 false，不开新事务推进
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  // 让 UPDATE workflow_timers SET processed_at 返回 affectedRows=0
+  mockPool.getConnection = async () => {
+    const conn = {
+      beginTransaction: async () => calls.push({ fn: 'beginTransaction' }),
+      commit: async () => calls.push({ fn: 'commit' }),
+      rollback: async () => calls.push({ fn: 'rollback' }),
+      release: () => calls.push({ fn: 'release' }),
+      execute: async (sql, params = []) => {
+        calls.push({ fn: 'conn.execute', sql, params });
+        if (sql.includes('UPDATE workflow_timers SET processed_at')) {
+          return [{ affectedRows: 0 }, []];  // 已被处理
+        }
+        return [[], []];
+      },
+    };
+    calls.push({ fn: 'getConnection' });
+    return conn;
+  };
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const ok = await engine.processTimer(999, {
+    id: 999, instance_id: 50, node_id: 'timer1', company_id: 5
+  });
+  assert.strictEqual(ok, false, '已处理的 timer 应返回 false');
+
+  // 不应查实例（UPDATE 0 行后立即 rollback）
+  const instCall = calls.find(c => c.fn === 'conn.execute' && c.sql && c.sql.includes('FROM workflow_instances'));
+  assert(!instCall, '已处理 timer 不应再查 workflow_instances');
+
+  // 应执行 rollback
+  assert(calls.some(c => c.fn === 'rollback'), '应 rollback');
+
+  console.log('  PASS: processTimer 已处理 timer 不重复推进');
+}
+
+// ==================== C6: 综合场景测试 ====================
+
+// 流程图：start → timer(duration=3600) → end
+// 验证 advance 走到 timer 节点时的暂停行为
+function buildTimerDef() {
+  return {
+    id: 1, module_key: 'capa', name: 'CAPA到期核查', version: 1, is_active: 1,
+    condition: '', priority: 0,
+    nodes_json: JSON.stringify([
+      { id: 'start', type: 'start' },
+      { id: 'timer1', type: 'timer', name: '到期核查', config: { duration: 3600 } },
+      { id: 'end', type: 'end' }
+    ]),
+    edges_json: JSON.stringify([
+      { source: 'start', target: 'timer1' },
+      { source: 'timer1', target: 'end' }
+    ])
+  };
+}
+
+async function test35_advance_timer节点不前进且不结束流程() {
+  // 场景：advance(conn, instanceId, def, ['timer1']) 从 timer 节点开始 BFS
+  // 期望：
+  //   1. 调 createTimerRecord 写入 1 条 workflow_timers
+  //   2. 不创建 workflow_tasks（timer 不入审批链）
+  //   3. 不前进到 end（current_node_ids 不含 end）
+  //   4. 不调用 UPDATE workflow_instances SET status（流程不结束，等待 scanTimers 推进）
+  const calls = [];
+  const defRow = buildTimerDef();
+  const mockConn = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'conn.execute', sql, params });
+      if (sql.includes('INSERT INTO workflow_timers')) return [{ insertId: 1 }, []];
+      if (sql.includes('UPDATE workflow_instances SET current_node_ids')) return [{ affectedRows: 1 }, []];
+      if (sql.includes('UPDATE workflow_instances SET status = ?')) return [{ affectedRows: 1 }, []];
+      if (sql.includes('SELECT DISTINCT node_id FROM workflow_tasks')) return [[], []];
+      return [[], []];
+    }
+  };
+  const mockPool = {
+    execute: async (sql) => { calls.push({ fn: 'execute', sql }); return [[], []]; },
+    getConnection: async () => { calls.push({ fn: 'getConnection' }); return mockConn; },
+  };
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+  const def = buildTimerDef();
+
+  await engine.advance(mockConn, 50, def, ['timer1'], {}, {}, { isSuperAdmin: true, companyId: null });
+
+  // 断言1: INSERT workflow_timers 1 次
+  const timerInserts = calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_timers'));
+  assert.strictEqual(timerInserts.length, 1, '应 INSERT 1 条 workflow_timers');
+
+  // 断言2: 不创建 workflow_tasks
+  const taskInserts = calls.filter(c => c.fn === 'conn.execute' && c.sql.includes('INSERT INTO workflow_tasks'));
+  assert.strictEqual(taskInserts.length, 0, 'timer 节点不应创建 workflow_tasks');
+
+  // 断言3: 不前进到 end → current_node_ids 应为空数组（无 activeApprovalNodes 也无 pending 任务）
+  const curUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET current_node_ids'));
+  assert(curUpdate, '应执行 UPDATE current_node_ids');
+  assert.deepStrictEqual(JSON.parse(curUpdate.params[0]), [], 'current_node_ids 应为空数组');
+
+  // 断言4: 不应执行 UPDATE workflow_instances SET status（流程不结束）
+  const statusUpdate = calls.find(c => c.fn === 'conn.execute' && c.sql.includes('UPDATE workflow_instances SET status = ?'));
+  assert(!statusUpdate, '流程不应结束（等待 scanTimers 推进）');
+
+  console.log('  PASS: advance 走到 timer 节点暂停，不创建任务、不前进 end、不结束流程');
+}
+
 // ---------- 跑测 ----------
 
 async function main() {
@@ -553,6 +1344,26 @@ async function main() {
     test18_getInstance_越权防护返回null,
     test19_startInstance_子公司写入company_id到实例和任务,
     test20_getInstanceHistory_子公司限定h_company_id,
+    // C1: 表单数据落库
+    test21_completeTask_对象formData落tasks和history,
+    test22_completeTask_nullFormData向后兼容,
+    test23_completeTask_字符串formData原样保存,
+    // C2: cc 节点
+    test24_cc节点_不入审批链直接生成知会记录,
+    test25_cc节点_message变量插值,
+    test26_listCcByReceiver_子公司限定c_company_id,
+    test27_markCcRead_子公司限定c_company_id,
+    // C3: parallel fork/join
+    test28_parallel_fork创建多分支待办,
+    test29_join_等待未完成分支,
+    test30_join_通过后前进到end,
+    // C4: timer 节点
+    test31_createTimerRecord_按duration计算fire_at,
+    test32_createTimerRecord_从fireAtVar取时间,
+    test33_scanTimers_未拿锁时跳过,
+    test34_processTimer_已处理不重复,
+    // C6: 综合场景
+    test35_advance_timer节点不前进且不结束流程,
   ];
   let failed = 0;
   for (const t of tests) {

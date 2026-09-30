@@ -194,6 +194,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     <div class="palette-item" onclick="addNode('start')">⏺ 开始</div>
     <div class="palette-item" onclick="addNode('approval')">👤 审批</div>
     <div class="palette-item" onclick="addNode('condition')">🔀 条件</div>
+    <div class="palette-item" onclick="addNode('parallel')">🔱 并行分支</div>
+    <div class="palette-item" onclick="addNode('join')">🔀 汇合</div>
+    <div class="palette-item" onclick="addNode('cc')">📢 知会</div>
+    <div class="palette-item" onclick="addNode('timer')">⏰ 定时器</div>
     <div class="palette-item" onclick="addNode('end')">🏁 结束</div>
     <div class="palette-item" onclick="addNode('text')">📝 文本描述</div>
     <div style="margin-top:20px; padding-top:14px; border-top:1px solid #e2e8f0; font-size:12px; color:#718096;">
@@ -256,6 +260,39 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
       <div class="form-group" id="pg-condition">
         <label>条件表达式</label>
         <textarea id="inp-condition" onchange="updateSelectedNode()" placeholder="例如：amount > 1000 && category == 'production'"></textarea>
+      </div>
+      <div class="form-group" id="pg-cc" style="display:none;">
+        <label>知会接收人（逗号分隔，支持 [部门经理] / [变量:xxx]）</label>
+        <input type="text" id="inp-cc-receivers" onchange="updateSelectedNode()" placeholder="user_a, user_b, [变量:qa_lead]">
+        <label style="margin-top:8px;">知会内容（支持 ${vars.xxx} 变量插值）</label>
+        <textarea id="inp-cc-message" onchange="updateSelectedNode()" placeholder="例如：CAPA 已启动，原因：${vars.rca}"></textarea>
+        <div style="margin-top:6px; font-size:12px; color:#718096;">cc 节点不入审批链，仅通知接收人，不阻塞流程前进。</div>
+      </div>
+      <div class="form-group" id="pg-timer" style="display:none;">
+        <label>触发方式（二选一）</label>
+        <div style="margin:6px 0;">
+          <label style="font-weight:normal;"><input type="radio" name="timer-mode" value="duration" onchange="updateSelectedNode()"> 按 N 秒后触发（推荐）</label>
+        </div>
+        <input type="number" id="inp-timer-duration" onchange="updateSelectedNode()" placeholder="秒数，如 86400（1 天）" min="0" style="margin-bottom:8px;">
+        <div style="margin:6px 0;">
+          <label style="font-weight:normal;"><input type="radio" name="timer-mode" value="fireAtVar" onchange="updateSelectedNode()"> 从流程变量取时间</label>
+        </div>
+        <input type="text" id="inp-timer-fireAtVar" onchange="updateSelectedNode()" placeholder="变量名，如 verify_at">
+        <div style="margin-top:6px; font-size:12px; color:#718096;">timer 节点暂停流程，等待 scanTimers 到期后推进。</div>
+      </div>
+      <div class="form-group" id="pg-parallel-info" style="display:none;">
+        <div style="padding:8px; background:#f7fafc; border-radius:4px; font-size:13px; color:#4a5568;">
+          <strong>并行分支（fork）</strong><br>
+          该节点不创建任务，把所有出边目标作为并行分支同时推进。<br>
+          通常配合 <strong>汇合</strong> 节点使用，等待所有分支完成后才继续前进。
+        </div>
+      </div>
+      <div class="form-group" id="pg-join-info" style="display:none;">
+        <div style="padding:8px; background:#f7fafc; border-radius:4px; font-size:13px; color:#4a5568;">
+          <strong>汇合（join）</strong><br>
+          该节点等待所有上游 approval 分支完成后才前进。<br>
+          上游分支任务 pending 数为 0 时通过，否则暂停流程。
+        </div>
       </div>
       <div class="form-group" id="pg-edge-label">
         <label>连线标签</label>
@@ -337,6 +374,10 @@ const NODE_COLORS = {
   start: '#c6f6d5',
   approval: '#ebf8ff',
   condition: '#fefcbf',
+  parallel: '#e9d8fd',
+  join: '#d6bcfa',
+  cc: '#fef5e7',
+  timer: '#e6fffa',
   end: '#fed7d7'
 };
 
@@ -493,7 +534,10 @@ function getCanvasRect() {
 function addNode(type) {
   if (!jpInstance) return;
   const rect = getCanvasRect();
-  const names = { start: '开始', approval: '审批', condition: '条件判断', end: '结束', text: '文本描述' };
+  const names = {
+    start: '开始', approval: '审批', condition: '条件判断', end: '结束', text: '文本描述',
+    parallel: '并行分支', join: '汇合', cc: '知会', timer: '定时器'
+  };
   const node = {
     id: generateId('node'),
     type,
@@ -504,6 +548,12 @@ function addNode(type) {
   };
   if (type === 'approval') {
     node.config = { assignees: [], approvalMode: 'all', ratio: 1, dueHours: 24, formFields: [] };
+  }
+  if (type === 'cc') {
+    node.config = { receivers: [], message: '' };
+  }
+  if (type === 'timer') {
+    node.config = { duration: 86400, fireAtVar: '' };
   }
   if (type === 'text') {
     node.config = { text: '' };
@@ -577,7 +627,10 @@ function renderNode(node) {
 }
 
 function typeLabel(type) {
-  return { start: '开始', approval: '审批', condition: '条件', end: '结束', text: '文本描述' }[type] || type;
+  return {
+    start: '开始', approval: '审批', condition: '条件', end: '结束', text: '文本描述',
+    parallel: '并行分支', join: '汇合', cc: '知会', timer: '定时器'
+  }[type] || type;
 }
 
 function selectNode(id) {
@@ -610,10 +663,14 @@ function renderProperties() {
   const pgDue = document.getElementById('pg-due');
   const pgCondition = document.getElementById('pg-condition');
   const pgFormFields = document.getElementById('pg-form-fields');
+  const pgCc = document.getElementById('pg-cc');
+  const pgTimer = document.getElementById('pg-timer');
+  const pgParallelInfo = document.getElementById('pg-parallel-info');
+  const pgJoinInfo = document.getElementById('pg-join-info');
   const pgEdgeLabel = document.getElementById('pg-edge-label');
 
   if (selectedEdge) {
-    [pgName, pgNodeDesc, pgText, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    [pgName, pgNodeDesc, pgText, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields, pgCc, pgTimer, pgParallelInfo, pgJoinInfo].forEach(el => el.style.display = 'none');
     pgId.style.display = 'block';
     document.getElementById('inp-id').value = selectedEdge.id || '';
     pgEdgeLabel.style.display = 'block';
@@ -632,7 +689,7 @@ function renderProperties() {
 
   if (node.type === 'text') {
     // 文本描述节点：只显示名称与描述内容编辑框，无节点备注
-    [pgNodeDesc, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    [pgNodeDesc, pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields, pgCc, pgTimer, pgParallelInfo, pgJoinInfo].forEach(el => el.style.display = 'none');
     pgText.style.display = 'block';
     document.getElementById('inp-text').value = (node.config && node.config.text) || '';
     return;
@@ -663,8 +720,28 @@ function renderProperties() {
     pgFormFields.style.display = 'none';
     pgCondition.style.display = 'block';
     document.getElementById('inp-condition').value = node.config.condition || '';
+    [pgCc, pgTimer, pgParallelInfo, pgJoinInfo].forEach(el => el.style.display = 'none');
+  } else if (node.type === 'cc') {
+    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields, pgTimer, pgParallelInfo, pgJoinInfo].forEach(el => el.style.display = 'none');
+    pgCc.style.display = 'block';
+    document.getElementById('inp-cc-receivers').value = (node.config.receivers || []).join(', ');
+    document.getElementById('inp-cc-message').value = (node.config.message || '');
+  } else if (node.type === 'timer') {
+    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields, pgCc, pgParallelInfo, pgJoinInfo].forEach(el => el.style.display = 'none');
+    pgTimer.style.display = 'block';
+    const useDuration = !node.config.fireAtVar;
+    document.querySelector('input[name="timer-mode"][value="duration"]').checked = useDuration;
+    document.querySelector('input[name="timer-mode"][value="fireAtVar"]').checked = !useDuration;
+    document.getElementById('inp-timer-duration').value = (node.config.duration != null ? node.config.duration : '');
+    document.getElementById('inp-timer-fireAtVar').value = (node.config.fireAtVar || '');
+  } else if (node.type === 'parallel') {
+    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields, pgCc, pgTimer, pgJoinInfo].forEach(el => el.style.display = 'none');
+    pgParallelInfo.style.display = 'block';
+  } else if (node.type === 'join') {
+    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields, pgCc, pgTimer, pgParallelInfo].forEach(el => el.style.display = 'none');
+    pgJoinInfo.style.display = 'block';
   } else {
-    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields].forEach(el => el.style.display = 'none');
+    [pgAssignees, pgMode, pgRatio, pgDue, pgCondition, pgFormFields, pgCc, pgTimer, pgParallelInfo, pgJoinInfo].forEach(el => el.style.display = 'none');
   }
 }
 
@@ -689,6 +766,23 @@ function updateSelectedNode() {
   }
   if (node.type === 'condition') {
     node.config.condition = document.getElementById('inp-condition').value || '';
+  }
+  if (node.type === 'cc') {
+    const receiversStr = document.getElementById('inp-cc-receivers').value || '';
+    node.config.receivers = receiversStr.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+    node.config.message = document.getElementById('inp-cc-message').value || '';
+  }
+  if (node.type === 'timer') {
+    const mode = (document.querySelector('input[name="timer-mode"]:checked') || {}).value || 'duration';
+    const durStr = document.getElementById('inp-timer-duration').value;
+    const fireAtVarStr = document.getElementById('inp-timer-fireAtVar').value.trim();
+    if (mode === 'duration') {
+      node.config.duration = durStr ? parseInt(durStr, 10) : 0;
+      node.config.fireAtVar = '';
+    } else {
+      node.config.fireAtVar = fireAtVarStr;
+      // 保留旧 duration 不擦除，引擎优先 fireAtVar
+    }
   }
   const el = document.getElementById(node.id);
   if (el) {
