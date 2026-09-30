@@ -142,6 +142,93 @@ async function test4_module_exports_smoke() {
   console.log('  PASS: 模块加载成功，导出符合预期');
 }
 
+async function test5_tenantContext子公司用户() {
+  // 场景: 子公司用户登录后，租户上下文返回 { isSuperAdmin:false, companyId:5 }
+  const { mockPool } = createMockPool({});
+  const createAuth = require('../middleware/auth.middleware');
+  const auth = createAuth(mockPool);
+
+  // 用 createSession 模拟登录（普通子公司用户）
+  const fakeRes = { setHeader: () => {} };
+  auth.createSession(fakeRes, 'user_a', 5, false); // companyId=5, isSuperAdmin=false
+  const req = { session: { username: 'user_a', companyId: 5, isSuperAdmin: false } };
+
+  const ctx = auth.getTenantContextFromReq(req);
+  assert.strictEqual(ctx.isSuperAdmin, false, '子公司用户 isSuperAdmin 应为 false');
+  assert.strictEqual(ctx.companyId, 5, '子公司用户应返回 companyId=5');
+
+  console.log('  PASS: 子公司用户租户上下文正确（isSuperAdmin=false, companyId=5）');
+}
+
+async function test6_tenantContext集团超管() {
+  // 场景: admin 登录时 is_super_admin=1，跨租户访问
+  const { mockPool } = createMockPool({});
+  const createAuth = require('../middleware/auth.middleware');
+  const auth = createAuth(mockPool);
+
+  const fakeRes = { setHeader: () => {} };
+  auth.createSession(fakeRes, 'admin', null, true); // companyId=null, isSuperAdmin=true
+  const req = { session: { username: 'admin', companyId: null, isSuperAdmin: true } };
+
+  const ctx = auth.getTenantContextFromReq(req);
+  assert.strictEqual(ctx.isSuperAdmin, true, '集团超管 isSuperAdmin 应为 true');
+  assert.strictEqual(ctx.companyId, null, '集团超管 companyId 应为 null');
+
+  console.log('  PASS: 集团超管租户上下文正确（isSuperAdmin=true, companyId=null）');
+}
+
+async function test7_tenantContext未登录() {
+  // 场景: 未登录请求，返回安全默认值
+  const { mockPool } = createMockPool({});
+  const createAuth = require('../middleware/auth.middleware');
+  const auth = createAuth(mockPool);
+
+  const ctx = auth.getTenantContextFromReq({}); // 无 session
+  assert.strictEqual(ctx.isSuperAdmin, false, '未登录应 isSuperAdmin=false');
+  assert.strictEqual(ctx.companyId, null, '未登录应 companyId=null');
+
+  console.log('  PASS: 未登录返回安全默认值（isSuperAdmin=false, companyId=null）');
+}
+
+async function test8_tenantContext防呆非超管无company() {
+  // 场景: session 损坏导致"非超管 + companyId=null"（不应发生但需兜底）
+  // 引擎层若调用 getTenantContextFromReq 应拒绝查询
+  const { mockPool } = createMockPool({});
+  const createAuth = require('../middleware/auth.middleware');
+  const auth = createAuth(mockPool);
+
+  const req = { session: { username: 'bad_user', companyId: null, isSuperAdmin: false } };
+  const ctx = auth.getTenantContextFromReq(req);
+  // 这里只验证返回值，实际越权防护在 B3 引擎层做
+  assert.strictEqual(ctx.isSuperAdmin, false, '损坏 session isSuperAdmin 应为 false');
+  assert.strictEqual(ctx.companyId, null, '损坏 session companyId 应为 null');
+  // 引擎层后续应判断: if (!isSuperAdmin && companyId==null) throw '用户未分配公司'
+
+  console.log('  PASS: 损坏 session 兜底返回（引擎层应拒绝查询）');
+}
+
+async function test9_createSession参数防呆() {
+  // 场景: 验证 createSession 各种参数组合都能正确入 session
+  const { mockPool } = createMockPool({});
+  const createAuth = require('../middleware/auth.middleware');
+  const auth = createAuth(mockPool);
+
+  // 不传任何可选参数：默认非超管 + companyId=null
+  // 注意：登录路由会在前面拦截，但 createSession 自身不拦截，纯记录
+  const fakeRes1 = { setHeader: () => {} };
+  const sid1 = auth.createSession(fakeRes1, 'guest');
+  // 这里没法直接读 sessions Map，但能确认调用不抛错
+  assert.strictEqual(typeof sid1, 'string', '应返回 sid 字符串');
+  assert.ok(sid1.length > 0, 'sid 非空');
+
+  // companyId 传字符串数字（数据库可能返回字符串）
+  const fakeRes2 = { setHeader: () => {} };
+  const sid2 = auth.createSession(fakeRes2, 'user_b', '7', false);
+  assert.strictEqual(typeof sid2, 'string', '应返回 sid 字符串');
+
+  console.log('  PASS: createSession 参数兼容（默认值 + 字符串 companyId）');
+}
+
 // ---------- 跑测 ----------
 
 async function main() {
@@ -152,6 +239,11 @@ async function main() {
     test1_scanOverdueTasks_noLock_skip,
     test2_scanOverdueTasks_gotLock_executes,
     test3_scanOverdueTasks_noLock_doesNotSendReminder,
+    test5_tenantContext子公司用户,
+    test6_tenantContext集团超管,
+    test7_tenantContext未登录,
+    test8_tenantContext防呆非超管无company,
+    test9_createSession参数防呆,
   ];
   let failed = 0;
   for (const t of tests) {

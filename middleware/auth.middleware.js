@@ -148,11 +148,35 @@ module.exports = function createAuthMiddleware(pool) {
   }
 
   /**
-   * 创建新会话并设置 cookie（供 auth.routes 调用）
+   * 获取当前会话的租户上下文（多租户隔离用）
+   *
+   * 返回对象 { isSuperAdmin, companyId }：
+   *   - isSuperAdmin=true  → 集团超管，跨租户访问，不按 company_id 过滤
+   *   - isSuperAdmin=false && companyId 非 null → 子公司用户，所有 workflow 查询必须按 company_id 过滤
+   *
+   * 安全设计：登录时已校验"非超管必须有 company_id"，这里不可能出现"非超管 + companyId=null"。
+   * 但仍保留兜底：若 session 损坏导致此状态，companyId 返回 null，引擎层应拒绝查询。
    */
-  function createSession(res, username) {
+  function getTenantContextFromReq(req) {
+    if (!req.session) return { isSuperAdmin: false, companyId: null };
+    return {
+      isSuperAdmin: req.session.isSuperAdmin === true,
+      companyId: req.session.companyId == null ? null : Number(req.session.companyId)
+    };
+  }
+
+  /**
+   * 创建新会话并设置 cookie（供 auth.routes 调用）
+   * isSuperAdmin 默认 false（普通子公司用户）
+   */
+  function createSession(res, username, companyId = null, isSuperAdmin = false) {
     const sid = generateSessionId();
-    sessions.set(sid, { username, createdAt: Date.now() });
+    sessions.set(sid, {
+      username,
+      companyId: companyId == null ? null : Number(companyId),
+      isSuperAdmin: isSuperAdmin === true,
+      createdAt: Date.now()
+    });
     setSessionCookie(res, sid);
     return sid;
   }
@@ -193,5 +217,6 @@ module.exports = function createAuthMiddleware(pool) {
     // 工具
     checkPermission,
     getUsernameFromReq,
+    getTenantContextFromReq,
   };
 };

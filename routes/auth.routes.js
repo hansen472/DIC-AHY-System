@@ -25,7 +25,7 @@ module.exports = function setupAuthRoutes(deps) {
 
     try {
       const [rows] = await pool.execute(
-        'SELECT id, username, password_hash, status, locked_until, password_changed_at FROM users WHERE username = ?',
+        'SELECT id, username, password_hash, status, locked_until, password_changed_at, company_id, is_super_admin FROM users WHERE username = ?',
         [username]
       );
 
@@ -37,6 +37,13 @@ module.exports = function setupAuthRoutes(deps) {
 
       if (user.status !== 1) {
         return res.status(403).json({ error: '账号已被禁用' });
+      }
+
+      // 多租户安全校验：非超管必须已分配 company_id
+      // 防止"忘填公司=变超管"漏洞
+      const isSuperAdmin = user.is_super_admin === 1;
+      if (!isSuperAdmin && (user.company_id == null || user.company_id === 0)) {
+        return res.status(403).json({ error: '账号未分配公司归属，请联系管理员补全后再登录' });
       }
 
       // 检查账户是否处于锁定状态
@@ -105,7 +112,7 @@ module.exports = function setupAuthRoutes(deps) {
       await pool.execute('DELETE FROM login_attempts WHERE username = ?', [user.username]);
       await pool.execute('UPDATE users SET last_login = NOW(), locked_until = NULL WHERE id = ?', [user.id]);
 
-      createSession(res, user.username);
+      createSession(res, user.username, user.company_id, isSuperAdmin);
 
       try {
         await pool.execute(
