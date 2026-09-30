@@ -662,13 +662,16 @@ class WorkflowEngine {
       Object.assign(vars, variables);
       await this.saveInstanceVars(connection, instanceId, vars);
 
-      // 更新当前任务
-      await connection.execute(
+      // 更新当前任务（乐观锁：必须 version 匹配，防止并发双审）
+      const [updateResult] = await connection.execute(
         `UPDATE workflow_tasks
-         SET status = ?, action = ?, comment = ?, completed_at = ?
-         WHERE id = ?`,
-        [action === 'approve' ? 'completed' : 'rejected', action, comment, now(), taskId]
+         SET status = ?, action = ?, comment = ?, completed_at = ?, version = version + 1
+         WHERE id = ? AND version = ?`,
+        [action === 'approve' ? 'completed' : 'rejected', action, comment, now(), taskId, task.version]
       );
+      if (updateResult.affectedRows === 0) {
+        throw new Error('任务已被他人处理，请刷新后重试');
+      }
       await connection.execute(
         `INSERT INTO workflow_task_history
          (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at)
