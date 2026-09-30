@@ -7,7 +7,7 @@
 const express = require('express');
 const { WorkflowEngine } = require('./workflow-engine');
 
-function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername }) {
+function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername, getTenantContext }) {
   const engine = new WorkflowEngine({
     sendReminder: async (task) => {
       // 默认提醒：只打印日志，业务方可在 server.js 注入真实邮件发送器
@@ -22,7 +22,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-definitions', requireAuth, async (req, res) => {
     try {
-      const rows = await engine.listDefinitions(req.query.module_key);
+      const rows = await engine.listDefinitions(req.query.module_key, getTenantContext(req));
       res.json({ success: true, data: rows });
     } catch (err) {
       console.error('查询流程定义失败:', err);
@@ -32,7 +32,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-definitions/:id', requireAuth, async (req, res) => {
     try {
-      const def = await engine.getDefinition(parseInt(req.params.id, 10));
+      const def = await engine.getDefinition(parseInt(req.params.id, 10), getTenantContext(req));
       if (!def) return res.status(404).json({ error: '流程定义不存在' });
       res.json({ success: true, data: def });
     } catch (err) {
@@ -56,7 +56,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
         nodes,
         edges,
         created_by: getUsername(req)
-      });
+      }, getTenantContext(req));
       res.json({ success: true, id: result.id, message: '流程定义已创建' });
     } catch (err) {
       console.error('创建流程定义失败:', err);
@@ -68,7 +68,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
     try {
       const id = parseInt(req.params.id, 10);
       const { name, condition, priority, nodes, edges } = req.body;
-      const ok = await engine.updateDefinition(id, { name, condition, priority, nodes, edges });
+      const ok = await engine.updateDefinition(id, { name, condition, priority, nodes, edges }, getTenantContext(req));
       if (!ok) return res.status(404).json({ error: '流程定义不存在' });
       res.json({ success: true, message: '流程定义已更新' });
     } catch (err) {
@@ -80,7 +80,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
   app.post('/api/workflow-definitions/:id/activate', requirePermission('workflow_design'), async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
-      const ok = await engine.activateDefinition(id);
+      const ok = await engine.activateDefinition(id, getTenantContext(req));
       if (!ok) return res.status(404).json({ error: '流程定义不存在' });
       res.json({ success: true, message: '流程定义已启用' });
     } catch (err) {
@@ -92,7 +92,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
   app.delete('/api/workflow-definitions/:id', requirePermission('workflow_design'), async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
-      const ok = await engine.deleteDefinition(id);
+      const ok = await engine.deleteDefinition(id, getTenantContext(req));
       if (!ok) return res.status(404).json({ error: '流程定义不存在' });
       res.json({ success: true, message: '流程定义已删除' });
     } catch (err) {
@@ -114,7 +114,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
         business_key,
         payload,
         created_by: getUsername(req)
-      });
+      }, getTenantContext(req));
       res.json({ success: true, data: instance });
     } catch (err) {
       console.error('启动流程实例失败:', err);
@@ -128,7 +128,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
         module_key: req.query.module_key,
         business_key: req.query.business_key,
         status: req.query.status
-      });
+      }, getTenantContext(req));
       res.json({ success: true, data: rows });
     } catch (err) {
       console.error('查询流程实例失败:', err);
@@ -139,7 +139,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
   // 注意：必须放在 /:id 参数路由之前，否则 my 会被当成 id
   app.get('/api/workflow-instances/my', requireAuth, async (req, res) => {
     try {
-      const rows = await engine.getMyInstances(getUsername(req));
+      const rows = await engine.getMyInstances(getUsername(req), {}, getTenantContext(req));
       res.json({ success: true, data: rows });
     } catch (err) {
       console.error('查询我发起的流程失败:', err);
@@ -149,7 +149,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-instances/:id', requireAuth, async (req, res) => {
     try {
-      const instance = await engine.getInstance(null, parseInt(req.params.id, 10));
+      const instance = await engine.getInstance(null, parseInt(req.params.id, 10), getTenantContext(req));
       if (!instance) return res.status(404).json({ error: '流程实例不存在' });
       res.json({ success: true, data: instance });
     } catch (err) {
@@ -160,7 +160,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-instances/:id/history', requireAuth, async (req, res) => {
     try {
-      const history = await engine.getInstanceHistory(parseInt(req.params.id, 10));
+      const history = await engine.getInstanceHistory(parseInt(req.params.id, 10), getTenantContext(req));
       res.json({ success: true, data: history });
     } catch (err) {
       console.error('查询审批历史失败:', err);
@@ -170,7 +170,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-instances/:id/tasks', requireAuth, async (req, res) => {
     try {
-      const tasks = await engine.getTasksByInstance(parseInt(req.params.id, 10));
+      const tasks = await engine.getTasksByInstance(parseInt(req.params.id, 10), getTenantContext(req));
       res.json({ success: true, data: tasks });
     } catch (err) {
       console.error('查询流程任务失败:', err);
@@ -188,7 +188,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
         comment,
         completed_by: getUsername(req),
         variables
-      });
+      }, getTenantContext(req));
       console.log(`[审批任务] 任务 ${taskId} 处理结果:`, result);
       res.json({ success: true, data: result });
     } catch (err) {
@@ -206,7 +206,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
         new_assignee,
         comment,
         transferred_by: getUsername(req)
-      });
+      }, getTenantContext(req));
       res.json({ success: true, data: result });
     } catch (err) {
       console.error('转交任务失败:', err);
@@ -218,6 +218,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
   app.post('/api/workflow-instances/:id/recall', requireAuth, async (req, res) => {
     const instanceId = parseInt(req.params.id, 10);
     const username = getUsername(req);
+    const tenantCtx = getTenantContext(req);
 
     const doRecall = async (byCreator) => {
       try {
@@ -226,7 +227,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
           recalled_by: username,
           comment,
           byCreator
-        });
+        }, tenantCtx);
         res.json({ success: true, data: result });
       } catch (err) {
         console.error('撤回流程失败:', err);
@@ -235,7 +236,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
     };
 
     try {
-      const instance = await engine.getInstance(null, instanceId);
+      const instance = await engine.getInstance(null, instanceId, tenantCtx);
       if (instance && instance.created_by === username) {
         return doRecall(true);
       }
@@ -249,7 +250,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
   // 注意：具体路由必须放在 /:id 参数路由之前，否则 Express 会把 my/pending/all-pending 当成 id
   app.get('/api/workflow-tasks/my', requireAuth, async (req, res) => {
     try {
-      const tasks = await engine.getTasksByAssignee(getUsername(req), req.query.status || 'pending');
+      const tasks = await engine.getTasksByAssignee(getUsername(req), req.query.status || 'pending', getTenantContext(req));
       res.json({ success: true, data: tasks });
     } catch (err) {
       console.error('查询我的待办失败:', err);
@@ -259,7 +260,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-tasks/pending', requirePermission('workflow_view_task'), async (req, res) => {
     try {
-      const tasks = await engine.getTasksByAssignee(req.query.assignee || '', 'pending');
+      const tasks = await engine.getTasksByAssignee(req.query.assignee || '', 'pending', getTenantContext(req));
       res.json({ success: true, data: tasks });
     } catch (err) {
       console.error('查询待办任务失败:', err);
@@ -270,7 +271,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
   app.get('/api/workflow-tasks/all-pending', requirePermission('workflow_view_task'), async (req, res) => {
     try {
       // 排除当前用户自己发起的流程任务，自己提交的审批在"我提交的审批"中查看
-      const tasks = await engine.getAllPendingTasks({ excludeCreatedBy: getUsername(req) });
+      const tasks = await engine.getAllPendingTasks({ excludeCreatedBy: getUsername(req) }, getTenantContext(req));
       res.json({ success: true, data: tasks });
     } catch (err) {
       console.error('查询全部待办任务失败:', err);
@@ -280,7 +281,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-tasks/my-count', requireAuth, async (req, res) => {
     try {
-      const count = await engine.getPendingTaskCount(getUsername(req));
+      const count = await engine.getPendingTaskCount(getUsername(req), getTenantContext(req));
       res.json({ success: true, data: { count } });
     } catch (err) {
       console.error('查询待办数量失败:', err);
@@ -290,7 +291,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-tasks/my-participated', requireAuth, async (req, res) => {
     try {
-      const tasks = await engine.getParticipatedTasks(getUsername(req));
+      const tasks = await engine.getParticipatedTasks(getUsername(req), getTenantContext(req));
       res.json({ success: true, data: tasks });
     } catch (err) {
       console.error('查询我的参与失败:', err);
@@ -300,7 +301,7 @@ function setupWorkflowRoutes(app, { requireAuth, requirePermission, getUsername 
 
   app.get('/api/workflow-tasks/:id', requireAuth, async (req, res) => {
     try {
-      const task = await engine.getTask(parseInt(req.params.id, 10));
+      const task = await engine.getTask(parseInt(req.params.id, 10), getTenantContext(req));
       if (!task) return res.status(404).json({ error: '任务不存在' });
       res.json({ success: true, data: task });
     } catch (err) {

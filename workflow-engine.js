@@ -22,6 +22,68 @@
 
 const { pool } = require('./db-config');
 
+// ==================== 多租户隔离助手 ====================
+
+/**
+ * 默认租户上下文：当作超管（跨租户）。
+ * 用于引擎方法未显式传 tenantCtx 时的兜底（如单元测试、内部调用）。
+ * 生产路由必须显式传入从 session 解析的真实租户上下文。
+ */
+const DEFAULT_TENANT_CTX = Object.freeze({ isSuperAdmin: true, companyId: null });
+
+/**
+ * 规范化租户上下文（接收任意输入，返回安全形态）。
+ *  - 未提供 / null → 默认超管（向后兼容）
+ *  - 非超管 + companyId 为 null/0/NaN → 抛 TENANT_CTX_INVALID
+ */
+function normalizeTenantCtx(tenantCtx) {
+  if (!tenantCtx) return DEFAULT_TENANT_CTX;
+  const isSuperAdmin = tenantCtx.isSuperAdmin === true;
+  const rawCompanyId = tenantCtx.companyId;
+  let companyId = null;
+  if (rawCompanyId != null && rawCompanyId !== '') {
+    const n = Number(rawCompanyId);
+    companyId = Number.isFinite(n) && n > 0 ? n : null;
+  }
+  if (!isSuperAdmin && companyId == null) {
+    const err = new Error('租户上下文异常：非超管用户未分配 company_id，拒绝查询');
+    err.code = 'TENANT_CTX_INVALID';
+    throw err;
+  }
+  return { isSuperAdmin, companyId };
+}
+
+/**
+ * 构造 SELECT/UPDATE/DELETE 用的 company_id 过滤片段。
+ *
+ * @returns {{ clause: string, params: Array }}
+ *   - 超管：clause='' params=[] （不加过滤，跨租户）
+ *   - 子公司：clause=' AND (tbl.company_id IS NULL OR tbl.company_id = ?)' params=[N]
+ *   - 注意：clause 始终以 ' AND ' 开头，调用方需保证 WHERE 已存在（无 WHERE 时用 'WHERE 1=1' 兜底）
+ *
+ * @param {object} tenantCtx  租户上下文 { isSuperAdmin, companyId }
+ * @param {string} alias     列前缀（表别名或空），如 'd' / 'workflow_definitions' / ''
+ */
+function buildTenantFilter(tenantCtx, alias = '') {
+  const ctx = normalizeTenantCtx(tenantCtx);
+  if (ctx.isSuperAdmin) return { clause: '', params: [] };
+  const col = alias ? `${alias}.company_id` : 'company_id';
+  return {
+    clause: ` AND (${col} IS NULL OR ${col} = ?)`,
+    params: [ctx.companyId]
+  };
+}
+
+/**
+ * 构造 INSERT 用的 company_id 值。
+ *  - 超管：返回 null（全局通用模板，所有子公司可见）
+ *  - 子公司：返回其 companyId
+ */
+function buildTenantInsertValue(tenantCtx) {
+  const ctx = normalizeTenantCtx(tenantCtx);
+  return ctx.companyId;
+}
+
 // ==================== 白名单表达式解析器 ====================
 
 const FORBIDDEN_IDENTIFIERS = new Set([
@@ -272,13 +334,14 @@ class WorkflowEngine {
 
   // ---------- 流程定义 ----------
 
-  async getActiveDefinition(moduleKey, context = {}) {
+  async getActiveDefinition(moduleKey, context = {}, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     const [rows] = await pool.execute(
       `SELECT id, module_key, name, version, is_active, \`condition\`, priority, nodes_json, edges_json
        FROM workflow_definitions
-       WHERE module_key = ? AND is_active = 1
+       WHERE module_key = ? AND is_active = 1${tf.clause}
        ORDER BY priority DESC, version DESC, id DESC`,
-      [moduleKey]
+      [moduleKey, ...tf.params]
     );
     for (const def of rows) {
       try {
@@ -292,20 +355,22 @@ class WorkflowEngine {
     return null;
   }
 
-  async createDefinition({ module_key, name, version = 1, condition = '', priority = 0, nodes, edges, created_by }) {
+  async createDefinition({ module_key, name, version = 1, condition = '', priority = 0, nodes, edges, created_by }, tenantCtx) {
+    const companyId = buildTenantInsertValue(tenantCtx);
     const [result] = await pool.execute(
       `INSERT INTO workflow_definitions
-       (module_key, name, version, is_active, \`condition\`, priority, nodes_json, edges_json, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [module_key, name, version, 0, condition, priority, safeJson(nodes, []), safeJson(edges, []), created_by]
+       (module_key, name, version, is_active, \`condition\`, priority, nodes_json, edges_json, created_by, company_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [module_key, name, version, 0, condition, priority, safeJson(nodes, []), safeJson(edges, []), created_by, companyId]
     );
     return { id: result.insertId };
   }
 
-  async updateDefinition(id, { name, condition, priority, nodes, edges }) {
+  async updateDefinition(id, { name, condition, priority, nodes, edges }, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     const [existing] = await pool.execute(
-      'SELECT name, \`condition\`, priority, nodes_json, edges_json FROM workflow_definitions WHERE id = ?',
-      [id]
+      `SELECT name, \`condition\`, priority, nodes_json, edges_json FROM workflow_definitions WHERE id = ?${tf.clause}`,
+      [id, ...tf.params]
     );
     if (existing.length === 0) return false;
     const old = existing[0];
@@ -319,19 +384,20 @@ class WorkflowEngine {
     const [result] = await pool.execute(
       `UPDATE workflow_definitions
        SET name = ?, \`condition\` = ?, priority = ?, nodes_json = ?, edges_json = ?
-       WHERE id = ?`,
-      [finalName, finalCondition, finalPriority, finalNodes, finalEdges, id]
+       WHERE id = ?${tf.clause}`,
+      [finalName, finalCondition, finalPriority, finalNodes, finalEdges, id, ...tf.params]
     );
     return result.affectedRows > 0;
   }
 
-  async activateDefinition(id) {
+  async activateDefinition(id, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
       const [defs] = await connection.execute(
-        'SELECT module_key, \`condition\` FROM workflow_definitions WHERE id = ?',
-        [id]
+        `SELECT module_key, \`condition\` FROM workflow_definitions WHERE id = ?${tf.clause}`,
+        [id, ...tf.params]
       );
       if (defs.length === 0) {
         await connection.rollback();
@@ -340,16 +406,17 @@ class WorkflowEngine {
       const moduleKey = defs[0].module_key;
       const hasCondition = defs[0].condition && String(defs[0].condition).trim() !== '';
 
-      // 无条件（默认）流程启用时，禁用同模块其他无条件流程，避免默认冲突
+      // 无条件（默认）流程启用时，禁用同模块同租户其他无条件流程，避免默认冲突
+      // 注意：tf.clause 限定到本租户，防止跨租户停用他人流程
       if (!hasCondition) {
         await connection.execute(
-          "UPDATE workflow_definitions SET is_active = 0 WHERE module_key = ? AND (\`condition\` IS NULL OR \`condition\` = '')",
-          [moduleKey]
+          `UPDATE workflow_definitions SET is_active = 0 WHERE module_key = ? AND (\`condition\` IS NULL OR \`condition\` = '')${tf.clause}`,
+          [moduleKey, ...tf.params]
         );
       }
       await connection.execute(
-        'UPDATE workflow_definitions SET is_active = 1 WHERE id = ?',
-        [id]
+        `UPDATE workflow_definitions SET is_active = 1 WHERE id = ?${tf.clause}`,
+        [id, ...tf.params]
       );
       await connection.commit();
       return true;
@@ -361,22 +428,30 @@ class WorkflowEngine {
     }
   }
 
-  async deleteDefinition(id) {
+  async deleteDefinition(id, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     const [result] = await pool.execute(
-      'DELETE FROM workflow_definitions WHERE id = ?',
-      [id]
+      `DELETE FROM workflow_definitions WHERE id = ?${tf.clause}`,
+      [id, ...tf.params]
     );
     return result.affectedRows > 0;
   }
 
-  async listDefinitions(moduleKey) {
+  async listDefinitions(moduleKey, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     let sql = `SELECT id, module_key, name, version, is_active, \`condition\`, priority, created_by, created_at, updated_at
                FROM workflow_definitions`;
     const params = [];
+    const conds = [];
     if (moduleKey) {
-      sql += ' WHERE module_key = ?';
+      conds.push('module_key = ?');
       params.push(moduleKey);
     }
+    if (tf.clause) {
+      conds.push(tf.clause.replace(/^ AND /, ''));
+      params.push(...tf.params);
+    }
+    if (conds.length) sql += ' WHERE ' + conds.join(' AND ');
     sql += ' ORDER BY module_key ASC, priority DESC, version DESC, id DESC';
     const [rows] = await pool.execute(sql, params);
     return rows.map(r => ({
@@ -386,11 +461,12 @@ class WorkflowEngine {
     }));
   }
 
-  async getDefinition(id) {
+  async getDefinition(id, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     const [rows] = await pool.execute(
       `SELECT id, module_key, name, version, is_active, \`condition\`, priority, nodes_json, edges_json, created_by, created_at, updated_at
-       FROM workflow_definitions WHERE id = ?`,
-      [id]
+       FROM workflow_definitions WHERE id = ?${tf.clause}`,
+      [id, ...tf.params]
     );
     if (rows.length === 0) return null;
     const r = rows[0];
@@ -413,25 +489,26 @@ class WorkflowEngine {
     return vars;
   }
 
-  async saveInstanceVars(connection, instanceId, vars) {
+  async saveInstanceVars(connection, instanceId, vars, tenantCtx) {
+    const companyId = buildTenantInsertValue(tenantCtx);
     for (const [name, value] of Object.entries(vars)) {
       await connection.execute(
-        `INSERT INTO workflow_instance_vars (instance_id, var_name, var_value)
-         VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE var_value = VALUES(var_value)`,
-        [instanceId, name, safeJson(value)]
+        `INSERT INTO workflow_instance_vars (instance_id, var_name, var_value, company_id)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE var_value = VALUES(var_value), company_id = VALUES(company_id)`,
+        [instanceId, name, safeJson(value), companyId]
       );
     }
   }
 
   // ---------- 流程启动 / 路由 ----------
 
-  async startInstance({ definition_id, module_key, business_key, payload, created_by }) {
+  async startInstance({ definition_id, module_key, business_key, payload, created_by }, tenantCtx) {
     let definition;
     if (definition_id) {
-      definition = await this.getDefinition(definition_id);
+      definition = await this.getDefinition(definition_id, tenantCtx);
     } else if (module_key) {
-      definition = await this.getActiveDefinition(module_key, { payload });
+      definition = await this.getActiveDefinition(module_key, { payload }, tenantCtx);
     }
     if (!definition) {
       throw new Error('未找到有效的流程定义');
@@ -443,6 +520,7 @@ class WorkflowEngine {
       throw new Error('流程定义缺少开始节点');
     }
 
+    const companyId = buildTenantInsertValue(tenantCtx);
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -450,17 +528,17 @@ class WorkflowEngine {
       const payloadJson = safeJson(payload);
       const [insResult] = await connection.execute(
         `INSERT INTO workflow_instances
-         (definition_id, business_key, status, current_node_ids, payload_json, created_by)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [definition.id, business_key, 'running', safeJson([]), payloadJson, created_by]
+         (definition_id, business_key, status, current_node_ids, payload_json, created_by, company_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [definition.id, business_key, 'running', safeJson([]), payloadJson, created_by, companyId]
       );
       const instanceId = insResult.insertId;
 
       const vars = {};
-      await this.saveInstanceVars(connection, instanceId, vars);
+      await this.saveInstanceVars(connection, instanceId, vars, tenantCtx);
 
       const nextNodeIds = graph.outgoing.get(startNode.id).map(e => e.target);
-      await this.advance(connection, instanceId, definition, nextNodeIds, payload, vars);
+      await this.advance(connection, instanceId, definition, nextNodeIds, payload, vars, tenantCtx);
 
       await connection.commit();
 
@@ -477,7 +555,7 @@ class WorkflowEngine {
     }
   }
 
-  async advance(connection, instanceId, definition, nodeIds, payload, vars) {
+  async advance(connection, instanceId, definition, nodeIds, payload, vars, tenantCtx) {
     const graph = buildGraph(definition);
     const queue = Array.from(new Set(nodeIds));
     const activeApprovalNodes = [];
@@ -523,7 +601,7 @@ class WorkflowEngine {
     // 创建审批任务
     for (const nid of activeApprovalNodes) {
       const node = graph.nodeMap.get(nid);
-      await this.createNodeTasks(connection, instanceId, node, vars);
+      await this.createNodeTasks(connection, instanceId, node, vars, tenantCtx);
     }
 
     // 如果没有待审批节点，说明流程到达终点
@@ -536,7 +614,7 @@ class WorkflowEngine {
     }
   }
 
-  async createNodeTasks(connection, instanceId, node, vars = {}) {
+  async createNodeTasks(connection, instanceId, node, vars = {}, tenantCtx) {
     const cfg = node.config || {};
     const rawAssignees = Array.isArray(cfg.assignees) ? cfg.assignees.filter(Boolean) : [];
 
@@ -556,13 +634,14 @@ class WorkflowEngine {
     }
 
     const dueTime = cfg.dueHours ? addHours(now(), cfg.dueHours) : null;
+    const companyId = buildTenantInsertValue(tenantCtx);
 
     for (const assignee of assignees) {
       await connection.execute(
         `INSERT INTO workflow_tasks
-         (instance_id, node_id, node_name, assignee_username, status, due_time)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [instanceId, node.id, node.name || node.id, assignee, 'pending', dueTime]
+         (instance_id, node_id, node_name, assignee_username, status, due_time, company_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [instanceId, node.id, node.name || node.id, assignee, 'pending', dueTime, companyId]
       );
     }
   }
@@ -607,13 +686,14 @@ class WorkflowEngine {
 
   // ---------- 任务处理 ----------
 
-  async getTask(taskId) {
+  async getTask(taskId, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 't');
     const [rows] = await pool.execute(
       `SELECT t.*, i.definition_id, i.business_key, i.payload_json, i.status as instance_status, i.current_node_ids
        FROM workflow_tasks t
        JOIN workflow_instances i ON t.instance_id = i.id
-       WHERE t.id = ?`,
-      [taskId]
+       WHERE t.id = ?${tf.clause}`,
+      [taskId, ...tf.params]
     );
     if (rows.length === 0) return null;
     const task = rows[0];
@@ -622,11 +702,15 @@ class WorkflowEngine {
     return task;
   }
 
-  async completeTask(taskId, { action, comment = '', completed_by, variables = {} }) {
+  async completeTask(taskId, { action, comment = '', completed_by, variables = {} }, tenantCtx) {
     if (!['approve', 'reject'].includes(action)) {
       throw new Error('action 必须是 approve 或 reject');
     }
 
+    const tf = buildTenantFilter(tenantCtx, 't');
+    const tfTask = buildTenantFilter(tenantCtx, 'workflow_tasks');
+    const tfInst = buildTenantFilter(tenantCtx, 'i');
+    const companyId = buildTenantInsertValue(tenantCtx);
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -636,8 +720,8 @@ class WorkflowEngine {
          FROM workflow_tasks t
          JOIN workflow_instances i ON t.instance_id = i.id
          JOIN workflow_definitions d ON i.definition_id = d.id
-         WHERE t.id = ? FOR UPDATE`,
-        [taskId]
+         WHERE t.id = ?${tf.clause} FOR UPDATE`,
+        [taskId, ...tf.params]
       );
       if (taskRows.length === 0) throw new Error('任务不存在');
       const task = taskRows[0];
@@ -650,7 +734,7 @@ class WorkflowEngine {
       }
 
       const instanceId = task.instance_id;
-      const definition = await this.getDefinition(task.definition_id);
+      const definition = await this.getDefinition(task.definition_id, tenantCtx);
       const graph = buildGraph(definition);
       const node = graph.nodeMap.get(task.node_id);
       if (!node) throw new Error('流程节点不存在');
@@ -660,28 +744,28 @@ class WorkflowEngine {
 
       // 保存流程变量更新
       Object.assign(vars, variables);
-      await this.saveInstanceVars(connection, instanceId, vars);
+      await this.saveInstanceVars(connection, instanceId, vars, tenantCtx);
 
-      // 更新当前任务（乐观锁：必须 version 匹配，防止并发双审）
+      // 更新当前任务（乐观锁：必须 version 匹配，防止并发双审；同时 company_id 过滤防越权）
       const [updateResult] = await connection.execute(
         `UPDATE workflow_tasks
          SET status = ?, action = ?, comment = ?, completed_at = ?, version = version + 1
-         WHERE id = ? AND version = ?`,
-        [action === 'approve' ? 'completed' : 'rejected', action, comment, now(), taskId, task.version]
+         WHERE id = ? AND version = ?${tfTask.clause}`,
+        [action === 'approve' ? 'completed' : 'rejected', action, comment, now(), taskId, task.version, ...tfTask.params]
       );
       if (updateResult.affectedRows === 0) {
         throw new Error('任务已被他人处理，请刷新后重试');
       }
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [taskId, instanceId, task.node_id, task.node_name, completed_by, action, comment, now()]
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [taskId, instanceId, task.node_id, task.node_name, completed_by, action, comment, now(), companyId]
       );
 
       // 通知业务模块：单个任务已完成（节点表单数据随 variables 传递，供业务表同步）
       await this.invokeHook(definition.module_key, 'onTaskComplete', {
-        instance: await this.getInstance(connection, instanceId),
+        instance: await this.getInstance(connection, instanceId, tenantCtx),
         task,
         action,
         comment,
@@ -689,27 +773,27 @@ class WorkflowEngine {
       });
 
       // 判断审批节点是否达成最终结论
-      const nodeResult = await this.resolveNodeResult(connection, instanceId, node);
+      const nodeResult = await this.resolveNodeResult(connection, instanceId, node, tenantCtx);
       if (!nodeResult.decided) {
         await connection.commit();
         console.log(`[WorkflowEngine] 任务 ${taskId} 已处理，节点 ${node.id} 等待其他审批人`);
         return { taskId, nodeStatus: 'waiting' };
       }
 
-      // 节点已决定：取消同节点其他待办
+      // 节点已决定：取消同节点其他待办（限定到本租户，防止误取消他司任务）
       await connection.execute(
         `UPDATE workflow_tasks
          SET status = 'cancelled'
-         WHERE instance_id = ? AND node_id = ? AND status = 'pending'`,
-        [instanceId, node.id]
+         WHERE instance_id = ? AND node_id = ? AND status = 'pending'${tfTask.clause}`,
+        [instanceId, node.id, ...tfTask.params]
       );
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at)
-         SELECT id, instance_id, node_id, node_name, assignee_username, 'cancel', '节点已达成结论，任务取消', ?
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
+         SELECT id, instance_id, node_id, node_name, assignee_username, 'cancel', '节点已达成结论，任务取消', ?, workflow_tasks.company_id
          FROM workflow_tasks
-         WHERE instance_id = ? AND node_id = ? AND status = 'cancelled'`,
-        [now(), instanceId, node.id]
+         WHERE instance_id = ? AND node_id = ? AND status = 'cancelled'${tfTask.clause}`,
+        [now(), instanceId, node.id, ...tfTask.params]
       );
 
       // 根据结论路由到下一节点
@@ -722,11 +806,11 @@ class WorkflowEngine {
         // 没有后续连线，流程结束
         const finalStatus = nodeResult.result === 'approve' ? 'completed' : 'rejected';
         await connection.execute(
-          'UPDATE workflow_instances SET status = ? WHERE id = ?',
-          [finalStatus, instanceId]
+          `UPDATE workflow_instances SET status = ? WHERE id = ?${tfInst.clause}`,
+          [finalStatus, instanceId, ...tfInst.params]
         );
         await this.invokeHook(definition.module_key, nodeResult.result === 'approve' ? 'onProcessFinish' : 'onTaskReject', {
-          instance: await this.getInstance(connection, instanceId),
+          instance: await this.getInstance(connection, instanceId, tenantCtx),
           result: finalStatus
         });
         await connection.commit();
@@ -735,9 +819,9 @@ class WorkflowEngine {
       }
 
       const nextNodeIds = nextEdges.map(e => e.target);
-      await this.advance(connection, instanceId, definition, nextNodeIds, payload, vars);
+      await this.advance(connection, instanceId, definition, nextNodeIds, payload, vars, tenantCtx);
 
-      const instance = await this.getInstance(connection, instanceId);
+      const instance = await this.getInstance(connection, instanceId, tenantCtx);
       if (instance.status === 'completed') {
         await this.invokeHook(definition.module_key, 'onProcessFinish', { instance, result: 'completed' });
       } else if (instance.status === 'rejected') {
@@ -756,15 +840,16 @@ class WorkflowEngine {
     }
   }
 
-  async resolveNodeResult(connection, instanceId, node) {
+  async resolveNodeResult(connection, instanceId, node, tenantCtx) {
     const cfg = node.config || {};
     const mode = cfg.approvalMode || 'all';
+    const tf = buildTenantFilter(tenantCtx, 'workflow_tasks');
     // 按创建时间倒序，取最新一轮的任务（支持循环审批：旧轮次任务不污染当前决策）
     const [rows] = await connection.execute(
       `SELECT status, action, created_at FROM workflow_tasks
-       WHERE instance_id = ? AND node_id = ?
+       WHERE instance_id = ? AND node_id = ?${tf.clause}
        ORDER BY created_at DESC`,
-      [instanceId, node.id]
+      [instanceId, node.id, ...tf.params]
     );
     if (rows.length === 0) return { decided: false };
 
@@ -800,7 +885,10 @@ class WorkflowEngine {
     return { decided: false };
   }
 
-  async transferTask(taskId, { new_assignee, comment = '', transferred_by }) {
+  async transferTask(taskId, { new_assignee, comment = '', transferred_by }, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 't');
+    const tfTask = buildTenantFilter(tenantCtx, 'workflow_tasks');
+    const companyId = buildTenantInsertValue(tenantCtx);
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -809,8 +897,8 @@ class WorkflowEngine {
         `SELECT t.*, i.status as instance_status
          FROM workflow_tasks t
          JOIN workflow_instances i ON t.instance_id = i.id
-         WHERE t.id = ? FOR UPDATE`,
-        [taskId]
+         WHERE t.id = ?${tf.clause} FOR UPDATE`,
+        [taskId, ...tf.params]
       );
       if (taskRows.length === 0) throw new Error('任务不存在');
       const task = taskRows[0];
@@ -820,21 +908,21 @@ class WorkflowEngine {
       await connection.execute(
         `UPDATE workflow_tasks
          SET status = ?, action = ?, comment = ?, completed_at = ?
-         WHERE id = ?`,
-        ['transferred', 'transfer', comment, now(), taskId]
+         WHERE id = ?${tfTask.clause}`,
+        ['transferred', 'transfer', comment, now(), taskId, ...tfTask.params]
       );
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [taskId, task.instance_id, task.node_id, task.node_name, transferred_by, 'transfer', `转交给 ${new_assignee}`, now()]
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [taskId, task.instance_id, task.node_id, task.node_name, transferred_by, 'transfer', `转交给 ${new_assignee}`, now(), companyId]
       );
 
       await connection.execute(
         `INSERT INTO workflow_tasks
-         (instance_id, node_id, node_name, assignee_username, status, due_time)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [task.instance_id, task.node_id, task.node_name, new_assignee, 'pending', task.due_time]
+         (instance_id, node_id, node_name, assignee_username, status, due_time, company_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [task.instance_id, task.node_id, task.node_name, new_assignee, 'pending', task.due_time, companyId]
       );
 
       await connection.commit();
@@ -847,7 +935,9 @@ class WorkflowEngine {
     }
   }
 
-  async recallInstance(instanceId, { recalled_by, comment = '', byCreator = false }) {
+  async recallInstance(instanceId, { recalled_by, comment = '', byCreator = false }, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 'i');
+    const tfTask = buildTenantFilter(tenantCtx, 'workflow_tasks');
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -856,8 +946,8 @@ class WorkflowEngine {
         `SELECT i.*, d.module_key
          FROM workflow_instances i
          JOIN workflow_definitions d ON i.definition_id = d.id
-         WHERE i.id = ? AND i.status = 'running' FOR UPDATE`,
-        [instanceId]
+         WHERE i.id = ? AND i.status = 'running'${tf.clause} FOR UPDATE`,
+        [instanceId, ...tf.params]
       );
       if (insRows.length === 0) throw new Error('流程实例不存在或已结束');
       const instance = insRows[0];
@@ -866,31 +956,31 @@ class WorkflowEngine {
       if (byCreator) {
         const [actRows] = await connection.execute(
           `SELECT COUNT(*) AS cnt FROM workflow_tasks
-           WHERE instance_id = ? AND status IN ('completed', 'rejected', 'transferred')`,
-          [instanceId]
+           WHERE instance_id = ? AND status IN ('completed', 'rejected', 'transferred')${tfTask.clause}`,
+          [instanceId, ...tfTask.params]
         );
         if (actRows[0].cnt > 0) throw new Error('已有审批人处理该流程，不能撤回');
       }
 
       await connection.execute(
-        "UPDATE workflow_instances SET status = 'recalled' WHERE id = ?",
-        [instanceId]
+        `UPDATE workflow_instances SET status = 'recalled' WHERE id = ?${tf.clause}`,
+        [instanceId, ...tf.params]
       );
       await connection.execute(
-        `UPDATE workflow_tasks SET status = 'cancelled' WHERE instance_id = ? AND status = 'pending'`,
-        [instanceId]
+        `UPDATE workflow_tasks SET status = 'cancelled' WHERE instance_id = ? AND status = 'pending'${tfTask.clause}`,
+        [instanceId, ...tfTask.params]
       );
       await connection.execute(
         `INSERT INTO workflow_task_history
-         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at)
-         SELECT id, instance_id, node_id, node_name, ?, 'recall', ?, ?
+         (task_id, instance_id, node_id, node_name, assignee_username, action, comment, created_at, company_id)
+         SELECT id, instance_id, node_id, node_name, ?, 'recall', ?, ?, workflow_tasks.company_id
          FROM workflow_tasks
-         WHERE instance_id = ? AND status = 'cancelled'`,
-        [recalled_by, comment, now(), instanceId]
+         WHERE instance_id = ? AND status = 'cancelled'${tfTask.clause}`,
+        [recalled_by, comment, now(), instanceId, ...tfTask.params]
       );
 
       await this.invokeHook(instance.module_key, 'onProcessFinish', {
-        instance: await this.getInstance(connection, instanceId),
+        instance: await this.getInstance(connection, instanceId, tenantCtx),
         result: 'recalled'
       });
 
@@ -904,14 +994,15 @@ class WorkflowEngine {
     }
   }
 
-  async getInstance(connection, instanceId) {
+  async getInstance(connection, instanceId, tenantCtx) {
     const conn = connection || pool;
+    const tf = buildTenantFilter(tenantCtx, 'i');
     const [rows] = await conn.execute(
       `SELECT i.*, d.module_key, d.name as definition_name, d.version, d.nodes_json AS def_nodes_json, d.edges_json AS def_edges_json
        FROM workflow_instances i
        JOIN workflow_definitions d ON i.definition_id = d.id
-       WHERE i.id = ?`,
-      [instanceId]
+       WHERE i.id = ?${tf.clause}`,
+      [instanceId, ...tf.params]
     );
     if (rows.length === 0) return null;
     const r = rows[0];
@@ -938,21 +1029,28 @@ class WorkflowEngine {
     // 附带流程变量（含各节点审批表单数据），供详情展示与业务同步使用
     r.vars = await this.loadInstanceVars(conn, instanceId);
     // 附带当前待办任务的审批人列表，供详情弹窗显示"处理人"
+    const tfTask = buildTenantFilter(tenantCtx, 'workflow_tasks');
     const [pendingRows] = await conn.execute(
       `SELECT assignee_username FROM workflow_tasks
-       WHERE instance_id = ? AND status = 'pending'`,
-      [instanceId]
+       WHERE instance_id = ? AND status = 'pending'${tfTask.clause}`,
+      [instanceId, ...tfTask.params]
     );
     r.pending_assignees = pendingRows.map(p => p.assignee_username);
     return r;
   }
 
-  async listInstances({ module_key, business_key, status, limit = 100, offset = 0 }) {
+  async listInstances({ module_key, business_key, status, limit = 100, offset = 0 }, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 'i');
     const conditions = [];
     const params = [];
     if (module_key) { conditions.push('d.module_key = ?'); params.push(module_key); }
     if (business_key) { conditions.push('i.business_key = ?'); params.push(business_key); }
     if (status) { conditions.push('i.status = ?'); params.push(status); }
+    if (tf.clause) {
+      // tf.clause 形如 ' AND (i.company_id IS NULL OR i.company_id = ?)'
+      conditions.push(tf.clause.replace(/^ AND /, ''));
+      params.push(...tf.params);
+    }
 
     let sql = `SELECT i.*, d.module_key, d.name as definition_name, d.version
                FROM workflow_instances i
@@ -970,15 +1068,17 @@ class WorkflowEngine {
   }
 
   // 查询指定用户发起的流程实例（含当前待审批节点名称），用于“我提交的审批”
-  async getMyInstances(username, { limit = 100 } = {}) {
+  async getMyInstances(username, { limit = 100 } = {}, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 'i');
+    const tfTask = buildTenantFilter(tenantCtx, 'workflow_tasks');
     const [rows] = await pool.execute(
       `SELECT i.*, d.module_key, d.name AS definition_name, d.version
        FROM workflow_instances i
        JOIN workflow_definitions d ON i.definition_id = d.id
-       WHERE i.created_by = ?
+       WHERE i.created_by = ?${tf.clause}
        ORDER BY i.updated_at DESC
        LIMIT ?`,
-      [username, limit]
+      [username, ...tf.params, limit]
     );
     const instances = rows.map(r => {
       r.payload = parseJson(r.payload_json, {});
@@ -992,8 +1092,8 @@ class WorkflowEngine {
     const placeholders = ids.map(() => '?').join(',');
     const [taskRows] = await pool.execute(
       `SELECT instance_id, node_name, assignee_username FROM workflow_tasks
-       WHERE status = 'pending' AND instance_id IN (${placeholders})`,
-      ids
+       WHERE status = 'pending' AND instance_id IN (${placeholders})${tfTask.clause}`,
+      [...ids, ...tfTask.params]
     );
     const nodeMap = {};
     const assigneeMap = {};
@@ -1015,9 +1115,9 @@ class WorkflowEngine {
     // 批量统计是否已有审批人处理过（同意/驳回/转交），用于前端控制"撤回"按钮是否可用
     const [actRows] = await pool.execute(
       `SELECT instance_id, COUNT(*) AS cnt FROM workflow_tasks
-       WHERE instance_id IN (${placeholders}) AND status IN ('completed', 'rejected', 'transferred')
+       WHERE instance_id IN (${placeholders}) AND status IN ('completed', 'rejected', 'transferred')${tfTask.clause}
        GROUP BY instance_id`,
-      ids
+      [...ids, ...tfTask.params]
     );
     const actMap = {};
     actRows.forEach(r => { actMap[r.instance_id] = r.cnt; });
@@ -1025,39 +1125,42 @@ class WorkflowEngine {
     return instances;
   }
 
-  async getInstanceHistory(instanceId) {
+  async getInstanceHistory(instanceId, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 'h');
     const [rows] = await pool.execute(
       `SELECT h.*, t.assignee_username as original_assignee
        FROM workflow_task_history h
        LEFT JOIN workflow_tasks t ON h.task_id = t.id
-       WHERE h.instance_id = ?
+       WHERE h.instance_id = ?${tf.clause}
        ORDER BY h.created_at ASC`,
-      [instanceId]
+      [instanceId, ...tf.params]
     );
     return rows;
   }
 
-  async getTasksByAssignee(assignee, status = 'pending') {
+  async getTasksByAssignee(assignee, status = 'pending', tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 't');
     const [rows] = await pool.execute(
       `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, d.module_key, d.name as definition_name, d.nodes_json
        FROM workflow_tasks t
        JOIN workflow_instances i ON t.instance_id = i.id
        JOIN workflow_definitions d ON i.definition_id = d.id
-       WHERE t.assignee_username = ? AND t.status = ?
+       WHERE t.assignee_username = ? AND t.status = ?${tf.clause}
        ORDER BY t.created_at DESC`,
-      [assignee, status]
+      [assignee, status, ...tf.params]
     );
     console.log(`[WorkflowEngine] getTasksByAssignee assignee=${assignee} status=${status} count=${rows.length} ids=${rows.map(r => r.id).join(',')}`);
     return rows.map(r => this.attachNodeConfig(r));
   }
 
-  async getAllPendingTasks({ excludeCreatedBy } = {}) {
+  async getAllPendingTasks({ excludeCreatedBy } = {}, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 't');
     let sql = `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, i.created_by as instance_created_by, d.module_key, d.name as definition_name, d.nodes_json
                FROM workflow_tasks t
                JOIN workflow_instances i ON t.instance_id = i.id
                JOIN workflow_definitions d ON i.definition_id = d.id
-               WHERE t.status = 'pending'`;
-    const params = [];
+               WHERE t.status = 'pending'${tf.clause}`;
+    const params = [...tf.params];
     // 排除当前用户自己发起的流程任务：自己提交的审批只在"我提交的审批"中展示
     if (excludeCreatedBy) {
       sql += ' AND i.created_by != ?';
@@ -1070,15 +1173,16 @@ class WorkflowEngine {
   }
 
   // 查询当前用户参与过的任务（含待办、已审批、已驳回、已转交），用于"我的参与"标签页
-  async getParticipatedTasks(username) {
+  async getParticipatedTasks(username, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx, 't');
     const [rows] = await pool.execute(
       `SELECT t.*, i.business_key, i.payload_json, i.status as instance_status, d.module_key, d.name as definition_name, d.nodes_json
        FROM workflow_tasks t
        JOIN workflow_instances i ON t.instance_id = i.id
        JOIN workflow_definitions d ON i.definition_id = d.id
-       WHERE t.assignee_username = ?
+       WHERE t.assignee_username = ?${tf.clause}
        ORDER BY t.created_at DESC`,
-      [username]
+      [username, ...tf.params]
     );
     console.log(`[WorkflowEngine] getParticipatedTasks username=${username} count=${rows.length} ids=${rows.map(r => r.id).join(',')}`);
     return rows.map(r => this.attachNodeConfig(r));
@@ -1094,18 +1198,20 @@ class WorkflowEngine {
     return taskRow;
   }
 
-  async getPendingTaskCount(assignee) {
+  async getPendingTaskCount(assignee, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     const [rows] = await pool.execute(
-      `SELECT COUNT(*) AS cnt FROM workflow_tasks WHERE assignee_username = ? AND status = 'pending'`,
-      [assignee]
+      `SELECT COUNT(*) AS cnt FROM workflow_tasks WHERE assignee_username = ? AND status = 'pending'${tf.clause}`,
+      [assignee, ...tf.params]
     );
     return rows[0]?.cnt || 0;
   }
 
-  async getTasksByInstance(instanceId) {
+  async getTasksByInstance(instanceId, tenantCtx) {
+    const tf = buildTenantFilter(tenantCtx);
     const [rows] = await pool.execute(
-      `SELECT * FROM workflow_tasks WHERE instance_id = ? ORDER BY created_at ASC`,
-      [instanceId]
+      `SELECT * FROM workflow_tasks WHERE instance_id = ?${tf.clause} ORDER BY created_at ASC`,
+      [instanceId, ...tf.params]
     );
     return rows;
   }

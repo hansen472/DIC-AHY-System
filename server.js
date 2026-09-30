@@ -83,6 +83,7 @@ setupWorkflowRoutes(app, {
   requireAuth: auth.requireAuth,
   requirePermission: auth.requirePermission,
   getUsername: auth.getUsernameFromReq,
+  getTenantContext: auth.getTenantContextFromReq,
 });
 // setupWorkflowRoutes 内部通过 app.set('workflowEngine', engine) 注册引擎
 // 这里同步更新本地引用

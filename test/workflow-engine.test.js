@@ -61,6 +61,33 @@ function loadEngineWithMock(mockPool) {
   return require('../workflow-engine');
 }
 
+// ---------- 增强版 mock pool（B3.2a 测试用） ----------
+// 记录每条 execute 的 sql+params，可断言"是否带 company_id 过滤"
+function createRecordingMockPool({ rows = [] } = {}) {
+  const calls = [];
+  const mockPool = {
+    execute: async (sql, params = []) => {
+      calls.push({ fn: 'execute', sql, params });
+      return [rows, []];
+    },
+    getConnection: async () => {
+      const conn = {
+        beginTransaction: async () => calls.push({ fn: 'beginTransaction' }),
+        commit: async () => calls.push({ fn: 'commit' }),
+        rollback: async () => calls.push({ fn: 'rollback' }),
+        release: () => calls.push({ fn: 'release' }),
+        execute: async (sql, params = []) => {
+          calls.push({ fn: 'conn.execute', sql, params });
+          return [rows, []];
+        },
+      };
+      calls.push({ fn: 'getConnection' });
+      return conn;
+    },
+  };
+  return { mockPool, calls };
+}
+
 // ---------- 测试用例 ----------
 
 async function test1_scanOverdueTasks_noLock_skip() {
@@ -229,6 +256,275 @@ async function test9_createSession参数防呆() {
   console.log('  PASS: createSession 参数兼容（默认值 + 字符串 companyId）');
 }
 
+// ==================== B3.2a: 定义层多租户过滤测试 ====================
+
+async function test10_listDefinitions_超管不加过滤() {
+  // 场景：超管调用 listDefinitions，SQL 不应包含 company_id 过滤
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  await engine.listDefinitions('supplier_qualifications', { isSuperAdmin: true, companyId: null });
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('FROM workflow_definitions'));
+  assert(execCall, '应执行 workflow_definitions 查询');
+  assert(!/company_id/.test(execCall.sql), '超管 SQL 不应包含 company_id 过滤');
+  // 参数应只有 moduleKey，不含 companyId
+  assert.strictEqual(execCall.params.length, 1, '超管参数应只有 moduleKey');
+  assert.strictEqual(execCall.params[0], 'supplier_qualifications');
+
+  console.log('  PASS: 超管 listDefinitions 不加 company_id 过滤');
+}
+
+async function test11_listDefinitions_子公司加过滤() {
+  // 场景：companyId=5 的子公司用户调用 listDefinitions，SQL 应含 company_id IS NULL OR company_id=5
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  await engine.listDefinitions('supplier_qualifications', { isSuperAdmin: false, companyId: 5 });
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('FROM workflow_definitions'));
+  assert(execCall, '应执行 workflow_definitions 查询');
+  assert(/company_id IS NULL OR company_id = \?/.test(execCall.sql),
+    '子公司 SQL 应含 company_id IS NULL OR company_id = ?');
+  // 参数顺序：moduleKey, companyId
+  assert.strictEqual(execCall.params[0], 'supplier_qualifications');
+  assert.strictEqual(execCall.params[1], 5);
+
+  console.log('  PASS: 子公司 listDefinitions 加 company_id 过滤（含 NULL OR =? 双条件）');
+}
+
+async function test12_getDefinition_越权防护返回null() {
+  // 场景：companyId=5 的子公司用户尝试访问 id=99（属公司 8）的流程定义
+  // mock pool 返回空数组（模拟 SQL 因 company_id 过滤未命中）
+  // 期望：getDefinition 返回 null（不抛错），调用方应据此返回 404
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const def = await engine.getDefinition(99, { isSuperAdmin: false, companyId: 5 });
+  assert.strictEqual(def, null, '越权访问应返回 null（模拟 SQL 过滤未命中）');
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('WHERE id = ?'));
+  assert(execCall, '应执行 getDefinition SELECT');
+  assert(/company_id IS NULL OR company_id = \?/.test(execCall.sql),
+    'SQL 应含 company_id 过滤，防止越权');
+  assert.strictEqual(execCall.params[0], 99);
+  assert.strictEqual(execCall.params[1], 5);
+
+  console.log('  PASS: 越权访问流程定义时 SQL 加 company_id 过滤，未命中返回 null');
+}
+
+async function test13_createDefinition_超管company_id为null() {
+  // 场景：超管创建流程定义，INSERT 的 company_id 应为 null（全局模板）
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  // 让 INSERT 返回 insertId=1
+  mockPool.execute = async (sql, params = []) => {
+    calls.push({ fn: 'execute', sql, params });
+    return [{ insertId: 1 }, []];
+  };
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const result = await engine.createDefinition({
+    module_key: 'capa',
+    name: 'CAPA审批流',
+    nodes: [], edges: [], created_by: 'admin'
+  }, { isSuperAdmin: true, companyId: null });
+
+  assert.strictEqual(result.id, 1, '应返回 insertId');
+  const insertCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.startsWith('INSERT INTO workflow_definitions'));
+  assert(insertCall, '应执行 INSERT');
+  assert(/company_id/.test(insertCall.sql), 'INSERT 应含 company_id 列');
+  // 最后一个参数是 company_id 值，超管应为 null
+  const lastParam = insertCall.params[insertCall.params.length - 1];
+  assert.strictEqual(lastParam, null, '超管创建定义时 company_id 应为 null（全局模板）');
+
+  console.log('  PASS: 超管创建流程定义写入 company_id=NULL（全局模板）');
+}
+
+async function test14_createDefinition_子公司写入company_id() {
+  // 场景：companyId=5 的子公司用户创建流程定义，INSERT 的 company_id 应为 5
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  mockPool.execute = async (sql, params = []) => {
+    calls.push({ fn: 'execute', sql, params });
+    return [{ insertId: 7 }, []];
+  };
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const result = await engine.createDefinition({
+    module_key: 'capa',
+    name: '子公司A的CAPA流',
+    nodes: [], edges: [], created_by: 'user_a'
+  }, { isSuperAdmin: false, companyId: 5 });
+
+  assert.strictEqual(result.id, 7);
+  const insertCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.startsWith('INSERT INTO workflow_definitions'));
+  const lastParam = insertCall.params[insertCall.params.length - 1];
+  assert.strictEqual(lastParam, 5, '子公司创建定义时 company_id 应为 5');
+
+  console.log('  PASS: 子公司创建流程定义写入 company_id=N（私有）');
+}
+
+async function test15_activateDefinition_子公司限定本租户() {
+  // 场景：companyId=5 的子公司用户启用流程定义 id=10
+  // 期望：SELECT/UPDATE 都带 company_id 过滤；"禁用同模块其他默认流程"的 UPDATE 也带过滤
+  const { mockPool, calls } = createRecordingMockPool({ rows: [{ module_key: 'capa', condition: '' }] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const ok = await engine.activateDefinition(10, { isSuperAdmin: false, companyId: 5 });
+  assert.strictEqual(ok, true, '应返回 true（mock 返回数据）');
+
+  // 检查所有 conn.execute 都带 company_id 过滤
+  const connExecs = calls.filter(c => c.fn === 'conn.execute');
+  assert(connExecs.length >= 3, '应至少 3 次 conn.execute（SELECT + 禁用 + 启用）');
+  for (const ce of connExecs) {
+    assert(/company_id IS NULL OR company_id = \?/.test(ce.sql),
+      `SQL 应含 company_id 过滤: ${ce.sql.slice(0, 80)}...`);
+    assert.ok(ce.params.includes(5), '参数应含 companyId=5');
+  }
+
+  console.log('  PASS: 子公司 activateDefinition 所有 SQL 限定到本租户');
+}
+
+async function test16_非超管无companyId抛TENANT_CTX_INVALID() {
+  // 场景：session 损坏导致 isSuperAdmin=false && companyId=null
+  // 期望：引擎层拒绝查询，抛 TENANT_CTX_INVALID 错误
+  const { mockPool } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  let thrown = null;
+  try {
+    await engine.listDefinitions('capa', { isSuperAdmin: false, companyId: null });
+  } catch (e) {
+    thrown = e;
+  }
+  assert(thrown, '应抛错');
+  assert.strictEqual(thrown.code, 'TENANT_CTX_INVALID', '错误码应为 TENANT_CTX_INVALID');
+  assert(/非超管用户未分配 company_id/.test(thrown.message), '错误信息应说明原因');
+
+  console.log('  PASS: 非超管无 companyId 抛 TENANT_CTX_INVALID（防呆兜底）');
+}
+
+// ==================== B3.2b: 实例层多租户过滤测试 ====================
+
+async function test17_listInstances_子公司限定i_company_id() {
+  // 场景：子公司用户 listInstances，SQL 应含 i.company_id 过滤
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  await engine.listInstances({ status: 'running' }, { isSuperAdmin: false, companyId: 5 });
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('FROM workflow_instances i'));
+  assert(execCall, '应执行 listInstances 查询');
+  assert(/i\.company_id IS NULL OR i\.company_id = \?/.test(execCall.sql),
+    'SQL 应含 i.company_id 过滤');
+  assert.ok(execCall.params.includes(5), '参数应含 companyId=5');
+
+  console.log('  PASS: 子公司 listInstances 限定 i.company_id');
+}
+
+async function test18_getInstance_越权防护返回null() {
+  // 场景：companyId=5 的子公司用户查询 id=88（属公司 8）的实例
+  // mock pool 返回空数组（模拟 SQL 因 company_id 过滤未命中）
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  const inst = await engine.getInstance(null, 88, { isSuperAdmin: false, companyId: 5 });
+  assert.strictEqual(inst, null, '越权访问实例应返回 null');
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('FROM workflow_instances i'));
+  assert(/i\.company_id IS NULL OR i\.company_id = \?/.test(execCall.sql),
+    'SQL 应含 i.company_id 过滤，防止越权');
+  assert.strictEqual(execCall.params[0], 88);
+  assert.strictEqual(execCall.params[1], 5);
+
+  console.log('  PASS: 越权访问实例 SQL 加 i.company_id 过滤，未命中返回 null');
+}
+
+async function test19_startInstance_子公司写入company_id到实例和任务() {
+  // 场景：子公司用户启动流程，INSERT workflow_instances 应写 company_id=5
+  // 同时 createNodeTasks 的 INSERT workflow_tasks 也应写 company_id=5
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  // 让 getActiveDefinition 返回一个最小可用定义（含 start 节点和一条出边到 end）
+  mockPool.execute = async (sql, params = []) => {
+    calls.push({ fn: 'execute', sql, params });
+    // 匹配 getActiveDefinition 的 SELECT（SQL 含多行换行，用 includes 拆分匹配）
+    if (sql.includes('FROM workflow_definitions') && sql.includes('module_key = ?') && sql.includes('is_active = 1')) {
+      return [[{
+        id: 1, module_key: 'capa', name: 't', version: 1, is_active: 1,
+        condition: '', priority: 0,
+        nodes_json: JSON.stringify([
+          { id: 'start', type: 'start' },
+          { id: 'end', type: 'end' }
+        ]),
+        edges_json: JSON.stringify([{ source: 'start', target: 'end' }])
+      }], []];
+    }
+    return [[], []];
+  };
+  // getConnection 用的 conn.execute 也记一下
+  mockPool.getConnection = async () => {
+    const conn = {
+      beginTransaction: async () => calls.push({ fn: 'beginTransaction' }),
+      commit: async () => calls.push({ fn: 'commit' }),
+      rollback: async () => calls.push({ fn: 'rollback' }),
+      release: () => calls.push({ fn: 'release' }),
+      execute: async (sql, params = []) => {
+        calls.push({ fn: 'conn.execute', sql, params });
+        if (/INSERT INTO workflow_instances/.test(sql)) return [{ insertId: 100 }, []];
+        return [[], []];
+      },
+    };
+    calls.push({ fn: 'getConnection' });
+    return conn;
+  };
+
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  await engine.startInstance({
+    module_key: 'capa',
+    business_key: 'capa:1',
+    payload: {},
+    created_by: 'user_a'
+  }, { isSuperAdmin: false, companyId: 5 });
+
+  // 找到 workflow_instances 的 INSERT（在 conn.execute 中）
+  const instInsert = calls.find(c => c.fn === 'conn.execute' && /INSERT INTO workflow_instances/.test(c.sql));
+  assert(instInsert, '应执行 INSERT workflow_instances');
+  assert(/company_id/.test(instInsert.sql), 'INSERT 应含 company_id 列');
+  // company_id 是最后一个参数
+  const lastParam = instInsert.params[instInsert.params.length - 1];
+  assert.strictEqual(lastParam, 5, '子公司启动流程时实例 company_id 应为 5');
+
+  console.log('  PASS: 子公司 startInstance 写入 company_id 到实例（含 NULL OR =? 防越权）');
+}
+
+async function test20_getInstanceHistory_子公司限定h_company_id() {
+  // 场景：子公司用户查实例历史，SQL 应含 h.company_id 过滤
+  const { mockPool, calls } = createRecordingMockPool({ rows: [] });
+  const { WorkflowEngine } = loadEngineWithMock(mockPool);
+  const engine = new WorkflowEngine({});
+
+  await engine.getInstanceHistory(77, { isSuperAdmin: false, companyId: 5 });
+
+  const execCall = calls.find(c => c.fn === 'execute' && c.sql && c.sql.includes('FROM workflow_task_history h'));
+  assert(execCall, '应执行 getInstanceHistory 查询');
+  assert(/h\.company_id IS NULL OR h\.company_id = \?/.test(execCall.sql),
+    'SQL 应含 h.company_id 过滤');
+  assert.strictEqual(execCall.params[0], 77);
+  assert.strictEqual(execCall.params[1], 5);
+
+  console.log('  PASS: 子公司 getInstanceHistory 限定 h.company_id');
+}
+
 // ---------- 跑测 ----------
 
 async function main() {
@@ -244,6 +540,19 @@ async function main() {
     test7_tenantContext未登录,
     test8_tenantContext防呆非超管无company,
     test9_createSession参数防呆,
+    // B3.2a: 定义层多租户过滤
+    test10_listDefinitions_超管不加过滤,
+    test11_listDefinitions_子公司加过滤,
+    test12_getDefinition_越权防护返回null,
+    test13_createDefinition_超管company_id为null,
+    test14_createDefinition_子公司写入company_id,
+    test15_activateDefinition_子公司限定本租户,
+    test16_非超管无companyId抛TENANT_CTX_INVALID,
+    // B3.2b: 实例层多租户过滤
+    test17_listInstances_子公司限定i_company_id,
+    test18_getInstance_越权防护返回null,
+    test19_startInstance_子公司写入company_id到实例和任务,
+    test20_getInstanceHistory_子公司限定h_company_id,
   ];
   let failed = 0;
   for (const t of tests) {

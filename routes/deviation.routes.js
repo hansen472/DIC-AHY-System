@@ -6,7 +6,7 @@ const express = require('express');
 module.exports = function setupDeviationRoutes(deps) {
   const { pool, auth, getWorkflowEngine } = deps;
   const router = express.Router();
-  const { requireAuth, getUsernameFromReq } = auth;
+  const { requireAuth, getUsernameFromReq, getTenantContextFromReq } = auth;
 
   // POST /api/deviation-reports
   router.post('/api/deviation-reports', requireAuth, async (req, res) => {
@@ -17,8 +17,9 @@ module.exports = function setupDeviationRoutes(deps) {
         return res.status(400).json({ error: '缺少必填字段（偏差发现部门/发现时间/发现人/涉及主体/偏差描述）' });
       }
 
+      const tenantCtx = getTenantContextFromReq(req);
       const workflowEngine = getWorkflowEngine();
-      const activeDef = await workflowEngine.getActiveDefinition('deviation_reports');
+      const activeDef = await workflowEngine.getActiveDefinition('deviation_reports', {}, tenantCtx);
       if (!activeDef) {
         return res.status(400).json({ error: '偏差上报审批流未配置或未启用，请联系管理员在流程设计器中配置' });
       }
@@ -55,7 +56,7 @@ module.exports = function setupDeviationRoutes(deps) {
           business_key: `deviation_reports:${reportId}`,
           payload: { id: reportId, ...payload },
           created_by: getUsernameFromReq(req)
-        });
+        }, tenantCtx);
       } catch (wfErr) {
         await pool.execute('DELETE FROM deviation_reports WHERE id = ?', [reportId]);
         throw wfErr;
@@ -130,6 +131,7 @@ module.exports = function setupDeviationRoutes(deps) {
       }
 
       const username = getUsernameFromReq(req);
+      const tenantCtx = getTenantContextFromReq(req);
 
       const [rows] = await pool.execute(
         'SELECT id, created_by, status FROM deviation_reports WHERE id = ?',
@@ -145,15 +147,22 @@ module.exports = function setupDeviationRoutes(deps) {
       }
 
       const workflowEngine = getWorkflowEngine();
-      const activeDef = await workflowEngine.getActiveDefinition('deviation_reports');
+      const activeDef = await workflowEngine.getActiveDefinition('deviation_reports', {}, tenantCtx);
       if (!activeDef) {
         return res.status(400).json({ error: '偏差上报审批流未配置或未启用，请联系管理员在流程设计器中配置' });
       }
 
-      const [running] = await pool.execute(
-        "SELECT id FROM workflow_instances WHERE business_key = ? AND status = 'running' LIMIT 1",
-        [`deviation_reports:${reportId}`]
-      );
+      // 直接查 workflow_instances 防止跨租户：子公司用户仅检查本司实例
+      // 超管（isSuperAdmin=true）：不加 company_id 过滤，跨租户可见
+      // 子公司（isSuperAdmin=false）：仅本司 + 全局实例（与引擎 buildTenantFilter 口径一致）
+      let runningSql = `SELECT id FROM workflow_instances WHERE business_key = ? AND status = 'running'`;
+      const runningParams = [`deviation_reports:${reportId}`];
+      if (!tenantCtx.isSuperAdmin) {
+        runningSql += ` AND (company_id IS NULL OR company_id = ?)`;
+        runningParams.push(tenantCtx.companyId);
+      }
+      runningSql += ` LIMIT 1`;
+      const [running] = await pool.execute(runningSql, runningParams);
       if (running.length > 0) {
         return res.status(400).json({ error: '该偏差报告正在审批中，不能重新提交' });
       }
@@ -190,7 +199,7 @@ module.exports = function setupDeviationRoutes(deps) {
           business_key: `deviation_reports:${reportId}`,
           payload: { id: reportId, ...payload },
           created_by: username
-        });
+        }, tenantCtx);
       } catch (wfErr) {
         await pool.execute("UPDATE deviation_reports SET status = 'draft' WHERE id = ?", [reportId]);
         throw wfErr;

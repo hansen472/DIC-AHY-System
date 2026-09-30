@@ -1,5 +1,68 @@
 # 审批流增强 + 多租户隔离 + Vue3 SPA 前台改造 实施计划
 
+## 〇、实施进度（2026-09-30 更新）
+
+| 阶段 | 状态 | 备注 |
+|---|---|---|
+| **A 审批流稳定性加固** | ✅ 完成 | A1 version 列 + A2 乐观锁 + A3 GET_LOCK 集群锁 + A4 单测，详见下文 |
+| **B 多租户 company_id 全链路贯通** | 🟡 进行中 | B1/B2/B3/B4 已完成，B5 进行中（本文档更新） |
+| **C 引擎节点补课** | ⬜ 待开始 | cc/parallel/timer/form_data_json |
+| **D GMP 合规地基** | ⬜ 待开始 | 审计阻断 + 电子签名 |
+| **E Vue3 SPA 脚手架** | ⬜ 待开始 | Vite + Element Plus + Pinia |
+| **F Vue3 页面分批迁移** | ⬜ 待开始 | 42 页 6 批次 |
+| **G CAPA 模块** | ⬜ 待开始 | 依赖 C 阶段节点能力 |
+| **H 清理** | ⬜ 待开始 | 旧页面下线 + CSV 文档 |
+
+### A 阶段产出（已完成）
+
+- [sql/alter-workflow-tasks-add-version.sql](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/sql/alter-workflow-tasks-add-version.sql)：`workflow_tasks` 加 `version INT NOT NULL DEFAULT 1` + 索引
+- [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js)：`completeTask` / `transferTask` 加 `version = version + 1 WHERE version = ?`，影响行数为 0 抛"任务已被他人处理，请刷新后重试"
+- `scanOverdueTasks` 用 MySQL `GET_LOCK('workflow_reminder', N)` 包裹，未来多实例部署去重；连接池管理 + 异常释放锁
+- [test/workflow-engine.test.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/test/workflow-engine.test.js)：模块加载 + 集群锁 + session 兜底共 9 个测试，零外部依赖（require.cache 注入 mock 池）
+
+### B 阶段产出（B1/B2/B3/B4 已完成）
+
+**B1 session 集成**（修正了 v1 设计漏洞）
+- [sql/alter-users-add-is-super-admin.sql](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/sql/alter-users-add-is-super-admin.sql)：users 加 `is_super_admin TINYINT(1)`（独立字段，修复"忘填 company_id 即变超管"漏洞）
+- [routes/auth.routes.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/routes/auth.routes.js)：登录 SQL 取 `company_id` + `is_super_admin`；多租户校验（非超管且 company_id 缺失拒登）
+- [middleware/auth.middleware.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/middleware/auth.middleware.js)：`createSession(res, username, companyId, isSuperAdmin)` + `getTenantContextFromReq(req)` 返回 `{ isSuperAdmin, companyId }` 二元组
+
+**B2 数据库表变更**
+- [sql/alter-workflow-add-company-id.sql](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/sql/alter-workflow-add-company-id.sql)：5 张 workflow 表加 `company_id INT UNSIGNED NULL` + 5 个复合索引
+- [sql/backfill-workflow-company-id.sql](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/sql/backfill-workflow-company-id.sql)：回填脚本（按 `instances.created_by → users.company_id` 回填实例，再按 instance_id 回填 tasks/history/vars；definitions 按 created_by 回填）
+
+**B3 引擎查询过滤**（22 个 SQL 查询点全部加 company_id 过滤）
+- [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js) 顶部新增多租户助手三件套：
+  - `normalizeTenantCtx(tenantCtx)`：规范化 + 防呆（非超管无 companyId 抛 `TENANT_CTX_INVALID`）
+  - `buildTenantFilter(tenantCtx, alias)`：超管返回空 clause，子公司返回 ` AND (tbl.company_id IS NULL OR tbl.company_id = ?)`
+  - `buildTenantInsertValue(tenantCtx)`：超管写 null（全局模板），子公司写 N（私有）
+  - `DEFAULT_TENANT_CTX = { isSuperAdmin: true, companyId: null }`：未传 tenantCtx 兜底为超管（向后兼容单测和内部调用）
+- 流程定义层 7 方法加 tenantCtx：`getActiveDefinition / createDefinition / updateDefinition / activateDefinition / deleteDefinition / listDefinitions / getDefinition`
+- 流程实例层 6 方法加 tenantCtx：`startInstance / advance / createNodeTasks / getInstance / listInstances / getMyInstances / getInstanceHistory / recallInstance / saveInstanceVars`（透传链：startInstance → advance → createNodeTasks；completeTask → getInstance/getDefinition/resolveNodeResult/advance）
+- 任务层 9 方法加 tenantCtx：`getTask / completeTask / resolveNodeResult / transferTask / getTasksByAssignee / getAllPendingTasks / getParticipatedTasks / getPendingTaskCount / getTasksByInstance`
+- 关键代码模式（completeTask 乐观锁 + company_id 过滤共存）：
+  ```js
+  UPDATE workflow_tasks SET status=?, action=?, comment=?, completed_at=?, version=version+1
+  WHERE id=? AND version=?${tfTask.clause}
+  ```
+- INSERT 写入时正确设置 company_id（超管 null=全局模板，子公司 N=私有）；`workflow_task_history` INSERT SELECT 从 `workflow_tasks.company_id` 取值，保证审计完整性
+
+**B4 路由层贯通**（已在 B3 一并完成）
+- [workflow-routes.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-routes.js)：函数签名扩展 `{ requireAuth, requirePermission, getUsername, getTenantContext }`，23 个路由全部传 `getTenantContext(req)`
+- [server.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/server.js)：单点注入 `getTenantContext: auth.getTenantContextFromReq`
+- [routes/deviation.routes.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/routes/deviation.routes.js)：4 个 engine 调用 + 1 处直接 SQL 都加 tenantCtx（业务路由直接调 engine 方法的越权漏洞已修复）
+
+**B3 测试结果**：20/20 通过
+- 集群锁 + session 兜底：9 个
+- 流程定义层越权防护：7 个（test10-test16）
+- 流程实例层越权防护：4 个（test17-test20）
+
+**B5 待办**
+- 任务层关键方法（completeTask / recallInstance / transferTask）越权防护单测尚缺（目前 20 个测试主要覆盖 listInstances/getInstance/startInstance/getInstanceHistory，任务层仅靠 SQL 审查保证）
+- 计划文档进度更新（本文档）
+
+---
+
 ## 一、Repository Research（现状结论）
 
 ### 技术栈与结构
@@ -50,13 +113,13 @@
 
 ## 三、Files and Modules（按阶段）
 
-### 阶段 A 稳定性加固
+### 阶段 A 稳定性加固 ✅ 已完成
 - `sql/workflow-engine.sql` + 新增 `sql/alter-workflow-tasks-add-version.sql`：`workflow_tasks` 加 `version INT NOT NULL DEFAULT 1`。
 - [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js)：complete/transfer/withdraw 的 UPDATE 增加 `AND version=?`，成功后 `version=version+1`；影响行数为 0 时返回并发冲突错误。
 - [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js) 定时器：用 MySQL `GET_LOCK('workflow_reminder', N)` 包裹定时扫描，避免未来多实例重复触发。
 - 新增 `test/workflow-engine.test.js`：start/approve/reject/会签三模式/并发 complete 冲突等核心用例（用现有测试框架；若无则在 package.json 增加 node:test，不引重依赖）。
 
-### 阶段 B 多租户隔离
+### 阶段 B 多租户隔离 🟡 B1/B2/B3/B4 完成，B5 进行中
 - [routes/auth.routes.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/routes/auth.routes.js)：登录 SQL 增加 `company_id`；调用 `createSession(res, username, companyId)`。
 - [middleware/auth.middleware.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/middleware/auth.middleware.js)：session 结构增加 `companyId`；导出 `getCompanyId(req)`。规则：`companyId` 为 null = 集团超管，不加租户过滤。
 - 新增 `sql/alter-workflow-add-company.sql`：5 张 workflow 表加 `company_id INT UNSIGNED NULL` + 索引；数据回填脚本（按 `workflow_instances.created_by → users.company_id` 回填实例，再按 instance_id 回填 tasks/history/vars；definitions 按 created_by 回填）。
@@ -65,7 +128,7 @@
 - [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js) `resolveAssignee`：`[部门经理]` 解析加 company_id 边界。
 - 前端（旧 HTML 临时最小改动）：导航栏显示当前公司名；超管可见公司切换（写 session `viewAsCompanyId`，作为可选项，非首期必需）。
 
-### 阶段 C 引擎节点补课
+### 阶段 C 引擎节点补课 ⬜ 待开始
 - [workflow-engine.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-engine.js)：新增节点类型
   - `cc`：生成只读知会记录（不入审批链，可复用 history 表或新增 `workflow_cc` 表，二选一，倾向新增表语义清晰）。
   - `parallel`：fork 生成多分支待办、join 等所有分支完成才前进（配合 `current_node_ids` JSON）。
@@ -73,20 +136,20 @@
 - 表单数据：`workflow_tasks` 加 `form_data_json LONGTEXT NULL`；引擎 complete 时接收并校验/落库。
 - 节点先在现有自研画布 [workflow-designer.html](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/workflow-designer.html) 上用简单图形+配置弹窗落地，保证功能闭环，不追求可视化体验。
 
-### 阶段 D GMP 合规地基
+### 阶段 D GMP 合规地基 ⬜ 待开始
 - [services/log.service.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/log.service.js)：审计写入失败改为**阻断业务**（抛错回滚），不再静默 catch；`operation_logs` 结构化 before/after/reason（新增列或 detail JSON 规范化）；应用层只 INSERT，并输出数据库账号权限收敛说明。
 - 新增电子签名能力：审批/关键操作提交时二次输密码，记录签名含义（批准/复核）、与业务记录绑定；新增 `electronic_signatures` 表（记录 id、业务对象、签名人、含义、时间、凭证哈希）。
 - NTP 时间同步检查脚本/说明（审计可信前提）。
 - 不做 CAPA 模块本身（列入阶段 G）；本阶段只交付可复用的合规能力。
 
-### 阶段 E Vue3 SPA 共存脚手架
+### 阶段 E Vue3 SPA 共存脚手架 ⬜ 待开始
 - 新建 `frontend/`：Vite + Vue3 + TypeScript（JS 亦可，保持团队门槛低，建议 TS 但不强制）+ Element Plus + Vue Router（history，base `/app/`）+ Pinia + axios。
 - `frontend/vite.config.js`：dev 代理 `/api`、`/login`、`/login.html`、`/nav-sidebar.html` 到 `http://localhost:3456`。
 - [server.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/server.js)：静态托管 `frontend/dist` 于 `/app`，加 `/app/*` catch-all 返回 index.html（避开现有 `/*.html`）。
 - 新增 `GET /api/auth/me`：返回 username、companyId、companyName、权限列表，供路由守卫与导航渲染。
 - `frontend/src/`：MainLayout（侧边栏+顶栏，迁移 nav-sidebar 结构）、axios 401 拦截跳登录、路由守卫按 `meta.perm` 鉴权。共存期登录仍用现有 `login.html`。
 
-### 阶段 F Vue3 页面分批迁移（42 页）
+### 阶段 F Vue3 页面分批迁移（42 页）⬜ 待开始
 建议批次（每批独立可上线，迁一页删一页路由与 HTML）：
 1. 导航壳 + 登录态对接（MainLayout、auth/me）。
 2. 基础数据/列表表单类：公司、部门、用户、权限、供应商、产品、培训记录。
@@ -97,10 +160,10 @@
 6. 登录页最后迁移，迁移完成后移除旧 login.html 与共存重定向。
 - [routes/pages.routes.js](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/routes/pages.routes.js)：每批迁移同步移除旧 HTML 路由并更新 [nav-sidebar.html](file:///c:/Users/Administrator/Documents/GitHub/DIC-AHY-System/nav-sidebar.html) 链接（切到 `/app/...`）。
 
-### 阶段 G CAPA 模块
+### 阶段 G CAPA 模块 ⬜ 待开始
 - 新增 CAPA 表与页面（发起/调查 RCA/纠正措施/有效性核查/关闭），复用阶段 C 的 timer（核查到期自动生成任务）、cc（措施知会）、form_data_json（RCA 记录），与 deviation 模块通过 business_key 联动。
 
-### 阶段 H 清理
+### 阶段 H 清理 ⬜ 待开始
 - 下线旧自研画布、旧 HTML 与对应路由；旧 workflow 表字段在稳定运行一个保留期后归档；补 CSV 验证文档模板（URS/IQ/OQ/PQ）。
 
 ## 四、Implementation Steps（执行步骤，依赖序）
